@@ -1,0 +1,110 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
+@inject MBANK_ETUDIANT.Services.BankService Bank
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="page">
+    @if (isCheckingSession)
+    {
+        <div class="auth-loading">
+            <div class="scanner"></div>
+            <p>VERIFICATION ADN_ID...</p>
+        </div>
+    }
+    else if (!Bank.EstConnecte)
+    {
+        <main class="auth-layout">
+            @Body
+        </main>
+    }
+    else
+    {
+        @* Overlay for mobile sidebar *@
+        @if (sidebarOpen)
+        {
+            <div class="sidebar-overlay" @onclick="ToggleSidebar"></div>
+        }
+
+        <div class="sidebar @(sidebarOpen ? "sidebar-open" : "")">
+            <div class="logo-area">
+                <div class="logo-text">
+                    <span class="gold">M</span>BANK<span class="suffix">ADN</span>
+                </div>
+                <div class="logo-divider"></div>
+            </div>
+            <NavMenu />
+        </div>
+
+        <div class="main-area">
+            <div class="top-bar">
+                <div class="top-bar-left">
+                    <button class="hamburger" @onclick="ToggleSidebar" aria-label="Menu">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </button>
+                    <div class="server-status">
+                        <span class="dot"></span>
+                        <span class="status-label">SYSTEME: OPERATIONNEL</span>
+                    </div>
+                </div>
+
+                <div class="user-info">
+                    <div class="user-badge">
+                        <div class="rank">STUDENT</div>
+                        <div class="name">@Bank.Profil.Prenom?.ToUpper() @Bank.Profil.Nom?.ToUpper()</div>
+                    </div>
+                    <button class="btn-logout" @onclick="HandleLogout" title="DECONNEXION">
+                        <i class="bi bi-power"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="content-area">
+                @Body
+            </div>
+        </div>
+
+        <MBANK_ETUDIANT.Components.Layout.NotificationOverlay />
+    }
+</div>
+
+@code
+{
+    private bool isCheckingSession = true;
+    private bool sidebarOpen = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isCheckingSession = true;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var userId = int.Parse(user.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await Bank.InitializeAsync(userId);
+        }
+
+        isCheckingSession = false;
+
+        if (!Bank.EstConnecte && !Nav.Uri.EndsWith("/login") && !Nav.Uri.EndsWith("/register") && !Nav.Uri.Contains("access-denied"))
+        {
+            Nav.NavigateTo("/login");
+        }
+    }
+
+    private void ToggleSidebar()
+    {
+        sidebarOpen = !sidebarOpen;
+    }
+
+    private async Task HandleLogout()
+    {
+        Bank.Deconnexion();
+        Nav.NavigateTo("/api/auth/logout", forceLoad: true);
+    }
+}

@@ -1,0 +1,104 @@
+@page "/tuteur-dashboard"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+@inject IJSRuntime JS
+
+<div class="cyber-panel" style="border-color: var(--blue-border);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="color: var(--blue-500); margin: 0;">CONTRÔLE_TUTEUR_V1</h3>
+        <span class="badge badge-info">SESSION_SECURISEE</span>
+    </div>
+
+    <div class="form-row" style="margin-bottom: 24px;">
+        <div class="stat-card">
+            <div class="stat-label">ÉTUDIANTS SUIVIS</div>
+            <div class="stat-value">@etudiantsSuivis</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">TOTAL INVESTI</div>
+            <div class="stat-value green">@pochesSurveillees.Sum(x => x.Pocket.CapitalActuel).ToString("N2") DH</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">NICHES ACTIVES</div>
+            <div class="stat-value">@pochesSurveillees.Count</div>
+        </div>
+    </div>
+
+    @if (!pochesSurveillees.Any())
+    {
+        <div class="empty-state">
+            <p>AUCUN ÉTUDIANT NE VOUS A AUTORISÉ COMME TUTEUR</p>
+        </div>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            @foreach (var item in pochesSurveillees)
+            {
+                var p = item.Pocket;
+                <div class="card" style="border-left: 4px solid var(--blue-500);">
+                    <div class="card-body" style="padding: 18px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <div style="font-weight: 700; color: var(--blue-500);">@p.Objectif.ToUpper()</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted); margin-top: 4px;">
+                                    @item.StudentName · @item.StudentEmail
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 1.1rem; font-weight: 700; color: var(--success);">@p.CapitalActuel.ToString("N2") DH</div>
+                                <div style="font-size: 0.55rem; color: var(--text-muted);">ÉCHÉANCE : @p.DateCible.ToShortDateString()</div>
+                            </div>
+                        </div>
+                        <div class="pocket-actions">
+                            <button class="btn btn-primary btn-sm" style="flex: 2;" @onclick="() => PreparerBoost(p)" disabled="@isProcessing">
+                                BOOSTER L'ÉPARGNE (+DH)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<TuteurPocketView> pochesSurveillees = new();
+    private int etudiantsSuivis;
+    private bool isProcessing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ChargerDonnees();
+    }
+
+    private async Task ChargerDonnees()
+    {
+        pochesSurveillees = await Bank.GetPocketsForTuteurAsync();
+        etudiantsSuivis = pochesSurveillees.Select(x => x.StudentEmail).Distinct().Count();
+    }
+
+    private async Task PreparerBoost(SavingsPocket p)
+    {
+        isProcessing = true;
+        try
+        {
+            string montantStr = await JS.InvokeAsync<string>("prompt", $"Montant à ajouter à la poche '{p.Objectif}' ?");
+            if (decimal.TryParse(montantStr, out decimal montant) && montant > 0)
+            {
+                bool success = await Bank.BoosterPocheAsync(p.Id, montant);
+                if (success)
+                {
+                    Notif.Notify($"La poche a été boostée de {montant} DH", NotificationType.SUCCESS);
+                    await ChargerDonnees();
+                }
+                else
+                    Notif.Notify("FONDS INSUFFISANTS", NotificationType.ERROR);
+            }
+        }
+        finally { isProcessing = false; }
+    }
+}

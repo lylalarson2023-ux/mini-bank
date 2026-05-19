@@ -1,0 +1,48 @@
+@rendermode InteractiveServer
+@using MBANK_ETUDIANT.Models
+@using MBANK_ETUDIANT.Services
+@inject NotificationService NotifService
+@implements IDisposable
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="notif-container">
+        <div class="notif-box @(Type == NotificationType.ERROR ? "notif-error" : Type == NotificationType.INFO ? "notif-info" : "notif-success")">
+            <div class="notif-header">
+                <span class="notif-tag">[ @(Type == NotificationType.ERROR ? "ERR" : Type == NotificationType.INFO ? "INFO" : "OK") ]</span>
+                <span class="notif-time">@DateTime.Now.ToString("HH:mm:ss")</span>
+            </div>
+            <div class="notif-body">
+                @Message
+            </div>
+            <div class="notif-scanline"></div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? Message { get; set; }
+    private NotificationType Type { get; set; }
+
+    protected override void OnInitialized()
+    {
+        NotifService.OnNotificationReceived += HandleNotification;
+    }
+
+    private void HandleNotification(Notification notification)
+    {
+        Message = notification.Message;
+        Type = notification.Type;
+        InvokeAsync(StateHasChanged);
+
+        _ = Task.Delay(5000).ContinueWith(_ => {
+            Message = null;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public void Dispose()
+    {
+        NotifService.OnNotificationReceived -= HandleNotification;
+    }
+}

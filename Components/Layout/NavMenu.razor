@@ -1,0 +1,53 @@
+﻿<nav class="nav-list">
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="" Match="NavLinkMatch.All">
+            <i class="bi bi-house-door-fill"></i> DASHBOARD
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="courant">
+            <i class="bi bi-wallet2"></i> COMPTE COURANT
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="epargne">
+            <i class="bi bi-piggy-bank"></i> EPARGNE PRO
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="tuteur-dashboard">
+            <i class="bi bi-shield-lock"></i> ESPACE TUTEUR
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="credits">
+            <i class="bi bi-cash-stack"></i> CREDITS
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="historique">
+            <i class="bi bi-list-ul"></i> HISTORIQUE
+        </NavLink>
+    </div>
+
+    <div class="nav-item">
+        <NavLink class="nav-link-custom" href="profil">
+            <i class="bi bi-person-badge"></i> MON PROFIL
+        </NavLink>
+    </div>
+
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            <div class="nav-item">
+                <NavLink class="nav-link-custom" href="admin">
+                    <i class="bi bi-terminal-fill"></i> ADMIN TERMINAL
+                </NavLink>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+</nav>

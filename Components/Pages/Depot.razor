@@ -1,0 +1,67 @@
+@page "/depot"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+
+<div class="cyber-panel" style="max-width: 480px;">
+    <h3>MODULE DE DEPOT</h3>
+
+    <div class="warning-box">
+        SOLDE ACTUEL : <span class="highlight">@Bank.Profil.Solde.ToString("N2") DH</span>
+    </div>
+
+    @if (Bank.Profil.IsAdmin)
+    {
+        <div style="margin-top: 24px;">
+            <div class="form-group">
+                <label>MONTANT A DEPOSER (DH)</label>
+                <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+            </div>
+            <button class="btn btn-success btn-block" @onclick="EffectuerDepot">
+                <i class="bi bi-plus-circle"></i> VALIDER LE DEPOT
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="error-panel" style="margin-top: 24px;">
+            <h5>ACCES REFUSE</h5>
+            <p style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 8px;">
+                LES DEPOTS SONT RESERVES A L'ADMINISTRATEUR.
+            </p>
+            <p style="color: var(--text-muted); font-size: 0.7rem;">
+                CONTACTEZ L'ADMINISTRATION POUR CREDITER VOTRE COMPTE.
+            </p>
+        </div>
+    }
+
+    <div style="margin-top: 24px; text-align: center;">
+        <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">&larr; RETOUR DASHBOARD</a>
+    </div>
+</div>
+
+@code {
+    private decimal montant;
+    private bool isProcessing;
+
+    private async Task EffectuerDepot()
+    {
+        if (isProcessing || montant <= 0) return;
+        isProcessing = true;
+        try
+        {
+            var success = await Bank.ExecuterOperationAsync(montant, "Depot volontaire", "DEPOT");
+            if (success)
+            {
+                Notif.Notify($"DEPOT DE {montant:N2} DH EFFECTUE", NotificationType.SUCCESS);
+                montant = 0;
+            }
+            else
+                Notif.Notify("ERREUR LORS DU DEPOT", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+}

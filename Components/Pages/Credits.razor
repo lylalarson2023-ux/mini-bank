@@ -1,0 +1,126 @@
+@page "/credits"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+
+<div class="cyber-panel">
+    <h3>MODULE_CREDIT_V1</h3>
+    <div class="warning-box">VERIFICATION DE SOLVABILITE EN TEMPS REEL</div>
+
+    @if (!eligible)
+    {
+        <div class="error-panel">
+            <h5>ACCES REFUSE : CRITERES NON REMPLIS</h5>
+            <ul class="elig-list">
+                <li class="@(Bank.Profil.Statut != UserStatus.STANDARD ? "pass" : "fail")">
+                    &bull; STATUT PREMIUM OU VIP REQUIS
+                </li>
+                <li class="@(nbTransactions >= 3 ? "pass" : "fail")">
+                    &bull; MINIMUM 3 TRANSACTIONS VALIDEES (ACTUEL : @nbTransactions)
+                </li>
+                <li style="color: var(--text-muted);">
+                    &bull; VOLUME DE FLUX : @fluxTotal.ToString("N2") DH (REQUIS : 2X LE MONTANT DU PRET)
+                </li>
+            </ul>
+        </div>
+    }
+
+    <div class="form-row" style="margin-top: 24px;">
+        <div class="form-group">
+            <label>CATEGORIE DE PRET :</label>
+            <select @bind="categorie" class="form-select">
+                <option value="MICRO">MICRO-CREDIT (TAUX BASE 5%)</option>
+                <option value="PERSONNEL">PRET PERSONNEL (TAUX BASE 10%)</option>
+                <option value="BUSINESS">PRET BUSINESS (TAUX BASE 15%)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>MONTANT SOUHAITE (DH) :</label>
+            <input type="number" @bind="montantDemande" @bind:event="oninput" class="form-input" />
+        </div>
+
+        <div class="form-group">
+            <label>DUREE DE REMBOURSEMENT (MOIS) :</label>
+            <input type="number" @bind="dureeMois" class="form-input" />
+        </div>
+
+        <div class="card" style="padding: 16px; display: flex; flex-direction: column; justify-content: center;">
+            <div style="font-size: 0.6rem; color: var(--text-muted); margin-bottom: 4px;">ESTIMATION DES INTERETS :</div>
+            <div style="font-size: 1rem; color: var(--text-primary); font-weight: 700;">@CalculerInteretTotal().ToString("N2") DH</div>
+            <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">
+                TOTAL A REMBOURSER : @((montantDemande + CalculerInteretTotal()).ToString("N2")) DH
+            </div>
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-block"
+            style="margin-top: 20px;"
+            @onclick="SoumettreDemande"
+            disabled="@(isProcessing || !eligible || montantDemande <= 0)">
+        @(isProcessing ? "TRAITEMENT..." : "SOUMETTRE LA DEMANDE A L'ADMINISTRATEUR")
+    </button>
+</div>
+
+@code {
+    private string categorie = "MICRO";
+    private decimal montantDemande;
+    private int dureeMois = 6;
+    private bool eligible;
+    private int nbTransactions;
+    private decimal fluxTotal;
+    private bool isProcessing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VerifierConditions();
+    }
+
+    private async Task VerifierConditions()
+    {
+        var historique = await Bank.GetHistoriqueAsync();
+        nbTransactions = historique.Count;
+        fluxTotal = historique.Sum(t => t.MontantBrut);
+        eligible = await Bank.VerifierEligibiliteCredit(Bank.Profil.Id);
+    }
+
+    private decimal CalculerInteretTotal()
+    {
+        if (montantDemande <= 0) return 0;
+        decimal tauxBase = categorie switch
+        {
+            "MICRO" => 0.05m,
+            "PERSONNEL" => 0.10m,
+            "BUSINESS" => 0.15m,
+            _ => 0.10m
+        };
+        if (Bank.Profil.Statut == UserStatus.VIP) tauxBase -= 0.03m;
+        else if (Bank.Profil.Statut == UserStatus.PREMIUM) tauxBase -= 0.015m;
+        return montantDemande * tauxBase * (dureeMois / 12m);
+    }
+
+    private async Task SoumettreDemande()
+    {
+        if (isProcessing || montantDemande <= 0) return;
+        if (fluxTotal < (montantDemande * 2))
+        {
+            Notif.Notify("REFUS : Volume de transactions insuffisant (2x requis)", NotificationType.ERROR);
+            return;
+        }
+        isProcessing = true;
+        try
+        {
+            var success = await Bank.SoumettreDemandeCredit(montantDemande, categorie, dureeMois);
+            if (success)
+            {
+                Notif.Notify("DEMANDE TRANSMISE : En attente de validation manuelle par l'Admin", NotificationType.INFO);
+                montantDemande = 0;
+            }
+            else
+                Notif.Notify("ERREUR LORS DE L'ENREGISTREMENT DE LA DEMANDE", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+}

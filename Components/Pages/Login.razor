@@ -1,0 +1,85 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@using System.Security.Cryptography
+@using System.Text
+@using MBANK_ETUDIANT.Services
+@inject BankService Bank
+@inject NavigationManager Nav
+@inject NotificationService Notif
+@inject IConfiguration Config
+<NotificationOverlay />
+@using MBANK_ETUDIANT.Models
+
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h1 class="auth-title"><span class="gold">M</span>BANK</h1>
+            <div class="auth-subtitle">ADNcorporation | TERMINAL</div>
+        </div>
+
+        <div class="form-group">
+            <label>ADRESSE E-MAIL</label>
+            <input @bind="email" type="email" placeholder="nom@exemple.com" class="form-input" />
+        </div>
+
+        <div class="form-group">
+            <label>MOT DE PASSE</label>
+            <input @bind="mdp" type="password" placeholder="......" class="form-input" />
+        </div>
+
+        <button class="btn btn-gold btn-block" @onclick="HandleLogin">SE CONNECTER</button>
+
+        <div class="auth-footer">
+            <a href="/register">(inscription)</a>
+        </div>
+    </div>
+</div>
+
+@code
+{
+    private string email = "";
+    private string mdp = "";
+
+    private static string SignToken(string payload) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+
+    private async Task HandleLogin()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(mdp))
+            {
+                Notif.Notify("CHAMPS VIDES", NotificationType.ERROR);
+                return;
+            }
+
+            Notif.Notify("ANALYSE DES IDENTIFIANTS...", NotificationType.INFO);
+            await Task.Delay(800);
+
+            var success = await Bank.SeConnecter(email, mdp);
+
+            if (success)
+            {
+                Notif.Notify("ACCES ACCORDE", NotificationType.SUCCESS);
+                await Task.Delay(1000);
+                var userId = Bank.Profil.Id;
+                if (userId == 0)
+                {
+                    Notif.Notify("ERREUR : ID UTILISATEUR INVALIDE", NotificationType.ERROR);
+                    return;
+                }
+                var sig = SignToken($"{userId}:{Config["LoginSecret"]}");
+                Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&sig={sig}", forceLoad: true);
+            }
+            else
+            {
+                Notif.Notify("ECHEC : IDENTITE NON RECONNUE", NotificationType.ERROR);
+            }
+        }
+        catch (Exception ex)
+        {
+            Notif.Notify($"ERREUR : {ex.Message}", NotificationType.ERROR);
+        }
+    }
+}

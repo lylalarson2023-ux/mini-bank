@@ -1,0 +1,62 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.sln.docstates
+.DS_Store
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# Visual Studio
+.vs/
+*.sln.ide/
+*.userprefs
+*.[Rr]es[Xx]/[Pp]ublished/
+*.[Rr]es[Xx]/[Dd]ata/PublicResX/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded files
+wwwroot/uploads/*
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Tunnel / temp
+cf_*.bat
+cf_*.txt
+tunnel*.bat
+tunnel*.ps1
+tunnel*.txt
+test_server_pid.txt
+test_tunnel.bat
+
+# OS
+Thumbs.db
+Desktop.ini

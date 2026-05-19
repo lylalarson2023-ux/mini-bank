@@ -1,0 +1,805 @@
+@page "/admin"
+@attribute [Authorize(Policy = "AdminOnly")]
+@using MBANK_ETUDIANT.Models
+@using MBANK_ETUDIANT.Services
+@inject AdminService AdminSvc
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+@inject ILoggerFactory LoggerFactory
+
+<div class="content-area" style="max-width: 100%;">
+    <div class="admin-header-bar">
+        <div>
+            <h1 class="admin-title">PANEL D'ADMINISTRATION</h1>
+            <div class="admin-status">
+                <span class="dot"></span> SESSION ADMIN ACTIVE
+            </div>
+        </div>
+        <div class="admin-stats">
+            <div class="admin-stat">
+                <span class="label">RÉSERVES TOTALES</span>
+                <span class="value gold">@totalBalance.ToString("N2") MAD</span>
+            </div>
+            <div class="admin-stat">
+                <span class="label">UTILISATEURS</span>
+                <span class="value">@totalUsers</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="admin-tabs">
+        <button class="admin-tab @(activeTab == "dashboard" ? "active" : "")" @onclick='() => activeTab = "dashboard"'>
+            <i class="bi bi-speedometer2"></i> TABLEAU DE BORD
+        </button>
+        <button class="admin-tab @(activeTab == "dossiers" ? "active" : "")" @onclick='() => activeTab = "dossiers"'>
+            <i class="bi bi-shield-check"></i> DOSSIERS KYC
+            @if (pendingPremiumCount > 0) { <span class="tab-badge">@pendingPremiumCount</span> }
+        </button>
+        <button class="admin-tab @(activeTab == "credits" ? "active" : "")" @onclick='() => activeTab = "credits"'>
+            <i class="bi bi-currency-exchange"></i> CRÉDITS
+            @if (pendingCreditCount > 0) { <span class="tab-badge">@pendingCreditCount</span> }
+        </button>
+        <button class="admin-tab @(activeTab == "depot" ? "active" : "")" @onclick='() => activeTab = "depot"'>
+            <i class="bi bi-cash-stack"></i> DÉPÔT
+        </button>
+        <button class="admin-tab @(activeTab == "utilisateurs" ? "active" : "")" @onclick='() => activeTab = "utilisateurs"'>
+            <i class="bi bi-people"></i> UTILISATEURS
+        </button>
+        <button class="admin-tab @(activeTab == "logs" ? "active" : "")" @onclick='() => activeTab = "logs"'>
+            <i class="bi bi-journal-text"></i> LOGS
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="adn-loader">CHARGEMENT...</div>
+    }
+    else
+    {
+        @switch (activeTab)
+        {
+            case "dashboard":
+                @RenderDashboard
+                break;
+            case "dossiers":
+                @RenderDossiers
+                break;
+            case "credits":
+                @RenderCredits
+                break;
+            case "depot":
+                @RenderDepot
+                break;
+            case "utilisateurs":
+                @RenderUtilisateurs
+                break;
+            case "logs":
+                @RenderLogs
+                break;
+        }
+    }
+</div>
+
+@* ─── MODAL RÉINITIALISATION MOT DE PASSE ─── *@
+@if (showResetModal)
+{
+    <div class="modal-overlay" @onclick='() => showResetModal = false'>
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="card-head">
+                <i class="bi bi-key-fill"></i>
+                <h2>RÉINITIALISER LE MOT DE PASSE</h2>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 16px;">
+                    Utilisateur #@resetUserId
+                </p>
+                <div class="form-group">
+                    <label>NOUVEAU MOT DE PASSE</label>
+                    <input type="password" @bind="resetPassword" class="form-input" placeholder="Min. 6 caractères" />
+                </div>
+                <div class="form-group">
+                    <label>CONFIRMER LE MOT DE PASSE</label>
+                    <input type="password" @bind="resetConfirmPassword" class="form-input" placeholder="Confirmer" />
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button class="btn btn-primary btn-block" @onclick="ConfirmResetPassword">
+                        <i class="bi bi-check-lg"></i> CONFIRMER
+                    </button>
+                    <button class="btn btn-ghost btn-block" @onclick='() => showResetModal = false'>
+                        ANNULER
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ILogger _logger = default!;
+    private string activeTab = "dashboard";
+    private bool isLoading = true;
+    private decimal totalBalance;
+    private int totalUsers;
+    private int pendingPremiumCount;
+    private int pendingCreditCount;
+    private List<UserProfile> dossiersEnAttente = new();
+    private List<AdminLog> logs = new();
+
+    private int targetId;
+    private decimal creditAmount;
+    private int depotTargetId;
+    private decimal depotMontant;
+
+    private string searchQuery = "";
+    private List<UserProfile> searchResults = new();
+    private bool isSearching;
+    private string? searchError;
+
+    private int resetUserId;
+    private string resetPassword = "";
+    private string resetConfirmPassword = "";
+    private bool showResetModal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _logger = LoggerFactory.CreateLogger("Admin");
+        try { await ChargerDonnees(); }
+        catch (Exception ex) { _logger.LogError(ex, "Erreur chargement admin"); Notif.Notify("Erreur de chargement", NotificationType.ERROR); }
+        finally { isLoading = false; }
+    }
+
+    private async Task ChargerDonnees()
+    {
+        totalBalance = await AdminSvc.GetTotalBankBalanceAsync();
+        totalUsers = await AdminSvc.GetTotalUsersAsync();
+        pendingPremiumCount = await AdminSvc.GetPendingPremiumCountAsync();
+        pendingCreditCount = await AdminSvc.GetPendingCreditCountAsync();
+        dossiersEnAttente = await AdminSvc.GetDossiersEnAttenteAsync();
+        logs = await AdminSvc.GetAdminLogsAsync();
+    }
+
+    private async Task ApprouverDossier(int id)
+    {
+        if (await AdminSvc.ApprouverPremium(id))
+        {
+            Notif.Notify("Dossier validé : accès Premium octroyé", NotificationType.SUCCESS);
+            await ChargerDonnees();
+        }
+    }
+
+    private async Task LancerCredit()
+    {
+        if (targetId <= 0 || creditAmount <= 0) { Notif.Notify("Valeurs non valides", NotificationType.ERROR); return; }
+        if (await AdminSvc.ApprouverCredit(targetId, creditAmount))
+        {
+            Notif.Notify($"Crédit de {creditAmount:N2} MAD accordé au compte {targetId}", NotificationType.SUCCESS);
+            targetId = 0; creditAmount = 0;
+            await ChargerDonnees();
+        }
+        else
+            Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+    }
+
+    private async Task LancerDepot()
+    {
+        if (depotTargetId <= 0 || depotMontant <= 0) { Notif.Notify("Valeurs non valides", NotificationType.ERROR); return; }
+        if (await AdminSvc.AdminDepot(depotTargetId, depotMontant))
+        {
+            Notif.Notify($"Dépôt de {depotMontant:N2} MAD effectué sur le compte {depotTargetId}", NotificationType.SUCCESS);
+            depotTargetId = 0; depotMontant = 0;
+            await ChargerDonnees();
+        }
+        else
+            Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+    }
+
+    private async Task VerifierEligibilite()
+    {
+        if (targetId <= 0) { Notif.Notify("ID manquant", NotificationType.ERROR); return; }
+        var eligible = await Bank.VerifierEligibiliteCredit(targetId);
+        Notif.Notify(eligible ? "Cible éligible" : "Cible rejetée : dossier incomplet ou solde négatif",
+            eligible ? NotificationType.SUCCESS : NotificationType.ERROR);
+    }
+
+    private async Task SearchUsers()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery)) { searchError = "Veuillez entrer un terme de recherche"; return; }
+        searchError = null;
+        isSearching = true;
+        try
+        {
+            searchResults = await AdminSvc.SearchUsersAsync(searchQuery);
+            if (!searchResults.Any())
+                searchError = "Aucun utilisateur trouvé";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur recherche utilisateur");
+            searchError = "Erreur lors de la recherche";
+        }
+        finally { isSearching = false; }
+    }
+
+    private void OpenResetModal(int userId)
+    {
+        resetUserId = userId;
+        resetPassword = "";
+        resetConfirmPassword = "";
+        showResetModal = true;
+    }
+
+    private async Task ConfirmResetPassword()
+    {
+        if (string.IsNullOrWhiteSpace(resetPassword) || resetPassword.Length < 6)
+        { Notif.Notify("Le mot de passe doit contenir au moins 6 caractères", NotificationType.ERROR); return; }
+        if (resetPassword != resetConfirmPassword)
+        { Notif.Notify("Les mots de passe ne correspondent pas", NotificationType.ERROR); return; }
+        if (await AdminSvc.ResetPasswordAsync(resetUserId, resetPassword))
+        {
+            Notif.Notify("Mot de passe réinitialisé avec succès", NotificationType.SUCCESS);
+            showResetModal = false;
+            await SearchUsers();
+        }
+        else
+            Notif.Notify("Échec de la réinitialisation", NotificationType.ERROR);
+    }
+
+    private RenderFragment RenderDashboard => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "admin-grid");
+
+        // Stats overview
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "cyber-panel");
+        builder.OpenElement(4, "h3");
+        builder.AddContent(5, "APERÇU GÉNÉRAL");
+        builder.CloseElement();
+        builder.OpenElement(6, "div");
+        builder.AddAttribute(7, "style", "display: grid; grid-template-columns: 1fr 1fr; gap: 16px;");
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "stat-card");
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "stat-label");
+        builder.AddContent(12, "Réserves totales");
+        builder.CloseElement();
+        builder.OpenElement(13, "div");
+        builder.AddAttribute(14, "class", "stat-value green");
+        builder.AddContent(15, totalBalance.ToString("N2"));
+        builder.AddContent(16, " MAD");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(17, "div");
+        builder.AddAttribute(18, "class", "stat-card");
+        builder.OpenElement(19, "div");
+        builder.AddAttribute(20, "class", "stat-label");
+        builder.AddContent(21, "Utilisateurs inscrits");
+        builder.CloseElement();
+        builder.OpenElement(22, "div");
+        builder.AddAttribute(23, "class", "stat-value");
+        builder.AddContent(24, totalUsers);
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(25, "div");
+        builder.AddAttribute(26, "class", "stat-card");
+        builder.OpenElement(27, "div");
+        builder.AddAttribute(28, "class", "stat-label");
+        builder.AddContent(29, "Demandes Premium");
+        builder.CloseElement();
+        builder.OpenElement(30, "div");
+        builder.AddAttribute(31, "class", "stat-value");
+        builder.AddContent(32, pendingPremiumCount);
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(33, "div");
+        builder.AddAttribute(34, "class", "stat-card");
+        builder.OpenElement(35, "div");
+        builder.AddAttribute(36, "class", "stat-label");
+        builder.AddContent(37, "Demandes de crédit");
+        builder.CloseElement();
+        builder.OpenElement(38, "div");
+        builder.AddAttribute(39, "class", "stat-value");
+        builder.AddContent(40, pendingCreditCount);
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+
+        // Actions rapides
+        builder.OpenElement(41, "div");
+        builder.AddAttribute(42, "class", "cyber-panel");
+        builder.OpenElement(43, "h3");
+        builder.AddContent(44, "ACTIONS RAPIDES");
+        builder.CloseElement();
+        builder.OpenElement(45, "div");
+        builder.AddAttribute(46, "class", "action-grid");
+        builder.AddAttribute(47, "style", "grid-template-columns: 1fr 1fr;");
+        builder.OpenElement(48, "button");
+        builder.AddAttribute(49, "class", "action-btn");
+        builder.AddAttribute(50, "onclick", EventCallback.Factory.Create(this, () => activeTab = "dossiers"));
+        builder.OpenElement(51, "i");
+        builder.AddAttribute(52, "class", "bi bi-shield-check icon-blue");
+        builder.CloseElement();
+        builder.AddContent(53, "KYC");
+        builder.CloseElement();
+        builder.OpenElement(54, "button");
+        builder.AddAttribute(55, "class", "action-btn");
+        builder.AddAttribute(56, "onclick", EventCallback.Factory.Create(this, () => activeTab = "credits"));
+        builder.OpenElement(57, "i");
+        builder.AddAttribute(58, "class", "bi bi-currency-exchange icon-gold");
+        builder.CloseElement();
+        builder.AddContent(59, "Crédits");
+        builder.CloseElement();
+        builder.OpenElement(60, "button");
+        builder.AddAttribute(61, "class", "action-btn");
+        builder.AddAttribute(62, "onclick", EventCallback.Factory.Create(this, () => activeTab = "depot"));
+        builder.OpenElement(63, "i");
+        builder.AddAttribute(64, "class", "bi bi-cash-stack icon-green");
+        builder.CloseElement();
+        builder.AddContent(65, "Dépôt");
+        builder.CloseElement();
+        builder.OpenElement(66, "button");
+        builder.AddAttribute(67, "class", "action-btn");
+        builder.AddAttribute(68, "onclick", EventCallback.Factory.Create(this, () => activeTab = "utilisateurs"));
+        builder.OpenElement(69, "i");
+        builder.AddAttribute(70, "class", "bi bi-people icon-blue");
+        builder.CloseElement();
+        builder.AddContent(71, "Utilisateurs");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+
+        // Derniers logs
+        builder.OpenElement(72, "div");
+        builder.AddAttribute(73, "class", "cyber-panel full-col");
+        builder.OpenElement(74, "h3");
+        builder.AddContent(75, "DERNIÈRES ACTIONS");
+        builder.CloseElement();
+        builder.OpenElement(76, "div");
+        builder.AddAttribute(77, "class", "terminal-view");
+        foreach (var log in logs.Take(5))
+        {
+            builder.OpenElement(78, "div");
+            builder.AddAttribute(79, "class", "log-line");
+            builder.OpenElement(80, "span");
+            builder.AddAttribute(81, "class", "log-ts");
+            builder.AddContent(82, $"[{log.Timestamp:HH:mm:ss}]");
+            builder.CloseElement();
+            builder.OpenElement(83, "span");
+            builder.AddAttribute(84, "class", "log-act");
+            builder.AddContent(85, log.Action);
+            builder.CloseElement();
+            builder.OpenElement(86, "span");
+            builder.AddAttribute(87, "class", "log-det");
+            builder.AddContent(88, $" :: {log.Details}");
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderDossiers => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "card");
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "card-head");
+        builder.OpenElement(4, "i");
+        builder.AddAttribute(5, "class", "bi bi-shield-lock-fill");
+        builder.CloseElement();
+        builder.OpenElement(6, "h2");
+        builder.AddContent(7, "DOSSIERS KYC EN ATTENTE");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "card-body");
+        if (!dossiersEnAttente.Any())
+        {
+            builder.OpenElement(10, "div");
+            builder.AddAttribute(11, "class", "empty-notif");
+            builder.AddContent(12, "Aucun dossier en attente");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(13, "div");
+            builder.AddAttribute(14, "style", "overflow-x: auto;");
+            builder.OpenElement(15, "table");
+            builder.AddAttribute(16, "class", "admin-table");
+            builder.OpenElement(17, "thead");
+            builder.OpenElement(18, "tr");
+            foreach (var h in new[] { "CANDIDAT", "NIVEAU", "STATUT", "PIÈCES", "ACTIONS" })
+            {
+                builder.OpenElement(19, "th");
+                builder.AddContent(20, h);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(21, "tbody");
+            foreach (var user in dossiersEnAttente)
+            {
+                builder.OpenElement(22, "tr");
+                builder.OpenElement(23, "td");
+                builder.OpenElement(24, "div");
+                builder.AddAttribute(25, "class", "user-meta");
+                builder.OpenElement(26, "strong");
+                builder.AddContent(27, $"{user.Prenom} {user.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(28, "small");
+                builder.AddContent(29, user.Email);
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(30, "td");
+                builder.AddContent(31, user.NiveauEtude);
+                builder.CloseElement();
+                builder.OpenElement(32, "td");
+                if (user.PendingPremiumUpgrade)
+                {
+                    builder.OpenElement(33, "span");
+                    builder.AddAttribute(34, "class", "badge badge-warning");
+                    builder.AddContent(35, "Premium");
+                    builder.CloseElement();
+                }
+                if (user.PendingCreditRequest)
+                {
+                    builder.OpenElement(36, "span");
+                    builder.AddAttribute(37, "class", "badge badge-info");
+                    builder.AddContent(38, "Crédit");
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+                builder.OpenElement(39, "td");
+                builder.AddAttribute(40, "class", "doc-status");
+                if (!string.IsNullOrEmpty(user.CvUrl)) { builder.OpenElement(41, "i"); builder.AddAttribute(42, "class", "bi bi-file-earmark-pdf-fill"); builder.AddAttribute(43, "title", "CV"); builder.CloseElement(); }
+                if (!string.IsNullOrEmpty(user.DocIdentiteUrl)) { builder.OpenElement(44, "i"); builder.AddAttribute(45, "class", "bi bi-card-heading"); builder.AddAttribute(46, "title", "ID"); builder.CloseElement(); }
+                if (!string.IsNullOrEmpty(user.DocScolariteUrl)) { builder.OpenElement(47, "i"); builder.AddAttribute(48, "class", "bi bi-mortarboard-fill"); builder.AddAttribute(49, "title", "Scolarité"); builder.CloseElement(); }
+                builder.CloseElement();
+                builder.OpenElement(50, "td");
+                builder.AddAttribute(51, "class", "action-cells");
+                builder.OpenElement(52, "button");
+                builder.AddAttribute(53, "class", "btn btn-success btn-sm");
+                builder.AddAttribute(54, "onclick", EventCallback.Factory.Create(this, () => ApprouverDossier(user.Id)));
+                builder.AddContent(55, "VALIDER");
+                builder.CloseElement();
+                builder.OpenElement(56, "button");
+                builder.AddAttribute(57, "class", "btn btn-ghost btn-sm");
+                builder.AddAttribute(58, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{user.Id}")));
+                builder.AddContent(59, "DÉTAILS");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderCredits => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "admin-grid");
+
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "card");
+        builder.OpenElement(4, "div");
+        builder.AddAttribute(5, "class", "card-head");
+        builder.OpenElement(6, "i");
+        builder.AddAttribute(7, "class", "bi bi-currency-exchange");
+        builder.CloseElement();
+        builder.OpenElement(8, "h2");
+        builder.AddContent(9, "OCTROI DE CRÉDIT");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "card-body");
+        builder.OpenElement(12, "div");
+        builder.AddAttribute(13, "class", "form-group");
+        builder.OpenElement(14, "label");
+        builder.AddContent(15, "ID DU COMPTE CIBLE");
+        builder.CloseElement();
+        builder.OpenElement(16, "input");
+        builder.AddAttribute(17, "type", "number");
+        builder.AddAttribute(18, "class", "form-input");
+        builder.AddAttribute(19, "placeholder", "Entrez l'ID");
+        builder.AddAttribute(20, "value", targetId == 0 ? "" : targetId.ToString());
+        builder.AddAttribute(21, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { int.TryParse(e.Value?.ToString(), out targetId); }));
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(22, "div");
+        builder.AddAttribute(23, "class", "form-group");
+        builder.OpenElement(24, "label");
+        builder.AddContent(25, "MONTANT DU CRÉDIT (MAD)");
+        builder.CloseElement();
+        builder.OpenElement(26, "input");
+        builder.AddAttribute(27, "type", "number");
+        builder.AddAttribute(28, "class", "form-input");
+        builder.AddAttribute(29, "placeholder", "0.00");
+        builder.AddAttribute(30, "value", creditAmount == 0 ? "" : creditAmount.ToString());
+        builder.AddAttribute(31, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out creditAmount); }));
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(32, "button");
+        builder.AddAttribute(33, "class", "btn btn-primary btn-block");
+        builder.AddAttribute(34, "onclick", EventCallback.Factory.Create(this, LancerCredit));
+        builder.AddContent(35, "ACCORDER LE CRÉDIT");
+        builder.CloseElement();
+        builder.OpenElement(36, "hr");
+        builder.AddAttribute(37, "style", "border-color: var(--border); margin: 20px 0;");
+        builder.CloseElement();
+        builder.OpenElement(38, "button");
+        builder.AddAttribute(39, "class", "btn btn-ghost btn-block");
+        builder.AddAttribute(40, "onclick", EventCallback.Factory.Create(this, VerifierEligibilite));
+        builder.AddContent(41, "VÉRIFIER L'ÉLIGIBILITÉ");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(42, "div");
+        builder.AddAttribute(43, "class", "card");
+        builder.OpenElement(44, "div");
+        builder.AddAttribute(45, "class", "card-head");
+        builder.OpenElement(46, "i");
+        builder.AddAttribute(47, "class", "bi bi-info-circle");
+        builder.CloseElement();
+        builder.OpenElement(48, "h2");
+        builder.AddContent(49, "DEMANDES EN ATTENTE");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(50, "div");
+        builder.AddAttribute(51, "class", "card-body");
+        var pendingCreditUsers = dossiersEnAttente.Where(u => u.PendingCreditRequest).ToList();
+        if (!pendingCreditUsers.Any())
+        {
+            builder.OpenElement(52, "div");
+            builder.AddAttribute(53, "class", "empty-notif");
+            builder.AddContent(54, "Aucune demande de crédit en attente");
+            builder.CloseElement();
+        }
+        else
+        {
+            foreach (var u in pendingCreditUsers)
+            {
+                builder.OpenElement(55, "div");
+                builder.AddAttribute(56, "class", "transaction-item");
+                builder.OpenElement(57, "div");
+                builder.AddAttribute(58, "class", "transaction-info");
+                builder.OpenElement(59, "div");
+                builder.AddAttribute(60, "class", "tx-type");
+                builder.AddContent(61, $"{u.Prenom} {u.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(62, "div");
+                builder.AddAttribute(63, "class", "tx-date");
+                builder.AddContent(64, $"#{u.Id} · {u.Email}");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(65, "div");
+                builder.AddAttribute(66, "class", "transaction-amount tx-negative");
+                builder.AddContent(67, $"+{u.PendingCreditAmount:N2} MAD");
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderDepot => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "card");
+        builder.AddAttribute(2, "style", "max-width: 500px;");
+        builder.OpenElement(3, "div");
+        builder.AddAttribute(4, "class", "card-head");
+        builder.OpenElement(5, "i");
+        builder.AddAttribute(6, "class", "bi bi-cash-stack");
+        builder.CloseElement();
+        builder.OpenElement(7, "h2");
+        builder.AddContent(8, "DÉPÔT ADMINISTRATIF");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(9, "div");
+        builder.AddAttribute(10, "class", "card-body");
+        builder.OpenElement(11, "div");
+        builder.AddAttribute(12, "class", "form-group");
+        builder.OpenElement(13, "label");
+        builder.AddContent(14, "ID DU COMPTE CIBLE");
+        builder.CloseElement();
+        builder.OpenElement(15, "input");
+        builder.AddAttribute(16, "type", "number");
+        builder.AddAttribute(17, "class", "form-input");
+        builder.AddAttribute(18, "placeholder", "Entrez l'ID");
+        builder.AddAttribute(19, "value", depotTargetId == 0 ? "" : depotTargetId.ToString());
+        builder.AddAttribute(20, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { int.TryParse(e.Value?.ToString(), out depotTargetId); }));
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(21, "div");
+        builder.AddAttribute(22, "class", "form-group");
+        builder.OpenElement(23, "label");
+        builder.AddContent(24, "MONTANT DU DÉPÔT (MAD)");
+        builder.CloseElement();
+        builder.OpenElement(25, "input");
+        builder.AddAttribute(26, "type", "number");
+        builder.AddAttribute(27, "class", "form-input");
+        builder.AddAttribute(28, "placeholder", "0.00");
+        builder.AddAttribute(29, "value", depotMontant == 0 ? "" : depotMontant.ToString());
+        builder.AddAttribute(30, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out depotMontant); }));
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(31, "button");
+        builder.AddAttribute(32, "class", "btn btn-success btn-block");
+        builder.AddAttribute(33, "onclick", EventCallback.Factory.Create(this, LancerDepot));
+        builder.AddContent(34, "EFFECTUER LE DÉPÔT");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderUtilisateurs => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "card");
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "card-head");
+        builder.OpenElement(4, "i");
+        builder.AddAttribute(5, "class", "bi bi-search");
+        builder.CloseElement();
+        builder.OpenElement(6, "h2");
+        builder.AddContent(7, "RECHERCHER UN UTILISATEUR");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "card-body");
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "style", "display: flex; gap: 12px;");
+        builder.AddAttribute(12, "class", "form-group");
+        builder.OpenElement(13, "input");
+        builder.AddAttribute(14, "type", "text");
+        builder.AddAttribute(15, "class", "form-input");
+        builder.AddAttribute(16, "placeholder", "Email, nom ou prénom...");
+        builder.AddAttribute(17, "value", searchQuery);
+        builder.AddAttribute(18, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => searchQuery = e.Value?.ToString() ?? ""));
+        builder.AddAttribute(19, "onkeydown", EventCallback.Factory.Create(this, (Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => { if (e.Key == "Enter") SearchUsers(); }));
+        builder.CloseElement();
+        builder.OpenElement(20, "button");
+        builder.AddAttribute(21, "class", "btn btn-primary");
+        builder.AddAttribute(22, "onclick", EventCallback.Factory.Create(this, SearchUsers));
+        builder.AddAttribute(23, "disabled", isSearching);
+        builder.AddContent(24, isSearching ? "..." : "CHERCHER");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+
+        if (searchError != null)
+        {
+            builder.OpenElement(25, "p");
+            builder.AddAttribute(26, "style", "color: var(--text-muted); padding: 0 20px 20px; font-size: 0.8rem;");
+            builder.AddContent(27, searchError);
+            builder.CloseElement();
+        }
+
+        if (searchResults.Any())
+        {
+            builder.OpenElement(28, "div");
+            builder.AddAttribute(29, "style", "overflow-x: auto; padding: 0 20px 20px;");
+            builder.OpenElement(30, "table");
+            builder.AddAttribute(31, "class", "admin-table");
+            builder.OpenElement(32, "thead");
+            builder.OpenElement(33, "tr");
+            foreach (var h in new[] { "ID", "NOM", "EMAIL", "SOLDE", "STATUT", "ACTIONS" })
+            {
+                builder.OpenElement(34, "th");
+                builder.AddContent(35, h);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(36, "tbody");
+            foreach (var u in searchResults)
+            {
+                builder.OpenElement(37, "tr");
+                builder.OpenElement(38, "td");
+                builder.AddContent(39, u.Id.ToString());
+                builder.CloseElement();
+                builder.OpenElement(40, "td");
+                builder.AddContent(41, $"{u.Prenom} {u.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(42, "td");
+                builder.AddContent(43, u.Email);
+                builder.CloseElement();
+                builder.OpenElement(44, "td");
+                builder.AddContent(45, $"{u.Solde:N2} MAD");
+                builder.CloseElement();
+                builder.OpenElement(46, "td");
+                builder.OpenElement(47, "span");
+                builder.AddAttribute(48, "class", $"badge badge-{(u.Statut == UserStatus.PREMIUM ? "success" : "info")}");
+                builder.AddContent(49, u.Statut.ToString());
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(50, "td");
+                builder.AddAttribute(51, "class", "action-cells");
+                builder.OpenElement(52, "button");
+                builder.AddAttribute(53, "class", "btn btn-ghost btn-sm");
+                builder.AddAttribute(54, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{u.Id}")));
+                builder.AddContent(55, "PROFIL");
+                builder.CloseElement();
+                builder.OpenElement(56, "button");
+                builder.AddAttribute(57, "class", "btn btn-primary btn-sm");
+                builder.AddAttribute(58, "onclick", EventCallback.Factory.Create(this, () => OpenResetModal(u.Id)));
+                builder.AddContent(59, "MDP");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderLogs => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "card");
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "card-head");
+        builder.OpenElement(4, "i");
+        builder.AddAttribute(5, "class", "bi bi-journal-text");
+        builder.CloseElement();
+        builder.OpenElement(6, "h2");
+        builder.AddContent(7, "HISTORIQUE DES ACTIONS ADMINISTRATIVES");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "card-body");
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "terminal-view");
+        builder.AddAttribute(12, "style", "max-height: 400px;");
+        if (!logs.Any())
+        {
+            builder.OpenElement(13, "div");
+            builder.AddAttribute(14, "class", "empty-notif");
+            builder.AddContent(15, "Aucune action enregistrée");
+            builder.CloseElement();
+        }
+        else
+        {
+            foreach (var log in logs)
+            {
+                builder.OpenElement(16, "div");
+                builder.AddAttribute(17, "class", "log-line");
+                builder.OpenElement(18, "span");
+                builder.AddAttribute(19, "class", "log-ts");
+                builder.AddContent(20, $"[{log.Timestamp:yyyy-MM-dd HH:mm:ss}]");
+                builder.CloseElement();
+                builder.OpenElement(21, "span");
+                builder.AddAttribute(22, "class", "log-act");
+                builder.AddContent(23, log.Action);
+                builder.CloseElement();
+                builder.OpenElement(24, "span");
+                builder.AddAttribute(25, "class", "log-sep");
+                builder.AddContent(26, " :: ");
+                builder.CloseElement();
+                builder.OpenElement(27, "span");
+                builder.AddAttribute(28, "class", "log-det");
+                builder.AddContent(29, log.Details);
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+}

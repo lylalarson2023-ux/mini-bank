@@ -1,0 +1,135 @@
+@page "/register"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@using MBANK_ETUDIANT.Models
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Components.Layout
+@using System.Text.RegularExpressions
+@inject BankService Bank
+@inject NavigationManager Nav
+@inject NotificationService Notif
+
+<NotificationOverlay />
+
+<div class="auth-wrapper" style="max-width: 520px;">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-title">
+                <span class="gold">M</span>BANK<span style="font-size: 0.7rem; color: var(--blue-500); margin-left: 8px;">ADN_ENROLEMENT</span>
+            </div>
+            <div style="height: 2px; width: 60%; margin: 12px auto; background: linear-gradient(90deg, transparent, var(--gold-500), transparent); opacity: 0.4;"></div>
+        </div>
+
+        <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
+            <h6 class="section-title" style="margin-bottom: 16px;">1. IDENTITE ET ACCES ADN</h6>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>PRENOM</label>
+                    <input @bind="newUser.Prenom" class="form-input" placeholder="Dan" />
+                </div>
+                <div class="form-group">
+                    <label>NOM</label>
+                    <input @bind="newUser.Nom" class="form-input" placeholder="Larson" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>EMAIL (ADN_ID)</label>
+                <input @bind="newUser.Email" type="email" class="form-input" placeholder="nom@adn.ma" />
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>MOT DE PASSE</label>
+                    <input @bind="newUser.MotDePasse" type="password" class="form-input" placeholder="......" />
+                </div>
+                <div class="form-group">
+                    <label>CONFIRMER</label>
+                    <input @bind="confirmPassword" type="password" class="form-input" placeholder="......" />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
+            <h6 class="section-title" style="margin-bottom: 16px;">2. COORDONNEES RESEAU</h6>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>VILLE</label>
+                    <select @bind="ville" class="form-select">
+                        <option value="">-- Choix --</option>
+                        @foreach (var v in optsV)
+                        {
+                            <option value="@v">@v</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>TELEPHONE</label>
+                    <input @bind="tel" class="form-input" placeholder="06..." />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+            <label class="checkbox-container">
+                <input type="checkbox" @bind="newUser.CguAcceptees" />
+                <span style="font-size: 0.7rem; color: var(--text-secondary);">J'ACCEPTE LE PROTOCOLE ADNcorporation</span>
+            </label>
+        </div>
+
+        <button type="button" class="btn btn-gold btn-block" @onclick="HandleRegister">
+            CREER MON ACCES ADN_ID
+        </button>
+
+        <div class="auth-footer">
+            <a href="/login">DEJA ENROLE ? ACCEDER AU TERMINAL</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private UserProfile newUser = new();
+    private string confirmPassword = "";
+    private string ville = "";
+    private string tel = "";
+    private List<string> optsV = new() { "Casablanca", "Rabat", "Marrakech", "Tanger", "Agadir" };
+
+    private async Task HandleRegister()
+    {
+        newUser.Ville = ville;
+        newUser.Telephone = tel;
+        var password = newUser.MotDePasse;
+
+        if (string.IsNullOrEmpty(newUser.Email) || string.IsNullOrEmpty(password))
+        {
+            Notif.Notify("ERREUR : Identifiants requis.", NotificationType.ERROR);
+            return;
+        }
+        if (password.Length < 6)
+        {
+            Notif.Notify("ERREUR : Mot de passe trop court (min. 6 caracteres).", NotificationType.ERROR);
+            return;
+        }
+        if (password != confirmPassword)
+        {
+            Notif.Notify("ERREUR : Mots de passe differents.", NotificationType.ERROR);
+            return;
+        }
+        if (!newUser.CguAcceptees)
+        {
+            Notif.Notify("PROTOCOLE : Acceptez les CGU.", NotificationType.ERROR);
+            return;
+        }
+
+        bool success = await Bank.CreerNouveauCompte(newUser, password);
+
+        if (success)
+        {
+            Notif.Notify("ACCES ADN CREE", NotificationType.SUCCESS);
+            await Task.Delay(1500);
+            Nav.NavigateTo("/login");
+        }
+        else
+        {
+            Notif.Notify("ECHEC : ADN_ID deja utilise.", NotificationType.ERROR);
+        }
+    }
+}

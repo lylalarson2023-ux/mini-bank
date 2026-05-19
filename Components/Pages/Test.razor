@@ -1,0 +1,67 @@
+@page "/test"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Models
+@using MBANK_ETUDIANT.Services
+@inject BankService BankService
+@inject NotificationService NotifService
+
+<div class="cyber-panel" style="max-width: 500px;">
+    <h3>SYSTEM_CHECK</h3>
+
+    <div class="form-group">
+        <button class="btn btn-primary btn-block" @onclick="CreerCompteTest">1. GENERER COMPTE TEST</button>
+    </div>
+
+    <div class="form-group">
+        <label>Email</label>
+        <input type="text" @bind="testEmail" class="form-input" />
+    </div>
+    <div class="form-group">
+        <label>Pass</label>
+        <input type="password" @bind="testPass" class="form-input" />
+    </div>
+    <div class="form-group">
+        <button class="btn btn-ghost btn-block" @onclick="TesterConnexion">2. TESTER CONNEXION</button>
+    </div>
+
+    @if (BankService.EstConnecte)
+    {
+        <div class="warning-box" style="border-color: var(--blue-500);">
+            ACCES AUTORISE : Bienvenue, @BankService.Profil.Prenom !<br />
+            Solde actuel : @BankService.Profil.Solde DH
+        </div>
+    }
+</div>
+
+@code {
+    private string testEmail = "test@adn.ma";
+    private string testPass = "1234";
+
+    private async Task CreerCompteTest()
+    {
+        var nouveau = new UserProfile
+        {
+            Prenom = "Etudiant",
+            Nom = "Test",
+            Email = testEmail,
+            Solde = 1000m
+        };
+
+        bool succes = await BankService.CreerNouveauCompte(nouveau, testPass);
+
+        if (succes)
+            NotifService.Success("Compte cree avec succes dans la base SQLite.");
+        else
+            NotifService.Error("Erreur : L'utilisateur existe deja.");
+    }
+
+    private async Task TesterConnexion()
+    {
+        bool result = await BankService.SeConnecter(testEmail, testPass);
+
+        if (result)
+            NotifService.Success("Connexion reussie !");
+        else
+            NotifService.Error("Echec de connexion : Identifiants invalides.");
+    }
+}

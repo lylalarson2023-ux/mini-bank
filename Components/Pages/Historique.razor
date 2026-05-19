@@ -1,0 +1,46 @@
+@page "/historique"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+
+<div class="cyber-panel">
+    <h3>LOGS_TRANSACTIONS</h3>
+
+    <div style="overflow-x: auto; margin-top: 16px;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>DATE</th>
+                    <th>TYPE</th>
+                    <th>MONTANT</th>
+                    <th>FRAIS</th>
+                    <th>MOTIF</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in transactions)
+                {
+                    <tr>
+                        <td>@item.Date.ToShortDateString()</td>
+                        <td class="@(item.Type == "DEPOT" || item.Type == "RECEPTION" ? "tx-positive" : "tx-negative")">
+                            @item.Type
+                        </td>
+                        <td>@item.MontantBrut.ToString("N2") DH</td>
+                        <td style="color: var(--text-muted);">@item.Frais.ToString("N2") DH</td>
+                        <td style="color: var(--text-muted);">@item.Motif</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<Transaction> transactions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        transactions = await Bank.GetHistoriqueAsync();
+    }
+}

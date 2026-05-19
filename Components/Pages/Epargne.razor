@@ -1,0 +1,198 @@
+@page "/epargne"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+@inject IJSRuntime JS
+
+<div class="cyber-panel">
+    <h3>MODULE_EPARGNE_PRO_V2</h3>
+
+    <div class="form-section" style="padding: 20px; margin-bottom: 20px;">
+        <h6 class="section-title" style="margin-bottom: 16px;">INITIALISER UN NOUVEL OBJECTIF</h6>
+        <div class="form-row">
+            <div class="form-group">
+                <label>NOM DE L'OBJECTIF :</label>
+                <input type="text" @bind="nouvelObjectif" class="form-input" placeholder="Ex: Tuteur - Frais Scolaires" />
+            </div>
+            <div class="form-group">
+                <label>MONTANT (MIN 100 DH) :</label>
+                <input type="number" @bind="montantInitial" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>DATE CIBLE :</label>
+                <input type="date" @bind="dateCible" class="form-input" />
+            </div>
+            <div class="form-group" style="display: flex; align-items: flex-end;">
+                <button class="btn btn-primary btn-block" @onclick="CreerPoche">VALIDER LE PLACEMENT</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="border-color: @(tuteurAutorise ? "var(--success)" : "var(--danger)"); margin-bottom: 20px;">
+        <div class="card-body" style="padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="badge @(tuteurAutorise ? "badge-success" : "badge-danger")">
+                    STATUS_TUTEUR : @(tuteurAutorise ? "ACTIF" : "NON_CONNECTE")
+                </span>
+            </div>
+
+            @if (!tuteurAutorise)
+            {
+                <div class="form-row" style="margin-top: 10px;">
+                    <div class="form-group" style="margin: 0;">
+                        <input type="email" @bind="emailTuteur" class="form-input" placeholder="Email du tuteur a autoriser..." />
+                    </div>
+                    <div class="form-group" style="margin: 0; display: flex; align-items: flex-end;">
+                        <button class="btn btn-primary btn-sm" @onclick="ValiderTuteur">AUTORISER</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="form-row" style="margin-top: 10px; align-items: center;">
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">
+                        Acces accorde a : <strong style="color: var(--text-primary);">@emailTuteur</strong>
+                    </span>
+                    <button class="btn btn-danger btn-sm" @onclick="RevoquerTuteur">REVOQUER</button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <h5 class="section-title">PORTEFEUILLE D'EPARGNE & DEPOTS TUTEURS</h5>
+    <div class="form-row">
+        @if (mesPoches != null)
+        {
+            @foreach (var p in mesPoches)
+            {
+                bool estTuteur = p.Objectif.Contains("TUTEUR", StringComparison.OrdinalIgnoreCase);
+
+                <div class="pocket-card @(estTuteur ? "pocket-tuteur" : "pocket-standard")">
+                    <div class="pocket-header">
+                        <span class="pocket-name">@(estTuteur ? "TU " : "")@p.Objectif.ToUpper()</span>
+                        <span class="pocket-amount">@p.CapitalActuel.ToString("N2") DH</span>
+                    </div>
+                    <div class="pocket-meta">
+                        ECHEANCE : @p.DateCible.ToShortDateString()
+                        @if (p.DateCible > DateTime.Now)
+                        {
+                            <span class="locked">[ BLOQUE ]</span>
+                        }
+                    </div>
+                    <div class="pocket-actions">
+                        <button class="btn btn-primary btn-sm" style="flex: 1;" @onclick="() => BoosterPoche(p)">BOOSTER</button>
+                        @if (p.DateCible > DateTime.Now && estTuteur)
+                        {
+                            <button class="btn btn-danger btn-sm" style="flex: 1;" @onclick="() => TenterRetraitForce(p)">
+                                RETRAIT ANTICIPE
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-success btn-sm" style="flex: 1;" @onclick="() => CasserPoche(p.Id)">
+                                RECUPERER LES FONDS
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private string nouvelObjectif = "";
+    private decimal montantInitial;
+    private DateTime dateCible = DateTime.Now.AddMonths(3);
+    private List<SavingsPocket> mesPoches = new();
+    private bool tuteurAutorise => Bank.Profil.TuteurAutorise;
+    private string emailTuteur = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        mesPoches = await Bank.GetPocketsAsync();
+        emailTuteur = Bank.Profil.TuteurEmail;
+    }
+
+    private async Task ValiderTuteur()
+    {
+        if (!string.IsNullOrWhiteSpace(emailTuteur))
+        {
+            var success = await Bank.DefinirTuteur(emailTuteur);
+            if (success)
+                Notif.Notify($"TUTEUR {emailTuteur} AUTORISE", NotificationType.SUCCESS);
+            else
+                Notif.Notify("ERREUR LORS DE L'AUTORISATION", NotificationType.ERROR);
+        }
+    }
+
+    private async Task RevoquerTuteur()
+    {
+        var success = await Bank.RevoquerTuteur();
+        if (success)
+        {
+            emailTuteur = "";
+            Notif.Notify("TUTEUR REVOQUE", NotificationType.INFO);
+        }
+    }
+
+    private async Task CreerPoche()
+    {
+        if (montantInitial < 100)
+        {
+            Notif.Notify("ECHEC : Le minimum requis est de 100 DH", NotificationType.ERROR);
+            return;
+        }
+
+        if (await Bank.CreerPocheEpargne(nouvelObjectif, montantInitial, dateCible))
+        {
+            Notif.Notify($"OBJECTIF '{nouvelObjectif}' OUVERT AVEC SUCCES", NotificationType.SUCCESS);
+            nouvelObjectif = "";
+            montantInitial = 0;
+            mesPoches = await Bank.GetPocketsAsync();
+        }
+    }
+
+    private async Task BoosterPoche(SavingsPocket poche)
+    {
+        string montantStr = await JS.InvokeAsync<string>("prompt", $"Montant a ajouter a la poche '{poche.Objectif}' ?");
+        if (decimal.TryParse(montantStr, out decimal montant) && montant > 0)
+        {
+            bool success = await Bank.BoosterPocheAsync(poche.Id, montant);
+            if (success)
+            {
+                Notif.Notify($"POCHE BOOSTEE DE {montant} DH", NotificationType.SUCCESS);
+                mesPoches = await Bank.GetPocketsAsync();
+            }
+            else
+            {
+                Notif.Notify("ECHEC : FONDS INSUFFISANTS", NotificationType.ERROR);
+            }
+        }
+    }
+
+    private async Task CasserPoche(int id)
+    {
+        if (await Bank.CasserPocheEpargne(id))
+        {
+            Notif.Notify("EPARGNE CASSEE", NotificationType.INFO);
+            mesPoches = await Bank.GetPocketsAsync();
+        }
+    }
+
+    private async Task TenterRetraitForce(SavingsPocket poche)
+    {
+        bool confirmer = await JS.InvokeAsync<bool>("confirm", $"ATTENTION : L'objectif '{poche.Objectif}' est surveille. Confirmer le retrait anticipe ?");
+
+        if (confirmer)
+        {
+            if (await Bank.CasserPocheEpargne(poche.Id))
+            {
+                Notif.Notify("RETRAIT EFFECTUE. ALERTE ENVOYEE AU TUTEUR.", NotificationType.INFO);
+                mesPoches = await Bank.GetPocketsAsync();
+            }
+        }
+    }
+}

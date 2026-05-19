@@ -1,0 +1,194 @@
+@page "/profil"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject BankService Bank
+@inject NotificationService Notif
+@inject UserContext UserCtx
+
+<div class="cyber-panel" style="max-width: 900px; margin: auto;">
+    <div style="text-align: center; margin-bottom: 24px;">
+        <h3 style="font-size: 1rem; color: var(--gold-500); font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">
+            DOSSIER_D'INSCRIPTION_V4
+        </h3>
+        <p style="font-size: 0.75rem; color: var(--blue-500);">
+            Completez votre dossier KYC pour debloquer les services Premium <i class="bi bi-shield-check"></i>
+        </p>
+    </div>
+
+    @if (Bank.Profil.PendingPremiumUpgrade)
+    {
+        <div class="status-banner pending">
+            <i class="bi bi-hourglass-split"></i> DOSSIER EN COURS DE VERIFICATION PAR L'ADMINISTRATION
+        </div>
+    }
+    else
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-person-vcard"></i> IDENTITE CIVILE</h6>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nom</label>
+                    <input type="text" @bind="kyc.Nom" placeholder="Votre nom" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Prenom</label>
+                    <input type="text" @bind="kyc.Prenom" placeholder="Votre prenom" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Date de naissance</label>
+                    <input type="date" @bind="kyc.DateNaissance" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Lieu de naissance</label>
+                    <input type="text" @bind="kyc.LieuNaissance" placeholder="Ville" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Nationalite</label>
+                    <input type="text" @bind="kyc.Nationalite" placeholder="Marocaine, etc." class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>N Passeport / CIN</label>
+                    <input type="text" @bind="kyc.PassportOuCIN" placeholder="N de document" class="form-input" />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-info-circle"></i> COORDONNEES & CURSUS</h6>
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label>Adresse de residence (Casablanca)</label>
+                    <input type="text" @bind="kyc.AdresseCasablanca" placeholder="Adresse complete" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Situation matrimoniale</label>
+                    <select @bind="kyc.SituationMatrimoniale" class="form-select">
+                        <option value="CELIBATAIRE">CELIBATAIRE</option>
+                        <option value="MARIE(E)">MARIE(E)</option>
+                        <option value="ETUDIANT">ETUDIANT</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Niveau d'etude</label>
+                    <select @bind="kyc.NiveauEtude" class="form-select">
+                        <option value="1ERE ANNEE DEV">1ERE ANNEE DEVELOPPEMENT</option>
+                        <option value="2EME ANNEE DEV">2EME ANNEE DEVELOPPEMENT</option>
+                        <option value="MASTER">MASTER / BAC+5</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Telephone</label>
+                    <input type="text" @bind="kyc.Telephone" placeholder="+212..." class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label>Reseau Social Principal (Obligatoire)</label>
+                    <input type="text" @bind="kyc.ReseauPrincipal" placeholder="Lien LinkedIn ou TikTok" class="form-input" />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-cloud-arrow-up"></i> JUSTIFICATIFS (MAX 2MO)</h6>
+            <div class="upload-grid">
+                <div class="upload-card @(string.IsNullOrEmpty(kyc.DocIdentiteUrl) ? "" : "has-file")">
+                    <div class="upload-icon"><i class="bi bi-card-image"></i></div>
+                    <label>SCAN PIECE D'IDENTITE</label>
+                    <InputFile OnChange="@(e => HandleUpload(e, "ID"))" style="font-size: 0.7rem; color: var(--text-muted);" />
+                    @if (!string.IsNullOrEmpty(kyc.DocIdentiteUrl))
+                    {
+                        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                            <span class="badge badge-success">PRET</span>
+                            <a href="@kyc.DocIdentiteUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                        </div>
+                    }
+                </div>
+                <div class="upload-card @(string.IsNullOrEmpty(kyc.DocDomicileUrl) ? "" : "has-file")">
+                    <div class="upload-icon"><i class="bi bi-house-check"></i></div>
+                    <label>JUSTIFICATIF DOMICILE</label>
+                    <InputFile OnChange="@(e => HandleUpload(e, "DOMICILE"))" style="font-size: 0.7rem; color: var(--text-muted);" />
+                    @if (!string.IsNullOrEmpty(kyc.DocDomicileUrl))
+                    {
+                        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                            <span class="badge badge-success">PRET</span>
+                            <a href="@kyc.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 24px; text-align: center;">
+            <label class="checkbox-container" style="justify-content: center; font-size: 0.8rem; color: var(--text-secondary);">
+                <input type="checkbox" @bind="kyc.CguAcceptees" />
+                J'accepte les conditions d'utilisation et le prelevement de 100 DH pour le passage en Premium.
+            </label>
+        </div>
+
+        <button class="btn btn-primary btn-block @(!PeutSoumettre ? "disabled" : "")"
+                disabled="@(!PeutSoumettre)"
+                @onclick="SoumettreDossier"
+                style="margin-top: 16px;">
+            ENVOYER LE DOSSIER AU MASTER ADMIN
+        </button>
+    }
+</div>
+
+@code {
+    private UserProfile kyc = new();
+
+    protected override void OnInitialized()
+    {
+        if (UserCtx.KycFormState != null)
+            kyc = UserCtx.KycFormState;
+    }
+
+    private bool PeutSoumettre =>
+        !string.IsNullOrEmpty(kyc.ReseauPrincipal) &&
+        kyc.CguAcceptees &&
+        !string.IsNullOrEmpty(kyc.DocIdentiteUrl) &&
+        !string.IsNullOrEmpty(kyc.DocDomicileUrl) &&
+        !string.IsNullOrEmpty(kyc.Nom) &&
+        !string.IsNullOrEmpty(kyc.PassportOuCIN) &&
+        !string.IsNullOrEmpty(kyc.AdresseCasablanca) &&
+        !string.IsNullOrEmpty(kyc.Telephone);
+
+    private async Task HandleUpload(InputFileChangeEventArgs e, string type)
+    {
+        try
+        {
+            if (e.File == null) return;
+            UserCtx.KycFormState = kyc;
+            var url = await Bank.EnregistrerFichierSurDisque(e.File);
+            if (type == "ID") kyc.DocIdentiteUrl = url;
+            if (type == "DOMICILE") kyc.DocDomicileUrl = url;
+            UserCtx.KycFormState = kyc;
+            Notif.Notify("FICHIER TELEVERSE AVEC SUCCES", NotificationType.SUCCESS);
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            Notif.Notify("ERREUR TELEVERSEMENT", NotificationType.ERROR);
+        }
+        finally
+        {
+            UserCtx.KycFormState = kyc;
+        }
+    }
+
+    private async Task SoumettreDossier()
+    {
+        if (Bank.Profil.Solde < 100m)
+        {
+            Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
+            return;
+        }
+
+        var success = await Bank.SoumettreDossierKYC(kyc);
+        if (success)
+            Notif.Notify("DOSSIER TRANSMIS AVEC SUCCES (100 DH PRELEVES)", NotificationType.SUCCESS);
+        else
+            Notif.Notify("ERREUR LORS DE LA TRANSMISSION", NotificationType.ERROR);
+    }
+}

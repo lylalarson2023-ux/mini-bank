@@ -1,0 +1,75 @@
+@page "/virement"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+
+<div class="cyber-panel" style="max-width: 560px;">
+    <h3>MODULE DE VIREMENT</h3>
+
+    <div class="warning-box">
+        SOLDE DISPONIBLE : <span class="highlight">@Bank.Profil.Solde.ToString("N2") DH</span>
+    </div>
+
+    <div style="margin-top: 24px;">
+        <div class="form-group">
+            <label>DESTINATAIRE (EMAIL)</label>
+            <input type="email" @bind="destinataire" class="form-input" placeholder="email@adn.ma" />
+        </div>
+
+        <div class="form-group">
+            <label>MONTANT (DH)</label>
+            <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+        </div>
+
+        <div class="form-group">
+            <label>MOTIF (OPTIONNEL)</label>
+            <input type="text" @bind="motif" class="form-input" placeholder="Ex: Remboursement" />
+        </div>
+
+        <button class="btn btn-primary btn-block" @onclick="EffectuerVirement"
+                disabled="@(isProcessing || string.IsNullOrWhiteSpace(destinataire) || montant <= 0)">
+            @(isProcessing ? "TRAITEMENT..." : "VALIDER LE VIREMENT")
+        </button>
+    </div>
+
+    <div style="margin-top: 24px; text-align: center;">
+        <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">&larr; RETOUR DASHBOARD</a>
+    </div>
+</div>
+
+@code {
+    private string destinataire = "";
+    private decimal montant;
+    private string motif = "";
+    private bool isProcessing;
+
+    private async Task EffectuerVirement()
+    {
+        if (isProcessing || string.IsNullOrWhiteSpace(destinataire) || montant <= 0) return;
+        isProcessing = true;
+        try
+        {
+        if (Bank.Profil.Solde < montant)
+        {
+            Notif.Notify("FONDS INSUFFISANTS", NotificationType.ERROR);
+            return;
+        }
+
+        var libelle = (string.IsNullOrWhiteSpace(motif) ? "" : motif);
+        var success = await Bank.EffectuerVirementAsync(destinataire, montant, libelle);
+            if (success)
+            {
+                Notif.Notify($"VIREMENT DE {montant:N2} DH VERS {destinataire.ToUpper()} EFFECTUE", NotificationType.SUCCESS);
+                destinataire = "";
+                montant = 0;
+                motif = "";
+            }
+            else
+                Notif.Notify("ECHEC : DESTINATAIRE INTROUVABLE OU FONDS INSUFFISANTS", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+}

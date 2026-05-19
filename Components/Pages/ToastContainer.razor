@@ -1,0 +1,73 @@
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject NotificationService Notif
+@implements IDisposable
+
+<div class="toast-stack">
+    @foreach (var alert in activeAlerts)
+    {
+        <div class="cyber-alert @alert.Type.ToString().ToLower()">
+            <div class="alert-header">
+                <span class="bi @GetIcon(alert.Type)"></span>
+                <span class="alert-title">SYSTÈME_NOTIFICATION</span>
+                <span class="alert-time">@alert.Timestamp.ToShortTimeString()</span>
+            </div>
+            <div class="alert-body">
+                @alert.Message
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .toast-stack { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 15px; width: 350px; }
+    .cyber-alert { 
+        background: rgba(10, 10, 15, 0.95); border: 1px solid #00ffff; color: #fff;
+        padding: 15px; border-radius: 2px; position: relative; overflow: hidden;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.2); animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .cyber-alert.success { border-color: #3fb950; box-shadow: 0 0 20px rgba(63, 185, 80, 0.2); }
+    .cyber-alert.error { border-color: #f85149; box-shadow: 0 0 20px rgba(248, 81, 73, 0.2); }
+    .cyber-alert.info { border-color: #ff00ff; box-shadow: 0 0 20px rgba(255, 0, 255, 0.2); }
+    
+    .alert-header { display: flex; justify-content: space-between; font-size: 0.6rem; margin-bottom: 8px; color: #8b949e; letter-spacing: 1px; }
+    .alert-body { font-size: 0.85rem; font-family: 'Courier New', monospace; line-height: 1.4; }
+    .progress-track { position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: rgba(255,255,255,0.1); }
+    .progress-fill { height: 100%; background: currentColor; width: 100%; animation: shrink 4s linear forwards; }
+
+    @@keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @@keyframes shrink { from { width: 100%; } to { width: 0%; } }
+</style>
+
+@code {
+    private List<Notification> activeAlerts = new();
+
+    protected override void OnInitialized() => Notif.OnNotificationReceived += HandleNewNotif;
+
+    private async void HandleNewNotif(Notification n)
+    {
+        await InvokeAsync(() => {
+            activeAlerts.Add(n);
+            StateHasChanged();
+        });
+
+
+        await Task.Delay(4000); // Éphémère : 4 secondes
+
+        await InvokeAsync(() => {
+            activeAlerts.Remove(n);
+            StateHasChanged();
+        });
+    }
+
+    private string GetIcon(NotificationType t) => t switch {
+        NotificationType.SUCCESS => "bi-shield-check",
+        NotificationType.ERROR => "bi-shield-slash",
+        _ => "bi-cpu"
+    };
+
+    public void Dispose() => Notif.OnNotificationReceived -= HandleNewNotif;
+}

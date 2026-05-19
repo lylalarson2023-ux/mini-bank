@@ -1,0 +1,21 @@
+@page "/access-denied"
+@using MBANK_ETUDIANT.Services
+@inject NavigationManager Nav
+
+<div class="auth-layout">
+    <div class="auth-wrapper">
+        <div class="auth-card" style="text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 10px; color: var(--danger);">!</div>
+            <h2 style="color: var(--danger); font-weight: 800; letter-spacing: 2px; margin: 0;">ACCES REFUSE</h2>
+            <p style="color: var(--text-secondary); margin: 20px 0; font-size: 0.85rem;">
+                VOS AUTORISATIONS NE CORRESPONDENT PAS AU NIVEAU REQUIS POUR CETTE ZONE.
+            </p>
+            <p style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 30px;">
+                SI VOUS PENSEZ QU'IL S'AGIT D'UNE ERREUR, CONTACTEZ L'ADMINISTRATEUR RESEAU.
+            </p>
+            <button class="btn btn-gold" @onclick='() => Nav.NavigateTo("/")' style="padding: 12px 40px;">
+                RETOUR AU TERMINAL
+            </button>
+        </div>
+    </div>
+</div>
