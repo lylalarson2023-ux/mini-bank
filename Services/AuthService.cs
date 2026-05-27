@@ -83,19 +83,27 @@ namespace MBANK_ETUDIANT.Services
         {
             if (_user.EstConnecte) return true;
 
-            var userIdClaim = _http.HttpContext?.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var userId))
+            var httpUser = _http.HttpContext?.User;
+            if (httpUser?.Identity?.IsAuthenticated != true) return false;
+
+            var userIdClaim = httpUser.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+                return false;
+
+            var user = await _context.UserProfiles.FindAsync(userId);
+            if (user == null) return false;
+
+            var cookieStamp = httpUser.FindFirst("SecurityStamp")?.Value;
+            if (!string.IsNullOrEmpty(cookieStamp) && cookieStamp != user.SecurityStamp)
             {
-                var user = await _context.UserProfiles.FindAsync(userId);
-                if (user != null)
-                {
-                    _user.Profil = user;
-                    _user.EstConnecte = true;
-                    _logger.LogInformation("Session restaurée via cookie pour UserId={UserId}", userId);
-                    return true;
-                }
+                _logger.LogWarning("SecurityStamp mismatch pour UserId={UserId} — session révoquée", userId);
+                return false;
             }
-            return false;
+
+            _user.Profil = user;
+            _user.EstConnecte = true;
+            _logger.LogInformation("Session restaurée via cookie pour UserId={UserId}", userId);
+            return true;
         }
 
         public void Deconnexion()
@@ -140,9 +148,8 @@ namespace MBANK_ETUDIANT.Services
             }
             catch (Exception ex)
             {
-                var msg = ex.InnerException?.Message ?? ex.Message;
                 _logger.LogError(ex, "Échec création compte {Email}", u.Email);
-                return (false, $"Erreur technique : {msg}");
+                return (false, "Une erreur technique est survenue. Veuillez réessayer.");
             }
         }
         public async Task MigreMotsDePasseEnClair()

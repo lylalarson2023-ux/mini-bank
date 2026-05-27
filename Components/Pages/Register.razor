@@ -176,9 +176,9 @@
                 Notif.Notify(msg, NotificationType.ERROR);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"Erreur technique : {ex.Message}";
+            errorMessage = "Une erreur technique est survenue. Veuillez réessayer.";
             Notif.Notify("ERREUR LORS DE LA CREATION", NotificationType.ERROR);
         }
         finally

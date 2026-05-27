@@ -52,8 +52,8 @@
     private string errorMessage = "";
     private bool isLoading = false;
 
-    private static string SignToken(string payload) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    private static string SignToken(string payload, string secret) =>
+        Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 
     protected override void OnInitialized()
     {
@@ -95,7 +95,7 @@
                     errorMessage = "ERREUR DE CONFIGURATION SERVEUR";
                     return;
                 }
-                var sig = SignToken($"{userId}:{secret}");
+                var sig = SignToken(userId.ToString(), secret);
                 Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&sig={sig}", forceLoad: true);
             }
             else
@@ -103,9 +103,9 @@
                 errorMessage = "Email ou mot de passe incorrect.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"Erreur technique : {ex.Message}";
+            errorMessage = "Une erreur technique est survenue. Veuillez réessayer.";
         }
         finally
         {

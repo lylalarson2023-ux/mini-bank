@@ -368,7 +368,6 @@
 
     // Connexions
     private List<UserLogin> loginHistory = new();
-    private string revokeMsg = "";
 
     // Plafonds
     private decimal plafondJournalier = 5000;
@@ -537,12 +536,12 @@ document.body.removeChild(a);";
         {
             if (await Bank.RevokeAllSessionsAsync())
             {
-                revokeMsg = "Toutes les sessions ont été révoquées. Vous allez être déconnecté.";
+                Notif.Notify("Toutes les sessions ont été révoquées", NotificationType.INFO);
                 await Task.Delay(2000);
                 Nav.NavigateTo("/api/auth/logout", forceLoad: true);
             }
         }
-        catch { revokeMsg = "Erreur lors de la révocation"; }
+        catch { Notif.Notify("Erreur lors de la révocation", NotificationType.ERROR); }
         finally { saving = false; }
     }
 

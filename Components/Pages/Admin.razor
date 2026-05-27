@@ -343,8 +343,16 @@
     private async Task ConfirmResetPassword()
     {
         if (isProcessing) return;
-        if (string.IsNullOrWhiteSpace(resetPassword) || resetPassword.Length < 6)
-        { Notif.Notify("Le mot de passe doit contenir au moins 6 caractères", NotificationType.ERROR); return; }
+        if (string.IsNullOrWhiteSpace(resetPassword) || resetPassword.Length < 8)
+        { Notif.Notify("Le mot de passe doit contenir au moins 8 caractères", NotificationType.ERROR); return; }
+        if (!resetPassword.Any(char.IsUpper))
+        { Notif.Notify("Le mot de passe doit contenir au moins une majuscule", NotificationType.ERROR); return; }
+        if (!resetPassword.Any(char.IsLower))
+        { Notif.Notify("Le mot de passe doit contenir au moins une minuscule", NotificationType.ERROR); return; }
+        if (!resetPassword.Any(char.IsDigit))
+        { Notif.Notify("Le mot de passe doit contenir au moins un chiffre", NotificationType.ERROR); return; }
+        if (!resetPassword.Any(c => !char.IsLetterOrDigit(c)))
+        { Notif.Notify("Le mot de passe doit contenir au moins un caractère spécial", NotificationType.ERROR); return; }
         if (resetPassword != resetConfirmPassword)
         { Notif.Notify("Les mots de passe ne correspondent pas", NotificationType.ERROR); return; }
         isProcessing = true;

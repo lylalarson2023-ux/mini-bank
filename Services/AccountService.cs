@@ -254,7 +254,9 @@ namespace MBANK_ETUDIANT.Services
 
             if (!newPassword.Any(char.IsUpper))
                 return (false, "Le mot de passe doit contenir au moins une majuscule");
-            
+
+            if (!newPassword.Any(char.IsLower))
+                return (false, "Le mot de passe doit contenir au moins une minuscule");
 
             if (!newPassword.Any(char.IsDigit))
                 return (false, "Le mot de passe doit contenir au moins un chiffre");
@@ -262,7 +264,15 @@ namespace MBANK_ETUDIANT.Services
             if (!newPassword.Any(c => !char.IsLetterOrDigit(c)))
                 return (false, "Le mot de passe doit contenir au moins un caractère spécial (!@#$%^&*)");
 
-            var commonPasswords = new HashSet<string> { "Password123!", "12345678", "Azerty123", "Motdepasse1", "Admin123!", "Test1234!" };
+            var commonPasswords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Password123!", "12345678", "Azerty123", "Motdepasse1", "Admin123!", "Test1234!",
+                "123456789", "Password1", "Qwerty123", "Aa123456", "Abcd1234", "Hello123",
+                "Welcome1", "Passer123", "00000000", "11111111", "Mot2passe", "P@ssword1",
+                "Password123", "Password12", "azertyuiop", "123456", "motdepasse", "admin",
+                "1234", "azerty", "0000", "passer", "soleil", "1234567890", "abc123",
+                "Password!", "P@ssw0rd", "PASSWORD", "Passw0rd", "qwerty123", "azerty123"
+            };
             if (commonPasswords.Contains(newPassword))
                 return (false, "Ce mot de passe est trop commun. Veuillez en choisir un plus sécurisé.");
 

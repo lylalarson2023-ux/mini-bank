@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using MBANK_ETUDIANT.Services;
 using MBANK_ETUDIANT.Components;
@@ -41,6 +42,18 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContext<BankDbContext>(options =>
     options.UseSqlite("Data Source=MbankData.db"));
 
+// --- RATE LIMITING ---
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.AddFixedWindowLimiter("Strict", opt =>
+    {
+        opt.PermitLimit = 10;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueLimit = 0;
+    });
+});
+
 // --- STRIPE ---
 var stripeSecret = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
 var stripePublishable = Environment.GetEnvironmentVariable("STRIPE_PUBLISHABLE_KEY");
@@ -70,7 +83,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "MBANK_AUTH";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/access-denied";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
@@ -85,8 +98,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
+    options.ForwardLimit = 1;
 });
 
 var app = builder.Build();
@@ -138,15 +150,15 @@ app.UseHsts();
 app.UseForwardedHeaders();
 app.UseStatusCodePagesWithReExecute("/not-found");
 app.UseStaticFiles();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
 // --- ENDPOINT DE CONNEXION (pose le cookie auth) ---
-// Protégé par un HMAC : impossible d'usurper un userId sans connaître la clé secrète
 static string SignToken(string payload, string secret)
 {
-    return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{payload}:{secret}")));
+    return Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 }
 
 app.MapGet("/api/auth/login-handler", async (HttpContext ctx, BankDbContext db, int userId, string sig) =>
@@ -164,6 +176,7 @@ app.MapGet("/api/auth/login-handler", async (HttpContext ctx, BankDbContext db, 
         new(ClaimTypes.GivenName, user.Prenom),
         new(ClaimTypes.Surname, user.Nom),
         new(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User"),
+        new("SecurityStamp", user.SecurityStamp),
     };
     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
     await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
@@ -178,7 +191,7 @@ app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
 });
 
 // --- STRIPE SUCCESS (retour après paiement réussi) ---
-app.MapGet("/api/stripe/success", async (HttpContext ctx, StripeService stripe, string session_id, int user_id) =>
+app.MapGet("/api/stripe/success", async (HttpContext ctx, StripeService stripe, string session_id) =>
 {
     await stripe.ConfirmerDepotAsync(session_id);
     return Results.Redirect("/depot?paid=ok");
