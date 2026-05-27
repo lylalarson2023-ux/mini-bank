@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: mbank-etudiant
+    name: adn-eco
     env: dotnet
     repo: https://github.com/lylalarson2023-ux/mini-bank
     branch: master
