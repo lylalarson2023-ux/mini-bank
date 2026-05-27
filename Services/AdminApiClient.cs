@@ -145,7 +145,7 @@ public class AdminLogEntry
     public AdminLog ToAdminLog() => new()
     {
         Id = Id,
-        Timestamp = DateTime.TryParse(Timestamp, out var dt) ? dt : DateTime.Now,
+        Timestamp = DateTime.TryParse(Timestamp, out var dt) ? dt : DateTime.UtcNow,
         Action = Action ?? "",
         Cible = Cible ?? "",
         Details = Details ?? "",

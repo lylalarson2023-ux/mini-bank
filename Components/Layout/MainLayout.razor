@@ -4,6 +4,7 @@
 @inject MBANK_ETUDIANT.Services.BankService Bank
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 
 <div class="page">
     @if (isCheckingSession)
@@ -52,6 +53,16 @@
                 </div>
 
                 <div class="user-info">
+                    <button class="theme-toggle-btn" @onclick="ToggleTheme" title="Changer le thème">
+                        <i id="theme-icon" class="bi bi-sun-fill"></i>
+                    </button>
+                    <button class="notif-bell" @onclick="GoToNotifications" title="Notifications">
+                        <i class="bi bi-bell-fill"></i>
+                        @if (notifCount > 0)
+                        {
+                            <span class="notif-badge">@notifCount</span>
+                        }
+                    </button>
                     <div class="user-badge">
                         <div class="rank">STUDENT</div>
                         <div class="name">@Bank.Profil.Prenom?.ToUpper() @Bank.Profil.Nom?.ToUpper()</div>
@@ -65,6 +76,15 @@
             <div class="content-area">
                 @Body
             </div>
+
+            <footer class="legal-footer-bar">
+                <div class="footer-links">
+                    <a href="/cgu">CGU</a>
+                    <a href="/confidentialite">Confidentialité</a>
+                    <a href="/mentions-legales">Mentions Légales</a>
+                </div>
+                <span class="footer-copy">&copy; @DateTime.Now.Year MBANK CORPORATION. Tous droits réservés.</span>
+            </footer>
         </div>
 
         <MBANK_ETUDIANT.Components.Layout.NotificationOverlay />
@@ -75,6 +95,13 @@
 {
     private bool isCheckingSession = true;
     private bool sidebarOpen = false;
+    private int notifCount;
+
+    private async Task ToggleTheme()
+    {
+        try { await JS.InvokeVoidAsync("mbankTheme.toggle"); }
+        catch { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -87,11 +114,13 @@
         {
             var userId = int.Parse(user.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             await Bank.InitializeAsync(userId);
+            notifCount = await Bank.GetUnreadCountAsync();
         }
 
         isCheckingSession = false;
 
-        if (!Bank.EstConnecte && !Nav.Uri.EndsWith("/login") && !Nav.Uri.EndsWith("/register") && !Nav.Uri.Contains("access-denied"))
+        if (!Bank.EstConnecte && !Nav.Uri.Contains("/login") && !Nav.Uri.EndsWith("/register") && !Nav.Uri.Contains("access-denied")
+            && !Nav.Uri.EndsWith("/cgu") && !Nav.Uri.EndsWith("/confidentialite") && !Nav.Uri.EndsWith("/mentions-legales"))
         {
             Nav.NavigateTo("/login");
         }
@@ -106,5 +135,10 @@
     {
         Bank.Deconnexion();
         Nav.NavigateTo("/api/auth/logout", forceLoad: true);
+    }
+
+    private void GoToNotifications()
+    {
+        Nav.NavigateTo("/notifications");
     }
 }

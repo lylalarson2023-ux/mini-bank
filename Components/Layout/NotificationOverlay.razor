@@ -4,25 +4,24 @@
 @inject NotificationService NotifService
 @implements IDisposable
 
-@if (!string.IsNullOrEmpty(Message))
-{
-    <div class="notif-container">
-        <div class="notif-box @(Type == NotificationType.ERROR ? "notif-error" : Type == NotificationType.INFO ? "notif-info" : "notif-success")">
-            <div class="notif-header">
-                <span class="notif-tag">[ @(Type == NotificationType.ERROR ? "ERR" : Type == NotificationType.INFO ? "INFO" : "OK") ]</span>
-                <span class="notif-time">@DateTime.Now.ToString("HH:mm:ss")</span>
+<div class="toast-container">
+    @foreach (var toast in Toasts)
+    {
+        <div class="toast @GetClass(toast.Type)" @key="toast.Id">
+            <div class="toast-icon">@GetIcon(toast.Type)</div>
+            <div class="toast-body">
+                <div class="toast-type">@GetLabel(toast.Type)</div>
+                <div class="toast-msg">@toast.Message</div>
             </div>
-            <div class="notif-body">
-                @Message
-            </div>
-            <div class="notif-scanline"></div>
+            <button class="toast-close" @onclick="() => Dismiss(toast.Id)">&times;</button>
+            <div class="toast-bar" style="animation-duration: @(toast.Duration)ms;"></div>
         </div>
-    </div>
-}
+    }
+</div>
 
 @code {
-    private string? Message { get; set; }
-    private NotificationType Type { get; set; }
+    private List<ToastItem> Toasts = new();
+    private int _nextId;
 
     protected override void OnInitialized()
     {
@@ -31,18 +30,62 @@
 
     private void HandleNotification(Notification notification)
     {
-        Message = notification.Message;
-        Type = notification.Type;
-        InvokeAsync(StateHasChanged);
+        var toast = new ToastItem
+        {
+            Id = ++_nextId,
+            Message = notification.Message,
+            Type = notification.Type,
+            Duration = notification.Type == NotificationType.ERROR ? 6000 : 4000
+        };
+        InvokeAsync(() =>
+        {
+            Toasts.Add(toast);
+            StateHasChanged();
+        });
 
-        _ = Task.Delay(5000).ContinueWith(_ => {
-            Message = null;
-            InvokeAsync(StateHasChanged);
+        _ = Task.Delay(toast.Duration).ContinueWith(_ =>
+        {
+            InvokeAsync(() => Dismiss(toast.Id));
         });
     }
+
+    private void Dismiss(int id)
+    {
+        Toasts.RemoveAll(t => t.Id == id);
+        StateHasChanged();
+    }
+
+    private string GetClass(NotificationType t) => t switch
+    {
+        NotificationType.SUCCESS => "toast-success",
+        NotificationType.ERROR => "toast-error",
+        _ => "toast-info"
+    };
+
+    private string GetIcon(NotificationType t) => t switch
+    {
+        NotificationType.SUCCESS => "✓",
+        NotificationType.ERROR => "✕",
+        _ => "ℹ"
+    };
+
+    private string GetLabel(NotificationType t) => t switch
+    {
+        NotificationType.SUCCESS => "Succès",
+        NotificationType.ERROR => "Erreur",
+        _ => "Information"
+    };
 
     public void Dispose()
     {
         NotifService.OnNotificationReceived -= HandleNotification;
+    }
+
+    private class ToastItem
+    {
+        public int Id { get; set; }
+        public string Message { get; set; } = "";
+        public NotificationType Type { get; set; }
+        public int Duration { get; set; } = 4000;
     }
 }

@@ -29,6 +29,18 @@ namespace MBANK_ETUDIANT.Services
         {
             var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return false;
+
+            var demande = new CreditRequest
+            {
+                UserId = _user.Profil.Id,
+                Montant = montant,
+                Categorie = categorie,
+                DureeMois = dureeMois,
+                Statut = "EN_ATTENTE",
+                DateDemande = DateTime.UtcNow
+            };
+            _context.CreditRequests.Add(demande);
+
             u.PendingCreditRequest = true;
             u.PendingCreditAmount = montant;
             u.PendingCreditMotif = $"Catégorie: {categorie}, Durée: {dureeMois} mois";

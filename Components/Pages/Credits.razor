@@ -5,66 +5,173 @@
 @inject BankService Bank
 @inject NotificationService Notif
 
-<div class="cyber-panel">
-    <h3>MODULE_CREDIT_V1</h3>
-    <div class="warning-box">VERIFICATION DE SOLVABILITE EN TEMPS REEL</div>
+<div class="content-area" style="max-width: 800px;">
+    <div class="page-header">
+        <h3>Crédit</h3>
+        <span class="page-header-badge">Simulation avec tableau d'amortissement</span>
+    </div>
 
+    @* ─── ÉLIGIBILITÉ ─── *@
     @if (!eligible)
     {
-        <div class="error-panel">
-            <h5>ACCES REFUSE : CRITERES NON REMPLIS</h5>
-            <ul class="elig-list">
-                <li class="@(Bank.Profil.Statut != UserStatus.STANDARD ? "pass" : "fail")">
-                    &bull; STATUT PREMIUM OU VIP REQUIS
-                </li>
-                <li class="@(nbTransactions >= 3 ? "pass" : "fail")">
-                    &bull; MINIMUM 3 TRANSACTIONS VALIDEES (ACTUEL : @nbTransactions)
-                </li>
-                <li style="color: var(--text-muted);">
-                    &bull; VOLUME DE FLUX : @fluxTotal.ToString("N2") DH (REQUIS : 2X LE MONTANT DU PRET)
-                </li>
-            </ul>
+        <div class="credit-elig-banner">
+            <div class="elig-icon">!</div>
+            <div class="elig-content">
+                <div class="elig-title">Critères non remplis</div>
+                <ul class="elig-list">
+                    <li class="@(Bank.Profil.Statut != UserStatus.STANDARD ? "pass" : "fail")">
+                        Statut Premium ou VIP requis
+                    </li>
+                    <li class="@(nbTransactions >= 3 ? "pass" : "fail")">
+                        Minimum 3 transactions validées (actuel : @nbTransactions)
+                    </li>
+                    <li class="elig-neutral">
+                        Volume de flux : @fluxTotal.ToString("N2") DH (requis : 2x le montant du prêt)
+                    </li>
+                </ul>
+            </div>
         </div>
     }
 
-    <div class="form-row" style="margin-top: 24px;">
-        <div class="form-group">
-            <label>CATEGORIE DE PRET :</label>
-            <select @bind="categorie" class="form-select">
-                <option value="MICRO">MICRO-CREDIT (TAUX BASE 5%)</option>
-                <option value="PERSONNEL">PRET PERSONNEL (TAUX BASE 10%)</option>
-                <option value="BUSINESS">PRET BUSINESS (TAUX BASE 15%)</option>
-            </select>
+    @* ─── SIMULATEUR ─── *@
+    <div class="form-section">
+        <h6>Simulateur de crédit</h6>
+
+        <div class="credit-categories">
+            <button class="credit-cat-btn @(categorie == "MICRO" ? "selected" : "")" @onclick='() => ChoisirCategorie("MICRO")'>
+                <span class="cat-icon">📋</span>
+                <span class="cat-name">Micro-crédit</span>
+                <span class="cat-rate">TAUX 5%</span>
+            </button>
+            <button class="credit-cat-btn @(categorie == "PERSONNEL" ? "selected" : "")" @onclick='() => ChoisirCategorie("PERSONNEL")'>
+                <span class="cat-icon">👤</span>
+                <span class="cat-name">Prêt personnel</span>
+                <span class="cat-rate">TAUX 10%</span>
+            </button>
+            <button class="credit-cat-btn @(categorie == "BUSINESS" ? "selected" : "")" @onclick='() => ChoisirCategorie("BUSINESS")'>
+                <span class="cat-icon">💼</span>
+                <span class="cat-name">Prêt business</span>
+                <span class="cat-rate">TAUX 15%</span>
+            </button>
         </div>
 
-        <div class="form-group">
-            <label>MONTANT SOUHAITE (DH) :</label>
-            <input type="number" @bind="montantDemande" @bind:event="oninput" class="form-input" />
-        </div>
-
-        <div class="form-group">
-            <label>DUREE DE REMBOURSEMENT (MOIS) :</label>
-            <input type="number" @bind="dureeMois" class="form-input" />
-        </div>
-
-        <div class="card" style="padding: 16px; display: flex; flex-direction: column; justify-content: center;">
-            <div style="font-size: 0.6rem; color: var(--text-muted); margin-bottom: 4px;">ESTIMATION DES INTERETS :</div>
-            <div style="font-size: 1rem; color: var(--text-primary); font-weight: 700;">@CalculerInteretTotal().ToString("N2") DH</div>
-            <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">
-                TOTAL A REMBOURSER : @((montantDemande + CalculerInteretTotal()).ToString("N2")) DH
+        <div class="form-row">
+            <div class="form-group">
+                <label>Montant souhaité (DH)</label>
+                <input type="number" @bind="montantDemande" @bind:event="oninput" class="form-input" min="0" placeholder="Ex: 10000" />
+            </div>
+            <div class="form-group">
+                <label>Durée (mois)</label>
+                <select @bind="dureeMois" class="form-select">
+                    <option value="3">3 mois</option>
+                    <option value="6">6 mois</option>
+                    <option value="9">9 mois</option>
+                    <option value="12">12 mois</option>
+                    <option value="18">18 mois</option>
+                    <option value="24">24 mois</option>
+                </select>
             </div>
         </div>
     </div>
 
+    @* ─── RÉSULTATS SIMULATION ─── *@
+    @if (montantDemande > 0)
+    {
+        var interets = CalculerInteretTotal();
+        var totalRemboursement = montantDemande + interets;
+        var mensualite = totalRemboursement / dureeMois;
+
+        <div class="credit-result-grid">
+            <div class="credit-result-item">
+                <div class="cri-label">Montant du prêt</div>
+                <div class="cri-value">@montantDemande.ToString("N2") DH</div>
+            </div>
+            <div class="credit-result-item">
+                <div class="cri-label">Total intérêts</div>
+                <div class="cri-value negative">+@interets.ToString("N2") DH</div>
+            </div>
+            <div class="credit-result-item">
+                <div class="cri-label">Mensualité</div>
+                <div class="cri-value positive">@mensualite.ToString("N2") DH</div>
+                <div class="cri-sub">sur @dureeMois mois</div>
+            </div>
+        </div>
+
+        @* ─── TOTAL ─── *@
+        <div class="credit-result-item" style="margin-bottom: 16px; text-align: left; display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+            <div>
+                <div class="cri-label">Total à rembourser</div>
+                <div class="cri-value" style="font-size: 0.95rem;">@totalRemboursement.ToString("N2") DH</div>
+            </div>
+            <div style="text-align: right;">
+                <span class="badge badge-info">TAUX @(Math.Round(TauxMensuel() * 12 * 100, 1))% / AN</span>
+            </div>
+        </div>
+
+        @* ─── SCORING ─── *@
+        <div class="credit-score-card" style="border-left-color: @scoreCouleur;">
+            <div class="score-top">
+                <div>
+                    <div class="score-label">Score de solvabilité</div>
+                    <div class="score-points" style="color: @scoreCouleur;">@scorePoints / 100</div>
+                </div>
+                <span class="badge" style="background: @scoreCouleur; color: white;">@scoreLabel</span>
+            </div>
+            <div class="score-details">@scoreDetails</div>
+        </div>
+
+        @* ─── TABLEAU D'AMORTISSEMENT ─── *@
+        <div class="credit-table-wrap">
+            <div class="credit-table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Mois</th>
+                            <th>Mensualité</th>
+                            <th>Intérêts</th>
+                            <th>Amortissement</th>
+                            <th>Solde restant</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            var soldeRestant = montantDemande;
+                            var tauxMensuel = TauxMensuel();
+                        }
+                        @for (int m = 1; m <= dureeMois; m++)
+                        {
+                            var interetMois = soldeRestant * tauxMensuel;
+                            var amortMois = mensualite - interetMois;
+                            soldeRestant -= amortMois;
+                            if (soldeRestant < 0) soldeRestant = 0;
+                            <tr>
+                                <td>@m</td>
+                                <td>@mensualite.ToString("N2")</td>
+                                <td>@interetMois.ToString("N2")</td>
+                                <td>@amortMois.ToString("N2")</td>
+                                <td>@soldeRestant.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @* ─── SOUMISSION ─── *@
     <button class="btn btn-primary btn-block"
-            style="margin-top: 20px;"
             @onclick="SoumettreDemande"
             disabled="@(isProcessing || !eligible || montantDemande <= 0)">
-        @(isProcessing ? "TRAITEMENT..." : "SOUMETTRE LA DEMANDE A L'ADMINISTRATEUR")
+        @(isProcessing ? "Traitement en cours..." : "Soumettre la demande")
     </button>
 </div>
 
 @code {
+    private void ChoisirCategorie(string cat)
+    {
+        categorie = cat;
+    }
+
     private string categorie = "MICRO";
     private decimal montantDemande;
     private int dureeMois = 6;
@@ -72,6 +179,12 @@
     private int nbTransactions;
     private decimal fluxTotal;
     private bool isProcessing;
+
+    // Scoring
+    private int scorePoints;
+    private string scoreLabel = "";
+    private string scoreCouleur = "";
+    private string scoreDetails = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -84,21 +197,60 @@
         nbTransactions = historique.Count;
         fluxTotal = historique.Sum(t => t.MontantBrut);
         eligible = await Bank.VerifierEligibiliteCredit(Bank.Profil.Id);
+        CalculerScore();
     }
 
-    private decimal CalculerInteretTotal()
+    private void CalculerScore()
     {
-        if (montantDemande <= 0) return 0;
-        decimal tauxBase = categorie switch
+        int points = 0;
+        var reasons = new List<string>();
+
+        if (Bank.Profil.Statut == UserStatus.VIP) { points += 30; reasons.Add("VIP: +30"); }
+        else if (Bank.Profil.Statut == UserStatus.PREMIUM) { points += 20; reasons.Add("Premium: +20"); }
+        else if (Bank.Profil.Statut == UserStatus.STANDARD) { points += 5; reasons.Add("Standard: +5"); }
+
+        points += Math.Min(nbTransactions * 5, 25);
+        if (nbTransactions >= 10) reasons.Add("Activité élevée: +25");
+        else if (nbTransactions >= 5) reasons.Add($"Activité ({nbTransactions} tx): +{nbTransactions * 5}");
+        else reasons.Add($"Activité ({nbTransactions} tx): +{nbTransactions * 5}");
+
+        if (fluxTotal > 50000) { points += 25; reasons.Add("Flux > 50k: +25"); }
+        else if (fluxTotal > 10000) { points += 15; reasons.Add("Flux > 10k: +15"); }
+        else if (fluxTotal > 1000) { points += 5; reasons.Add("Flux > 1k: +5"); }
+
+        if (Bank.Profil.DateInscription < DateTime.UtcNow.AddDays(-30)) { points += 10; reasons.Add("Ancienneté: +10"); }
+        else { points += 3; reasons.Add("Compte récent: +3"); }
+
+        if (Bank.Profil.Solde > 10000) { points += 10; reasons.Add("Solde élevé: +10"); }
+
+        scorePoints = Math.Min(points, 100);
+
+        if (scorePoints >= 80) { scoreLabel = "EXCELLENT"; scoreCouleur = "var(--success)"; }
+        else if (scorePoints >= 60) { scoreLabel = "BON"; scoreCouleur = "var(--blue-500)"; }
+        else if (scorePoints >= 40) { scoreLabel = "MOYEN"; scoreCouleur = "var(--gold-400)"; }
+        else { scoreLabel = "FAIBLE"; scoreCouleur = "var(--danger)"; }
+
+        scoreDetails = string.Join(" · ", reasons);
+    }
+
+    private decimal TauxMensuel()
+    {
+        decimal tauxAnnuel = categorie switch
         {
             "MICRO" => 0.05m,
             "PERSONNEL" => 0.10m,
             "BUSINESS" => 0.15m,
             _ => 0.10m
         };
-        if (Bank.Profil.Statut == UserStatus.VIP) tauxBase -= 0.03m;
-        else if (Bank.Profil.Statut == UserStatus.PREMIUM) tauxBase -= 0.015m;
-        return montantDemande * tauxBase * (dureeMois / 12m);
+        if (Bank.Profil.Statut == UserStatus.VIP) tauxAnnuel -= 0.03m;
+        else if (Bank.Profil.Statut == UserStatus.PREMIUM) tauxAnnuel -= 0.015m;
+        return tauxAnnuel / 12m;
+    }
+
+    private decimal CalculerInteretTotal()
+    {
+        if (montantDemande <= 0) return 0;
+        return montantDemande * (1 + TauxMensuel() * dureeMois) - montantDemande;
     }
 
     private async Task SoumettreDemande()
@@ -106,7 +258,7 @@
         if (isProcessing || montantDemande <= 0) return;
         if (fluxTotal < (montantDemande * 2))
         {
-            Notif.Notify("REFUS : Volume de transactions insuffisant (2x requis)", NotificationType.ERROR);
+            Notif.Notify("Volume de transactions insuffisant (2x requis)", NotificationType.ERROR);
             return;
         }
         isProcessing = true;
@@ -115,11 +267,11 @@
             var success = await Bank.SoumettreDemandeCredit(montantDemande, categorie, dureeMois);
             if (success)
             {
-                Notif.Notify("DEMANDE TRANSMISE : En attente de validation manuelle par l'Admin", NotificationType.INFO);
+                Notif.Notify("Demande transmise - En attente de validation par l'administrateur", NotificationType.INFO);
                 montantDemande = 0;
             }
             else
-                Notif.Notify("ERREUR LORS DE L'ENREGISTREMENT DE LA DEMANDE", NotificationType.ERROR);
+                Notif.Notify("Erreur lors de l'enregistrement de la demande", NotificationType.ERROR);
         }
         finally { isProcessing = false; }
     }

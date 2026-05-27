@@ -49,6 +49,9 @@
         <button class="admin-tab @(activeTab == "logs" ? "active" : "")" @onclick='() => activeTab = "logs"'>
             <i class="bi bi-journal-text"></i> LOGS
         </button>
+        <button class="admin-tab @(activeTab == "tuteurs" ? "active" : "")" @onclick="OngletTuteurs">
+            <i class="bi bi-people-fill"></i> TUTEURS
+        </button>
     </div>
 
     @if (isLoading)
@@ -77,6 +80,9 @@
             case "logs":
                 @RenderLogs
                 break;
+            case "tuteurs":
+                @RenderTuteurs
+                break;
         }
     }
 </div>
@@ -103,8 +109,8 @@
                     <input type="password" @bind="resetConfirmPassword" class="form-input" placeholder="Confirmer" />
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 20px;">
-                    <button class="btn btn-primary btn-block" @onclick="ConfirmResetPassword">
-                        <i class="bi bi-check-lg"></i> CONFIRMER
+                    <button class="btn btn-primary btn-block" @onclick="ConfirmResetPassword" disabled="@isProcessing">
+                        @(isProcessing ? "TRAITEMENT..." : "CONFIRMER")
                     </button>
                     <button class="btn btn-ghost btn-block" @onclick='() => showResetModal = false'>
                         ANNULER
@@ -124,6 +130,8 @@
     private int pendingPremiumCount;
     private int pendingCreditCount;
     private List<UserProfile> dossiersEnAttente = new();
+    private List<UserProfile> historiqueDossiers = new();
+    private string dossierSubTab = "en_attente";
     private List<AdminLog> logs = new();
 
     private int targetId;
@@ -136,15 +144,49 @@
     private bool isSearching;
     private string? searchError;
 
+    private string creditSearch = "";
+    private List<UserProfile> creditSearchResults = new();
+    private bool creditSearching;
+    private bool isProcessing;
+    private string? creditSearchError;
+    private UserProfile? creditTarget;
+
+    private string depotSearch = "";
+    private List<UserProfile> depotSearchResults = new();
+    private bool depotSearching;
+    private string? depotSearchError;
+    private UserProfile? depotTarget;
+
     private int resetUserId;
     private string resetPassword = "";
     private string resetConfirmPassword = "";
     private bool showResetModal;
 
+    // Tuteurs
+    private List<UserProfile> studentsSansTuteur = new();
+    private List<(UserProfile Student, UserProfile? Tuteur)> relationsTuteur = new();
+    private string tuteurSearch = "";
+    private List<UserProfile> tuteurSearchResults = new();
+    private bool tuteurSearching;
+    private string? tuteurSearchError;
+    private UserProfile? selectedStudent;
+    private string assignTuteurEmail = "";
+    private bool isTuteurLoading;
+
     protected override async Task OnInitializedAsync()
     {
         _logger = LoggerFactory.CreateLogger("Admin");
-        try { await ChargerDonnees(); }
+        try
+        {
+            await ChargerDonnees();
+            var uri = Nav.ToAbsoluteUri(Nav.Uri);
+            var section = System.Web.HttpUtility.ParseQueryString(uri.Query).Get("section");
+            if (section == "historique")
+            {
+                activeTab = "dossiers";
+                dossierSubTab = "historique";
+            }
+        }
         catch (Exception ex) { _logger.LogError(ex, "Erreur chargement admin"); Notif.Notify("Erreur de chargement", NotificationType.ERROR); }
         finally { isLoading = false; }
     }
@@ -156,50 +198,77 @@
         pendingPremiumCount = await AdminSvc.GetPendingPremiumCountAsync();
         pendingCreditCount = await AdminSvc.GetPendingCreditCountAsync();
         dossiersEnAttente = await AdminSvc.GetDossiersEnAttenteAsync();
+        historiqueDossiers = await AdminSvc.GetHistoriqueDossiersAsync();
         logs = await AdminSvc.GetAdminLogsAsync();
     }
 
     private async Task ApprouverDossier(int id)
     {
-        if (await AdminSvc.ApprouverPremium(id))
+        if (isProcessing) return;
+        isProcessing = true;
+        try
         {
-            Notif.Notify("Dossier validé : accès Premium octroyé", NotificationType.SUCCESS);
-            await ChargerDonnees();
+            if (await AdminSvc.ApprouverPremium(id))
+            {
+                Notif.Notify("Dossier validé : accès Premium octroyé", NotificationType.SUCCESS);
+                dossiersEnAttente = await AdminSvc.GetDossiersEnAttenteAsync();
+                historiqueDossiers = await AdminSvc.GetHistoriqueDossiersAsync();
+                dossierSubTab = "historique";
+            }
         }
+        finally { isProcessing = false; }
     }
 
     private async Task LancerCredit()
     {
+        if (isProcessing) return;
         if (targetId <= 0 || creditAmount <= 0) { Notif.Notify("Valeurs non valides", NotificationType.ERROR); return; }
-        if (await AdminSvc.ApprouverCredit(targetId, creditAmount))
+        isProcessing = true;
+        try
         {
-            Notif.Notify($"Crédit de {creditAmount:N2} MAD accordé au compte {targetId}", NotificationType.SUCCESS);
-            targetId = 0; creditAmount = 0;
-            await ChargerDonnees();
+            if (await AdminSvc.ApprouverCredit(targetId, creditAmount))
+            {
+                Notif.Notify($"Crédit de {creditAmount:N2} MAD accordé au compte {targetId}", NotificationType.SUCCESS);
+                targetId = 0; creditAmount = 0;
+                await ChargerDonnees();
+            }
+            else
+                Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
         }
-        else
-            Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+        finally { isProcessing = false; }
     }
 
     private async Task LancerDepot()
     {
+        if (isProcessing) return;
         if (depotTargetId <= 0 || depotMontant <= 0) { Notif.Notify("Valeurs non valides", NotificationType.ERROR); return; }
-        if (await AdminSvc.AdminDepot(depotTargetId, depotMontant))
+        isProcessing = true;
+        try
         {
-            Notif.Notify($"Dépôt de {depotMontant:N2} MAD effectué sur le compte {depotTargetId}", NotificationType.SUCCESS);
-            depotTargetId = 0; depotMontant = 0;
-            await ChargerDonnees();
+            if (await AdminSvc.AdminDepot(depotTargetId, depotMontant))
+            {
+                Notif.Notify($"Dépôt de {depotMontant:N2} MAD effectué sur le compte {depotTargetId}", NotificationType.SUCCESS);
+                depotTargetId = 0; depotMontant = 0;
+                await ChargerDonnees();
+            }
+            else
+                Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
         }
-        else
-            Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+        finally { isProcessing = false; }
     }
 
     private async Task VerifierEligibilite()
     {
+        if (isProcessing) return;
         if (targetId <= 0) { Notif.Notify("ID manquant", NotificationType.ERROR); return; }
-        var eligible = await Bank.VerifierEligibiliteCredit(targetId);
-        Notif.Notify(eligible ? "Cible éligible" : "Cible rejetée : dossier incomplet ou solde négatif",
-            eligible ? NotificationType.SUCCESS : NotificationType.ERROR);
+        isProcessing = true;
+        try
+        {
+            var eligible = await Bank.VerifierEligibiliteCredit(targetId);
+            Notif.Notify(eligible ? "Cible éligible" : "Cible rejetée : dossier incomplet ou solde négatif",
+                eligible ? NotificationType.SUCCESS : NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
     }
 
     private async Task SearchUsers()
@@ -221,6 +290,48 @@
         finally { isSearching = false; }
     }
 
+    private async Task SearchCreditUser()
+    {
+        if (string.IsNullOrWhiteSpace(creditSearch)) { creditSearchError = "Entrez un email, nom ou prénom"; return; }
+        creditSearchError = null; creditSearching = true; creditTarget = null; targetId = 0;
+        try
+        {
+            creditSearchResults = await AdminSvc.SearchUsersAsync(creditSearch);
+            if (!creditSearchResults.Any()) creditSearchError = "Aucun utilisateur trouvé";
+        }
+        catch { creditSearchError = "Erreur de recherche"; }
+        finally { creditSearching = false; }
+    }
+
+    private void SelectCreditUser(UserProfile u)
+    {
+        creditTarget = u;
+        targetId = u.Id;
+        creditSearch = "";
+        creditSearchResults = new();
+    }
+
+    private async Task SearchDepotUser()
+    {
+        if (string.IsNullOrWhiteSpace(depotSearch)) { depotSearchError = "Entrez un email, nom ou prénom"; return; }
+        depotSearchError = null; depotSearching = true; depotTarget = null; depotTargetId = 0;
+        try
+        {
+            depotSearchResults = await AdminSvc.SearchUsersAsync(depotSearch);
+            if (!depotSearchResults.Any()) depotSearchError = "Aucun utilisateur trouvé";
+        }
+        catch { depotSearchError = "Erreur de recherche"; }
+        finally { depotSearching = false; }
+    }
+
+    private void SelectDepotUser(UserProfile u)
+    {
+        depotTarget = u;
+        depotTargetId = u.Id;
+        depotSearch = "";
+        depotSearchResults = new();
+    }
+
     private void OpenResetModal(int userId)
     {
         resetUserId = userId;
@@ -231,18 +342,24 @@
 
     private async Task ConfirmResetPassword()
     {
+        if (isProcessing) return;
         if (string.IsNullOrWhiteSpace(resetPassword) || resetPassword.Length < 6)
         { Notif.Notify("Le mot de passe doit contenir au moins 6 caractères", NotificationType.ERROR); return; }
         if (resetPassword != resetConfirmPassword)
         { Notif.Notify("Les mots de passe ne correspondent pas", NotificationType.ERROR); return; }
-        if (await AdminSvc.ResetPasswordAsync(resetUserId, resetPassword))
+        isProcessing = true;
+        try
         {
-            Notif.Notify("Mot de passe réinitialisé avec succès", NotificationType.SUCCESS);
-            showResetModal = false;
-            await SearchUsers();
+            if (await AdminSvc.ResetPasswordAsync(resetUserId, resetPassword))
+            {
+                Notif.Notify("Mot de passe réinitialisé avec succès", NotificationType.SUCCESS);
+                showResetModal = false;
+                await SearchUsers();
+            }
+            else
+                Notif.Notify("Échec de la réinitialisation", NotificationType.ERROR);
         }
-        else
-            Notif.Notify("Échec de la réinitialisation", NotificationType.ERROR);
+        finally { isProcessing = false; }
     }
 
     private RenderFragment RenderDashboard => builder =>
@@ -384,103 +501,243 @@
 
     private RenderFragment RenderDossiers => builder =>
     {
+        // Sub-tabs
         builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "card");
-        builder.OpenElement(2, "div");
-        builder.AddAttribute(3, "class", "card-head");
-        builder.OpenElement(4, "i");
-        builder.AddAttribute(5, "class", "bi bi-shield-lock-fill");
+        builder.AddAttribute(1, "class", "admin-tabs");
+        builder.AddAttribute(2, "style", "margin-bottom: 16px;");
+
+        builder.OpenElement(3, "button");
+        builder.AddAttribute(4, "class", $"admin-tab {(dossierSubTab == "en_attente" ? "active" : "")}");
+        builder.AddAttribute(5, "onclick", EventCallback.Factory.Create(this, () => { dossierSubTab = "en_attente"; }));
+        builder.AddContent(6, "EN ATTENTE");
+        if (pendingPremiumCount > 0) { builder.OpenElement(7, "span"); builder.AddAttribute(8, "class", "tab-badge"); builder.AddContent(9, pendingPremiumCount); builder.CloseElement(); }
         builder.CloseElement();
-        builder.OpenElement(6, "h2");
-        builder.AddContent(7, "DOSSIERS KYC EN ATTENTE");
+
+        builder.OpenElement(10, "button");
+        builder.AddAttribute(11, "class", $"admin-tab {(dossierSubTab == "historique" ? "active" : "")}");
+        builder.AddAttribute(12, "onclick", EventCallback.Factory.Create(this, () => { dossierSubTab = "historique"; }));
+        builder.AddContent(13, "HISTORIQUE");
+        if (historiqueDossiers.Count > 0) { builder.OpenElement(14, "span"); builder.AddAttribute(15, "class", "tab-badge"); builder.AddContent(16, historiqueDossiers.Count); builder.CloseElement(); }
         builder.CloseElement();
+
         builder.CloseElement();
-        builder.OpenElement(8, "div");
-        builder.AddAttribute(9, "class", "card-body");
-        if (!dossiersEnAttente.Any())
+
+        if (dossierSubTab == "en_attente")
         {
-            builder.OpenElement(10, "div");
-            builder.AddAttribute(11, "class", "empty-notif");
-            builder.AddContent(12, "Aucun dossier en attente");
+            // ─── EN ATTENTE ───
+            builder.OpenElement(20, "div");
+            builder.AddAttribute(21, "class", "card");
+            builder.OpenElement(22, "div");
+            builder.AddAttribute(23, "class", "card-head");
+            builder.OpenElement(24, "i");
+            builder.AddAttribute(25, "class", "bi bi-shield-lock-fill");
+            builder.CloseElement();
+            builder.OpenElement(26, "h2");
+            builder.AddContent(27, "DOSSIERS EN ATTENTE");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(28, "div");
+            builder.AddAttribute(29, "class", "card-body");
+            if (!dossiersEnAttente.Any())
+            {
+                builder.OpenElement(30, "div");
+                builder.AddAttribute(31, "class", "empty-notif");
+                builder.AddContent(32, "Aucun dossier en attente");
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(33, "div");
+                builder.AddAttribute(34, "style", "overflow-x: auto;");
+                builder.OpenElement(35, "table");
+                builder.AddAttribute(36, "class", "admin-table");
+                builder.OpenElement(37, "thead");
+                builder.OpenElement(38, "tr");
+                foreach (var h in new[] { "CANDIDAT", "CONTACT", "NIVEAU", "INSCRIPTION", "STATUT", "PIÈCES", "ACTIONS" })
+                {
+                    builder.OpenElement(39, "th");
+                    builder.AddContent(40, h);
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(41, "tbody");
+                foreach (var user in dossiersEnAttente)
+                {
+                    builder.OpenElement(42, "tr");
+                    builder.OpenElement(43, "td");
+                    builder.OpenElement(44, "div");
+                    builder.AddAttribute(45, "class", "user-meta");
+                    builder.OpenElement(46, "strong");
+                    builder.AddContent(47, $"{user.Prenom} {user.Nom}");
+                    builder.CloseElement();
+                    builder.OpenElement(48, "small");
+                    builder.AddContent(49, $"#{user.Id}");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.OpenElement(50, "td");
+                    builder.AddAttribute(51, "style", "font-size: 0.75rem; color: var(--text-secondary);");
+                    builder.AddContent(52, $"{user.Email} · {user.Telephone}");
+                    builder.CloseElement();
+                    builder.OpenElement(53, "td");
+                    builder.AddContent(54, user.NiveauEtude);
+                    builder.CloseElement();
+                    builder.OpenElement(55, "td");
+                    builder.AddAttribute(56, "style", "font-size: 0.7rem; color: var(--text-muted);");
+                    builder.AddContent(57, user.DateInscription.ToString("dd/MM/yy"));
+                    builder.CloseElement();
+                    builder.OpenElement(58, "td");
+                    if (user.PendingPremiumUpgrade)
+                    {
+                        builder.OpenElement(59, "span");
+                        builder.AddAttribute(60, "class", "badge badge-warning");
+                        builder.AddContent(61, "Premium");
+                        builder.CloseElement();
+                    }
+                    if (user.PendingCreditRequest)
+                    {
+                        builder.OpenElement(62, "span");
+                        builder.AddAttribute(63, "class", "badge badge-info");
+                        builder.AddContent(64, $"Crédit {user.PendingCreditAmount:N0}DH");
+                        builder.CloseElement();
+                    }
+                    builder.CloseElement();
+                    builder.OpenElement(65, "td");
+                    builder.AddAttribute(66, "class", "doc-status");
+                    if (!string.IsNullOrEmpty(user.CvUrl)) { builder.OpenElement(67, "i"); builder.AddAttribute(68, "class", "bi bi-file-earmark-pdf-fill"); builder.AddAttribute(69, "title", "CV"); builder.CloseElement(); }
+                    if (!string.IsNullOrEmpty(user.DocIdentiteUrl)) { builder.OpenElement(70, "i"); builder.AddAttribute(71, "class", "bi bi-card-heading"); builder.AddAttribute(72, "title", "ID"); builder.CloseElement(); }
+                    if (!string.IsNullOrEmpty(user.DocDomicileUrl)) { builder.OpenElement(73, "i"); builder.AddAttribute(74, "class", "bi bi-house-check-fill"); builder.AddAttribute(75, "title", "Domicile"); builder.CloseElement(); }
+                    if (!string.IsNullOrEmpty(user.DocScolariteUrl)) { builder.OpenElement(76, "i"); builder.AddAttribute(77, "class", "bi bi-mortarboard-fill"); builder.AddAttribute(78, "title", "Scolarité"); builder.CloseElement(); }
+                    builder.CloseElement();
+                    builder.OpenElement(79, "td");
+                    builder.AddAttribute(80, "class", "action-cells");
+                    builder.OpenElement(81, "button");
+                    builder.AddAttribute(82, "class", "btn btn-success btn-sm");
+                    builder.AddAttribute(825, "disabled", isProcessing);
+                    builder.AddAttribute(83, "onclick", EventCallback.Factory.Create(this, () => ApprouverDossier(user.Id)));
+                    builder.AddContent(84, "VALIDER");
+                    builder.CloseElement();
+                    builder.OpenElement(85, "button");
+                    builder.AddAttribute(86, "class", "btn btn-ghost btn-sm");
+                    builder.AddAttribute(87, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{user.Id}")));
+                    builder.AddContent(88, "DÉTAILS");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
             builder.CloseElement();
         }
         else
         {
-            builder.OpenElement(13, "div");
-            builder.AddAttribute(14, "style", "overflow-x: auto;");
-            builder.OpenElement(15, "table");
-            builder.AddAttribute(16, "class", "admin-table");
-            builder.OpenElement(17, "thead");
-            builder.OpenElement(18, "tr");
-            foreach (var h in new[] { "CANDIDAT", "NIVEAU", "STATUT", "PIÈCES", "ACTIONS" })
+            // ─── HISTORIQUE ───
+            builder.OpenElement(100, "div");
+            builder.AddAttribute(101, "class", "card");
+            builder.OpenElement(102, "div");
+            builder.AddAttribute(103, "class", "card-head");
+            builder.OpenElement(104, "i");
+            builder.AddAttribute(105, "class", "bi bi-archive-fill");
+            builder.CloseElement();
+            builder.OpenElement(106, "h2");
+            builder.AddContent(107, "DOSSIERS TRAITÉS");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(108, "div");
+            builder.AddAttribute(109, "class", "card-body");
+            if (!historiqueDossiers.Any())
             {
-                builder.OpenElement(19, "th");
-                builder.AddContent(20, h);
+                builder.OpenElement(110, "div");
+                builder.AddAttribute(111, "class", "empty-notif");
+                builder.AddContent(112, "Aucun dossier traité pour l'instant");
                 builder.CloseElement();
             }
-            builder.CloseElement();
-            builder.CloseElement();
-            builder.OpenElement(21, "tbody");
-            foreach (var user in dossiersEnAttente)
+            else
             {
-                builder.OpenElement(22, "tr");
-                builder.OpenElement(23, "td");
-                builder.OpenElement(24, "div");
-                builder.AddAttribute(25, "class", "user-meta");
-                builder.OpenElement(26, "strong");
-                builder.AddContent(27, $"{user.Prenom} {user.Nom}");
-                builder.CloseElement();
-                builder.OpenElement(28, "small");
-                builder.AddContent(29, user.Email);
-                builder.CloseElement();
-                builder.CloseElement();
-                builder.CloseElement();
-                builder.OpenElement(30, "td");
-                builder.AddContent(31, user.NiveauEtude);
-                builder.CloseElement();
-                builder.OpenElement(32, "td");
-                if (user.PendingPremiumUpgrade)
+                builder.OpenElement(113, "div");
+                builder.AddAttribute(114, "style", "overflow-x: auto;");
+                builder.OpenElement(115, "table");
+                builder.AddAttribute(116, "class", "admin-table");
+                builder.OpenElement(117, "thead");
+                builder.OpenElement(118, "tr");
+                foreach (var h in new[] { "CANDIDAT", "CONTACT", "STATUT", "DATE TRAITEMENT", "RÉSULTAT", "PIÈCES", "ACTIONS" })
                 {
-                    builder.OpenElement(33, "span");
-                    builder.AddAttribute(34, "class", "badge badge-warning");
-                    builder.AddContent(35, "Premium");
-                    builder.CloseElement();
-                }
-                if (user.PendingCreditRequest)
-                {
-                    builder.OpenElement(36, "span");
-                    builder.AddAttribute(37, "class", "badge badge-info");
-                    builder.AddContent(38, "Crédit");
+                    builder.OpenElement(119, "th");
+                    builder.AddContent(120, h);
                     builder.CloseElement();
                 }
                 builder.CloseElement();
-                builder.OpenElement(39, "td");
-                builder.AddAttribute(40, "class", "doc-status");
-                if (!string.IsNullOrEmpty(user.CvUrl)) { builder.OpenElement(41, "i"); builder.AddAttribute(42, "class", "bi bi-file-earmark-pdf-fill"); builder.AddAttribute(43, "title", "CV"); builder.CloseElement(); }
-                if (!string.IsNullOrEmpty(user.DocIdentiteUrl)) { builder.OpenElement(44, "i"); builder.AddAttribute(45, "class", "bi bi-card-heading"); builder.AddAttribute(46, "title", "ID"); builder.CloseElement(); }
-                if (!string.IsNullOrEmpty(user.DocScolariteUrl)) { builder.OpenElement(47, "i"); builder.AddAttribute(48, "class", "bi bi-mortarboard-fill"); builder.AddAttribute(49, "title", "Scolarité"); builder.CloseElement(); }
                 builder.CloseElement();
-                builder.OpenElement(50, "td");
-                builder.AddAttribute(51, "class", "action-cells");
-                builder.OpenElement(52, "button");
-                builder.AddAttribute(53, "class", "btn btn-success btn-sm");
-                builder.AddAttribute(54, "onclick", EventCallback.Factory.Create(this, () => ApprouverDossier(user.Id)));
-                builder.AddContent(55, "VALIDER");
-                builder.CloseElement();
-                builder.OpenElement(56, "button");
-                builder.AddAttribute(57, "class", "btn btn-ghost btn-sm");
-                builder.AddAttribute(58, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{user.Id}")));
-                builder.AddContent(59, "DÉTAILS");
+                builder.OpenElement(121, "tbody");
+                foreach (var user in historiqueDossiers)
+                {
+                    var dateTraitement = user.PremiumValidatedAt ?? user.PremiumRejectedAt;
+                    var estValide = user.PremiumValidatedAt != null;
+                    builder.OpenElement(122, "tr");
+                    builder.OpenElement(123, "td");
+                    builder.OpenElement(124, "div");
+                    builder.AddAttribute(125, "class", "user-meta");
+                    builder.OpenElement(126, "strong");
+                    builder.AddContent(127, $"{user.Prenom} {user.Nom}");
+                    builder.CloseElement();
+                    builder.OpenElement(128, "small");
+                    builder.AddContent(129, $"#{user.Id}");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.OpenElement(130, "td");
+                    builder.AddAttribute(131, "style", "font-size: 0.75rem; color: var(--text-secondary);");
+                    builder.AddContent(132, $"{user.Email} · {user.Telephone}");
+                    builder.CloseElement();
+                    builder.OpenElement(133, "td");
+                    builder.AddContent(134, user.NiveauEtude);
+                    builder.CloseElement();
+                    builder.OpenElement(135, "td");
+                    builder.AddAttribute(136, "style", "font-size: 0.75rem; color: var(--text-muted);");
+                    builder.AddContent(137, dateTraitement?.ToString("dd/MM/yy HH:mm") ?? "-");
+                    builder.CloseElement();
+                    builder.OpenElement(138, "td");
+                    if (estValide)
+                    {
+                        builder.OpenElement(139, "span");
+                        builder.AddAttribute(140, "class", "badge badge-success");
+                        builder.AddContent(141, "VALIDÉ ✅");
+                        builder.CloseElement();
+                    }
+                    else
+                    {
+                        builder.OpenElement(142, "span");
+                        builder.AddAttribute(143, "class", "badge badge-danger");
+                        builder.AddContent(144, "REJETÉ ❌");
+                        builder.CloseElement();
+                    }
+                    builder.CloseElement();
+                    builder.OpenElement(145, "td");
+                    builder.AddAttribute(146, "class", "doc-status");
+                    if (!string.IsNullOrEmpty(user.DocIdentiteUrl)) { builder.OpenElement(147, "i"); builder.AddAttribute(148, "class", "bi bi-card-heading"); builder.AddAttribute(149, "title", "ID"); builder.CloseElement(); }
+                    if (!string.IsNullOrEmpty(user.DocDomicileUrl)) { builder.OpenElement(150, "i"); builder.AddAttribute(151, "class", "bi bi-house-check-fill"); builder.AddAttribute(152, "title", "Domicile"); builder.CloseElement(); }
+                    builder.CloseElement();
+                    builder.OpenElement(153, "td");
+                    builder.AddAttribute(154, "class", "action-cells");
+                    builder.OpenElement(155, "button");
+                    builder.AddAttribute(156, "class", "btn btn-ghost btn-sm");
+                    builder.AddAttribute(157, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{user.Id}")));
+                    builder.AddContent(158, "VOIR");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
                 builder.CloseElement();
                 builder.CloseElement();
                 builder.CloseElement();
             }
-            builder.CloseElement();
             builder.CloseElement();
             builder.CloseElement();
         }
-        builder.CloseElement();
-        builder.CloseElement();
     };
 
     private RenderFragment RenderCredits => builder =>
@@ -488,6 +745,7 @@
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "admin-grid");
 
+        // Left panel: Search + Grant credit
         builder.OpenElement(2, "div");
         builder.AddAttribute(3, "class", "card");
         builder.OpenElement(4, "div");
@@ -501,89 +759,156 @@
         builder.CloseElement();
         builder.OpenElement(10, "div");
         builder.AddAttribute(11, "class", "card-body");
+
+        // Search user
         builder.OpenElement(12, "div");
-        builder.AddAttribute(13, "class", "form-group");
-        builder.OpenElement(14, "label");
-        builder.AddContent(15, "ID DU COMPTE CIBLE");
+        builder.AddAttribute(13, "style", "display: flex; gap: 8px; margin-bottom: 12px;");
+        builder.OpenElement(14, "input");
+        builder.AddAttribute(15, "type", "text");
+        builder.AddAttribute(16, "class", "form-input");
+        builder.AddAttribute(17, "placeholder", "Rechercher par email, nom...");
+        builder.AddAttribute(18, "value", creditSearch);
+        builder.AddAttribute(19, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => creditSearch = e.Value?.ToString() ?? ""));
         builder.CloseElement();
-        builder.OpenElement(16, "input");
-        builder.AddAttribute(17, "type", "number");
-        builder.AddAttribute(18, "class", "form-input");
-        builder.AddAttribute(19, "placeholder", "Entrez l'ID");
-        builder.AddAttribute(20, "value", targetId == 0 ? "" : targetId.ToString());
-        builder.AddAttribute(21, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { int.TryParse(e.Value?.ToString(), out targetId); }));
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.OpenElement(22, "div");
-        builder.AddAttribute(23, "class", "form-group");
-        builder.OpenElement(24, "label");
-        builder.AddContent(25, "MONTANT DU CRÉDIT (MAD)");
-        builder.CloseElement();
-        builder.OpenElement(26, "input");
-        builder.AddAttribute(27, "type", "number");
-        builder.AddAttribute(28, "class", "form-input");
-        builder.AddAttribute(29, "placeholder", "0.00");
-        builder.AddAttribute(30, "value", creditAmount == 0 ? "" : creditAmount.ToString());
-        builder.AddAttribute(31, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out creditAmount); }));
+        builder.OpenElement(20, "button");
+        builder.AddAttribute(21, "class", "btn btn-primary btn-sm");
+        builder.AddAttribute(22, "onclick", EventCallback.Factory.Create(this, SearchCreditUser));
+        builder.AddAttribute(23, "disabled", creditSearching);
+        builder.AddContent(24, creditSearching ? "..." : "CHERCHER");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(32, "button");
-        builder.AddAttribute(33, "class", "btn btn-primary btn-block");
-        builder.AddAttribute(34, "onclick", EventCallback.Factory.Create(this, LancerCredit));
-        builder.AddContent(35, "ACCORDER LE CRÉDIT");
+
+        if (creditSearchError != null)
+        {
+            builder.OpenElement(25, "p");
+            builder.AddAttribute(26, "style", "color: var(--danger); font-size: 0.75rem; margin: 0 0 12px;");
+            builder.AddContent(27, creditSearchError);
+            builder.CloseElement();
+        }
+
+        // Search results
+        if (creditSearchResults.Any())
+        {
+            builder.OpenElement(28, "div");
+            builder.AddAttribute(29, "style", "margin-bottom: 12px;");
+            foreach (var u in creditSearchResults)
+            {
+                builder.OpenElement(30, "div");
+                builder.AddAttribute(31, "class", "transaction-item");
+                builder.AddAttribute(32, "style", "cursor: pointer;");
+                builder.AddAttribute(33, "onclick", EventCallback.Factory.Create(this, () => SelectCreditUser(u)));
+                builder.OpenElement(34, "div");
+                builder.AddAttribute(35, "class", "transaction-info");
+                builder.OpenElement(36, "div");
+                builder.AddAttribute(37, "class", "tx-type");
+                builder.AddContent(38, $"{u.Prenom} {u.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(39, "div");
+                builder.AddAttribute(40, "class", "tx-date");
+                builder.AddContent(41, $"#{u.Id} · {u.Email} · Solde: {u.Solde:N2} MAD");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+
+        // Selected user info
+        if (creditTarget != null)
+        {
+            builder.OpenElement(41, "div");
+            builder.AddAttribute(42, "class", "setting-row");
+            builder.AddAttribute(43, "style", "margin-bottom: 12px;");
+            builder.OpenElement(44, "div");
+            builder.OpenElement(45, "strong");
+            builder.AddContent(46, $"#{creditTarget.Id} {creditTarget.Prenom} {creditTarget.Nom}");
+            builder.CloseElement();
+            builder.OpenElement(47, "p");
+            builder.AddAttribute(48, "style", "color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;");
+            builder.AddContent(49, $"{creditTarget.Email} · Solde: {creditTarget.Solde:N2} MAD · {creditTarget.NiveauEtude}");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(50, "button");
+            builder.AddAttribute(51, "class", "btn btn-ghost btn-sm");
+            builder.AddAttribute(52, "onclick", EventCallback.Factory.Create(this, () => { creditTarget = null; targetId = 0; }));
+            builder.AddContent(53, "CHANGER");
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        // Amount input
+        builder.OpenElement(54, "div");
+        builder.AddAttribute(55, "class", "form-group");
+        builder.OpenElement(56, "label");
+        builder.AddContent(57, "MONTANT DU CRÉDIT (MAD)");
         builder.CloseElement();
-        builder.OpenElement(36, "hr");
-        builder.AddAttribute(37, "style", "border-color: var(--border); margin: 20px 0;");
+        builder.OpenElement(58, "input");
+        builder.AddAttribute(59, "type", "number");
+        builder.AddAttribute(60, "class", "form-input");
+        builder.AddAttribute(61, "placeholder", "0.00");
+        builder.AddAttribute(62, "value", creditAmount == 0 ? "" : creditAmount.ToString());
+        builder.AddAttribute(63, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out creditAmount); }));
         builder.CloseElement();
-        builder.OpenElement(38, "button");
-        builder.AddAttribute(39, "class", "btn btn-ghost btn-block");
-        builder.AddAttribute(40, "onclick", EventCallback.Factory.Create(this, VerifierEligibilite));
-        builder.AddContent(41, "VÉRIFIER L'ÉLIGIBILITÉ");
+        builder.CloseElement();
+
+        builder.OpenElement(64, "button");
+        builder.AddAttribute(65, "class", "btn btn-primary btn-block");
+        builder.AddAttribute(66, "disabled", creditTarget == null || creditAmount <= 0 || isProcessing);
+        builder.AddAttribute(67, "onclick", EventCallback.Factory.Create(this, LancerCredit));
+        builder.AddContent(68, isProcessing ? "TRAITEMENT..." : "ACCORDER LE CRÉDIT");
+        builder.CloseElement();
+        builder.OpenElement(69, "button");
+        builder.AddAttribute(70, "class", "btn btn-ghost btn-block");
+        builder.AddAttribute(71, "style", "margin-top: 8px;");
+        builder.AddAttribute(72, "disabled", creditTarget == null || isProcessing);
+        builder.AddAttribute(73, "onclick", EventCallback.Factory.Create(this, VerifierEligibilite));
+        builder.AddContent(74, isProcessing ? "..." : "VÉRIFIER L'ÉLIGIBILITÉ");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
 
-        builder.OpenElement(42, "div");
-        builder.AddAttribute(43, "class", "card");
-        builder.OpenElement(44, "div");
-        builder.AddAttribute(45, "class", "card-head");
-        builder.OpenElement(46, "i");
-        builder.AddAttribute(47, "class", "bi bi-info-circle");
+        // Right panel: Pending requests
+        builder.OpenElement(75, "div");
+        builder.AddAttribute(76, "class", "card");
+        builder.OpenElement(77, "div");
+        builder.AddAttribute(78, "class", "card-head");
+        builder.OpenElement(79, "i");
+        builder.AddAttribute(80, "class", "bi bi-info-circle");
         builder.CloseElement();
-        builder.OpenElement(48, "h2");
-        builder.AddContent(49, "DEMANDES EN ATTENTE");
+        builder.OpenElement(81, "h2");
+        builder.AddContent(82, "DEMANDES EN ATTENTE");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(50, "div");
-        builder.AddAttribute(51, "class", "card-body");
+        builder.OpenElement(83, "div");
+        builder.AddAttribute(84, "class", "card-body");
         var pendingCreditUsers = dossiersEnAttente.Where(u => u.PendingCreditRequest).ToList();
         if (!pendingCreditUsers.Any())
         {
-            builder.OpenElement(52, "div");
-            builder.AddAttribute(53, "class", "empty-notif");
-            builder.AddContent(54, "Aucune demande de crédit en attente");
+            builder.OpenElement(85, "div");
+            builder.AddAttribute(86, "class", "empty-notif");
+            builder.AddContent(87, "Aucune demande de crédit en attente");
             builder.CloseElement();
         }
         else
         {
             foreach (var u in pendingCreditUsers)
             {
-                builder.OpenElement(55, "div");
-                builder.AddAttribute(56, "class", "transaction-item");
-                builder.OpenElement(57, "div");
-                builder.AddAttribute(58, "class", "transaction-info");
-                builder.OpenElement(59, "div");
-                builder.AddAttribute(60, "class", "tx-type");
-                builder.AddContent(61, $"{u.Prenom} {u.Nom}");
+                builder.OpenElement(88, "div");
+                builder.AddAttribute(89, "class", "transaction-item");
+                builder.OpenElement(90, "div");
+                builder.AddAttribute(91, "class", "transaction-info");
+                builder.OpenElement(92, "div");
+                builder.AddAttribute(93, "class", "tx-type");
+                builder.AddContent(94, $"{u.Prenom} {u.Nom}");
                 builder.CloseElement();
-                builder.OpenElement(62, "div");
-                builder.AddAttribute(63, "class", "tx-date");
-                builder.AddContent(64, $"#{u.Id} · {u.Email}");
+                builder.OpenElement(95, "div");
+                builder.AddAttribute(96, "class", "tx-date");
+                builder.AddContent(97, $"#{u.Id} · {u.Email} · {u.NiveauEtude} · {u.Telephone}");
                 builder.CloseElement();
                 builder.CloseElement();
-                builder.OpenElement(65, "div");
-                builder.AddAttribute(66, "class", "transaction-amount tx-negative");
-                builder.AddContent(67, $"+{u.PendingCreditAmount:N2} MAD");
+                builder.OpenElement(98, "div");
+                builder.AddAttribute(99, "class", "transaction-amount tx-negative");
+                builder.AddContent(100, $"+{u.PendingCreditAmount:N2} MAD");
                 builder.CloseElement();
                 builder.CloseElement();
             }
@@ -610,36 +935,99 @@
         builder.CloseElement();
         builder.OpenElement(9, "div");
         builder.AddAttribute(10, "class", "card-body");
+
+        // Search user
         builder.OpenElement(11, "div");
-        builder.AddAttribute(12, "class", "form-group");
-        builder.OpenElement(13, "label");
-        builder.AddContent(14, "ID DU COMPTE CIBLE");
+        builder.AddAttribute(12, "style", "display: flex; gap: 8px; margin-bottom: 12px;");
+        builder.OpenElement(13, "input");
+        builder.AddAttribute(14, "type", "text");
+        builder.AddAttribute(15, "class", "form-input");
+        builder.AddAttribute(16, "placeholder", "Rechercher par email, nom...");
+        builder.AddAttribute(17, "value", depotSearch);
+        builder.AddAttribute(18, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => depotSearch = e.Value?.ToString() ?? ""));
         builder.CloseElement();
-        builder.OpenElement(15, "input");
-        builder.AddAttribute(16, "type", "number");
-        builder.AddAttribute(17, "class", "form-input");
-        builder.AddAttribute(18, "placeholder", "Entrez l'ID");
-        builder.AddAttribute(19, "value", depotTargetId == 0 ? "" : depotTargetId.ToString());
-        builder.AddAttribute(20, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { int.TryParse(e.Value?.ToString(), out depotTargetId); }));
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.OpenElement(21, "div");
-        builder.AddAttribute(22, "class", "form-group");
-        builder.OpenElement(23, "label");
-        builder.AddContent(24, "MONTANT DU DÉPÔT (MAD)");
-        builder.CloseElement();
-        builder.OpenElement(25, "input");
-        builder.AddAttribute(26, "type", "number");
-        builder.AddAttribute(27, "class", "form-input");
-        builder.AddAttribute(28, "placeholder", "0.00");
-        builder.AddAttribute(29, "value", depotMontant == 0 ? "" : depotMontant.ToString());
-        builder.AddAttribute(30, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out depotMontant); }));
+        builder.OpenElement(19, "button");
+        builder.AddAttribute(20, "class", "btn btn-primary btn-sm");
+        builder.AddAttribute(21, "onclick", EventCallback.Factory.Create(this, SearchDepotUser));
+        builder.AddAttribute(22, "disabled", depotSearching);
+        builder.AddContent(23, depotSearching ? "..." : "CHERCHER");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(31, "button");
-        builder.AddAttribute(32, "class", "btn btn-success btn-block");
-        builder.AddAttribute(33, "onclick", EventCallback.Factory.Create(this, LancerDepot));
-        builder.AddContent(34, "EFFECTUER LE DÉPÔT");
+
+        if (depotSearchError != null)
+        {
+            builder.OpenElement(24, "p");
+            builder.AddAttribute(25, "style", "color: var(--danger); font-size: 0.75rem; margin: 0 0 12px;");
+            builder.AddContent(26, depotSearchError);
+            builder.CloseElement();
+        }
+
+        if (depotSearchResults.Any())
+        {
+            builder.OpenElement(27, "div");
+            builder.AddAttribute(28, "style", "margin-bottom: 12px;");
+            foreach (var u in depotSearchResults)
+            {
+                builder.OpenElement(29, "div");
+                builder.AddAttribute(30, "class", "transaction-item");
+                builder.AddAttribute(31, "style", "cursor: pointer;");
+                builder.AddAttribute(32, "onclick", EventCallback.Factory.Create(this, () => SelectDepotUser(u)));
+                builder.OpenElement(33, "div");
+                builder.AddAttribute(34, "class", "transaction-info");
+                builder.OpenElement(35, "div");
+                builder.AddAttribute(36, "class", "tx-type");
+                builder.AddContent(37, $"{u.Prenom} {u.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(38, "div");
+                builder.AddAttribute(39, "class", "tx-date");
+                builder.AddContent(40, $"#{u.Id} · {u.Email} · Solde: {u.Solde:N2} MAD");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+
+        if (depotTarget != null)
+        {
+            builder.OpenElement(41, "div");
+            builder.AddAttribute(42, "class", "setting-row");
+            builder.AddAttribute(43, "style", "margin-bottom: 12px;");
+            builder.OpenElement(44, "div");
+            builder.OpenElement(45, "strong");
+            builder.AddContent(46, $"#{depotTarget.Id} {depotTarget.Prenom} {depotTarget.Nom}");
+            builder.CloseElement();
+            builder.OpenElement(47, "p");
+            builder.AddAttribute(48, "style", "color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;");
+            builder.AddContent(49, $"{depotTarget.Email} · Solde actuel: {depotTarget.Solde:N2} MAD");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(50, "button");
+            builder.AddAttribute(51, "class", "btn btn-ghost btn-sm");
+            builder.AddAttribute(52, "onclick", EventCallback.Factory.Create(this, () => { depotTarget = null; depotTargetId = 0; }));
+            builder.AddContent(53, "CHANGER");
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.OpenElement(54, "div");
+        builder.AddAttribute(55, "class", "form-group");
+        builder.OpenElement(56, "label");
+        builder.AddContent(57, "MONTANT DU DÉPÔT (MAD)");
+        builder.CloseElement();
+        builder.OpenElement(58, "input");
+        builder.AddAttribute(59, "type", "number");
+        builder.AddAttribute(60, "class", "form-input");
+        builder.AddAttribute(61, "placeholder", "0.00");
+        builder.AddAttribute(62, "value", depotMontant == 0 ? "" : depotMontant.ToString());
+        builder.AddAttribute(63, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => { decimal.TryParse(e.Value?.ToString(), out depotMontant); }));
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(64, "button");
+        builder.AddAttribute(65, "class", "btn btn-success btn-block");
+        builder.AddAttribute(66, "disabled", depotTarget == null || depotMontant <= 0 || isProcessing);
+        builder.AddAttribute(67, "onclick", EventCallback.Factory.Create(this, LancerDepot));
+        builder.AddContent(68, isProcessing ? "TRAITEMENT..." : "EFFECTUER LE DÉPÔT");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
@@ -669,7 +1057,7 @@
         builder.AddAttribute(16, "placeholder", "Email, nom ou prénom...");
         builder.AddAttribute(17, "value", searchQuery);
         builder.AddAttribute(18, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => searchQuery = e.Value?.ToString() ?? ""));
-        builder.AddAttribute(19, "onkeydown", EventCallback.Factory.Create(this, (Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => { if (e.Key == "Enter") SearchUsers(); }));
+        builder.AddAttribute(19, "onkeydown", EventCallback.Factory.Create(this, (Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => { if (e.Key == "Enter") _ = SearchUsers(); }));
         builder.CloseElement();
         builder.OpenElement(20, "button");
         builder.AddAttribute(21, "class", "btn btn-primary");
@@ -696,7 +1084,7 @@
             builder.AddAttribute(31, "class", "admin-table");
             builder.OpenElement(32, "thead");
             builder.OpenElement(33, "tr");
-            foreach (var h in new[] { "ID", "NOM", "EMAIL", "SOLDE", "STATUT", "ACTIONS" })
+            foreach (var h in new[] { "ID", "NOM", "EMAIL", "TÉLÉPHONE", "SOLDE", "INSCRIPTION", "STATUT", "TUTEUR", "ACTIONS" })
             {
                 builder.OpenElement(34, "th");
                 builder.AddContent(35, h);
@@ -715,28 +1103,41 @@
                 builder.AddContent(41, $"{u.Prenom} {u.Nom}");
                 builder.CloseElement();
                 builder.OpenElement(42, "td");
-                builder.AddContent(43, u.Email);
+                builder.AddAttribute(43, "style", "font-size: 0.75rem;");
+                builder.AddContent(44, u.Email);
                 builder.CloseElement();
-                builder.OpenElement(44, "td");
-                builder.AddContent(45, $"{u.Solde:N2} MAD");
+                builder.OpenElement(45, "td");
+                builder.AddAttribute(46, "style", "font-size: 0.75rem; color: var(--text-muted);");
+                builder.AddContent(47, string.IsNullOrEmpty(u.Telephone) ? "—" : u.Telephone);
                 builder.CloseElement();
-                builder.OpenElement(46, "td");
-                builder.OpenElement(47, "span");
-                builder.AddAttribute(48, "class", $"badge badge-{(u.Statut == UserStatus.PREMIUM ? "success" : "info")}");
-                builder.AddContent(49, u.Statut.ToString());
-                builder.CloseElement();
+                builder.OpenElement(48, "td");
+                builder.AddContent(49, $"{u.Solde:N2}");
                 builder.CloseElement();
                 builder.OpenElement(50, "td");
-                builder.AddAttribute(51, "class", "action-cells");
-                builder.OpenElement(52, "button");
-                builder.AddAttribute(53, "class", "btn btn-ghost btn-sm");
-                builder.AddAttribute(54, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{u.Id}")));
-                builder.AddContent(55, "PROFIL");
+                builder.AddAttribute(51, "style", "font-size: 0.7rem; color: var(--text-muted);");
+                builder.AddContent(52, u.DateInscription.ToString("dd/MM/yy"));
                 builder.CloseElement();
-                builder.OpenElement(56, "button");
-                builder.AddAttribute(57, "class", "btn btn-primary btn-sm");
-                builder.AddAttribute(58, "onclick", EventCallback.Factory.Create(this, () => OpenResetModal(u.Id)));
-                builder.AddContent(59, "MDP");
+                builder.OpenElement(53, "td");
+                builder.OpenElement(54, "span");
+                builder.AddAttribute(55, "class", $"badge badge-{(u.Statut == UserStatus.PREMIUM ? "success" : "info")}");
+                builder.AddContent(56, u.Statut.ToString());
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(57, "td");
+                builder.AddAttribute(58, "style", "font-size: 0.7rem; color: var(--text-muted);");
+                builder.AddContent(59, string.IsNullOrEmpty(u.TuteurEmail) ? "—" : u.TuteurEmail);
+                builder.CloseElement();
+                builder.OpenElement(60, "td");
+                builder.AddAttribute(61, "class", "action-cells");
+                builder.OpenElement(62, "button");
+                builder.AddAttribute(63, "class", "btn btn-ghost btn-sm");
+                builder.AddAttribute(64, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{u.Id}")));
+                builder.AddContent(65, "PROFIL");
+                builder.CloseElement();
+                builder.OpenElement(66, "button");
+                builder.AddAttribute(67, "class", "btn btn-primary btn-sm");
+                builder.AddAttribute(68, "onclick", EventCallback.Factory.Create(this, () => OpenResetModal(u.Id)));
+                builder.AddContent(69, "MDP");
                 builder.CloseElement();
                 builder.CloseElement();
                 builder.CloseElement();
@@ -746,6 +1147,264 @@
             builder.CloseElement();
         }
         builder.CloseElement();
+    };
+
+    private async Task OngletTuteurs()
+    {
+        activeTab = "tuteurs";
+        await ChargerTuteurs();
+    }
+
+    private async Task ChargerTuteurs()
+    {
+        if (isTuteurLoading) return;
+        isTuteurLoading = true;
+        try
+        {
+            studentsSansTuteur = await AdminSvc.GetStudentsSansTuteurAsync();
+            relationsTuteur = await AdminSvc.GetRelationsTuteurAsync();
+        }
+        finally { isTuteurLoading = false; }
+    }
+
+    private async Task SearchTuteurUser()
+    {
+        if (string.IsNullOrWhiteSpace(tuteurSearch)) { tuteurSearchError = "Entrez un email, nom ou prénom"; return; }
+        tuteurSearchError = null; tuteurSearching = true; selectedStudent = null;
+        try
+        {
+            tuteurSearchResults = await AdminSvc.SearchUsersAsync(tuteurSearch);
+            if (!tuteurSearchResults.Any()) tuteurSearchError = "Aucun utilisateur trouvé";
+        }
+        catch { tuteurSearchError = "Erreur de recherche"; }
+        finally { tuteurSearching = false; }
+    }
+
+    private void SelectTuteurStudent(UserProfile u)
+    {
+        selectedStudent = u;
+        assignTuteurEmail = "";
+        tuteurSearch = "";
+        tuteurSearchResults = new();
+    }
+
+    private async Task AssignerTuteur()
+    {
+        if (isProcessing || selectedStudent == null || string.IsNullOrWhiteSpace(assignTuteurEmail)) return;
+        isProcessing = true;
+        try
+        {
+            var (success, msg) = await AdminSvc.AssignerTuteurAsync(selectedStudent.Id, assignTuteurEmail);
+            Notif.Notify(msg, success ? NotificationType.SUCCESS : NotificationType.ERROR);
+            if (success)
+            {
+                selectedStudent = null;
+                assignTuteurEmail = "";
+                await ChargerTuteurs();
+            }
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task RevoquerTuteurAdmin(int studentId)
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            var (success, msg) = await AdminSvc.RevoquerTuteurParAdminAsync(studentId);
+            Notif.Notify(msg, success ? NotificationType.SUCCESS : NotificationType.ERROR);
+            if (success) await ChargerTuteurs();
+        }
+        finally { isProcessing = false; }
+    }
+
+    private RenderFragment RenderTuteurs => builder =>
+    {
+        if (isTuteurLoading)
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "adn-loader");
+            builder.AddContent(2, "CHARGEMENT...");
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(3, "div");
+        builder.AddAttribute(4, "class", "admin-grid");
+
+        // Left: Assigner un tuteur
+        builder.OpenElement(5, "div");
+        builder.AddAttribute(6, "class", "card");
+        builder.OpenElement(7, "div");
+        builder.AddAttribute(8, "class", "card-head");
+        builder.OpenElement(9, "i");
+        builder.AddAttribute(10, "class", "bi bi-link-45deg");
+        builder.CloseElement();
+        builder.OpenElement(11, "h2");
+        builder.AddContent(12, "ASSIGNER UN TUTEUR");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(13, "div");
+        builder.AddAttribute(14, "class", "card-body");
+
+        // Search student
+        builder.OpenElement(15, "div");
+        builder.AddAttribute(16, "style", "display: flex; gap: 8px; margin-bottom: 12px;");
+        builder.OpenElement(17, "input");
+        builder.AddAttribute(18, "type", "text");
+        builder.AddAttribute(19, "class", "form-input");
+        builder.AddAttribute(20, "placeholder", "Chercher un étudiant par email/nom...");
+        builder.AddAttribute(21, "value", tuteurSearch);
+        builder.AddAttribute(22, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => tuteurSearch = e.Value?.ToString() ?? ""));
+        builder.CloseElement();
+        builder.OpenElement(23, "button");
+        builder.AddAttribute(24, "class", "btn btn-primary btn-sm");
+        builder.AddAttribute(25, "onclick", EventCallback.Factory.Create(this, SearchTuteurUser));
+        builder.AddAttribute(26, "disabled", tuteurSearching);
+        builder.AddContent(27, tuteurSearching ? "..." : "CHERCHER");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        if (tuteurSearchError != null)
+        {
+            builder.OpenElement(28, "p");
+            builder.AddAttribute(29, "style", "color: var(--danger); font-size: 0.75rem; margin: 0 0 12px;");
+            builder.AddContent(30, tuteurSearchError);
+            builder.CloseElement();
+        }
+
+        if (tuteurSearchResults.Any())
+        {
+            builder.OpenElement(31, "div");
+            builder.AddAttribute(32, "style", "margin-bottom: 12px; max-height: 200px; overflow-y: auto;");
+            foreach (var u in tuteurSearchResults)
+            {
+                builder.OpenElement(33, "div");
+                builder.AddAttribute(34, "class", "transaction-item");
+                builder.AddAttribute(35, "style", "cursor: pointer;");
+                builder.AddAttribute(36, "onclick", EventCallback.Factory.Create(this, () => SelectTuteurStudent(u)));
+                builder.OpenElement(37, "div");
+                builder.AddAttribute(38, "class", "transaction-info");
+                builder.OpenElement(39, "div");
+                builder.AddAttribute(40, "class", "tx-type");
+                builder.AddContent(41, $"{u.Prenom} {u.Nom}");
+                builder.CloseElement();
+                builder.OpenElement(42, "div");
+                builder.AddAttribute(43, "class", "tx-date");
+                builder.AddContent(44, $"#{u.Id} · {u.Email} · Tuteur: {(string.IsNullOrEmpty(u.TuteurEmail) ? "—" : u.TuteurEmail)}");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+
+        // Selected student
+        if (selectedStudent != null)
+        {
+            builder.OpenElement(45, "div");
+            builder.AddAttribute(46, "class", "setting-row");
+            builder.AddAttribute(47, "style", "margin-bottom: 12px;");
+            builder.OpenElement(48, "div");
+            builder.OpenElement(49, "strong");
+            builder.AddContent(50, $"#{selectedStudent.Id} {selectedStudent.Prenom} {selectedStudent.Nom}");
+            builder.CloseElement();
+            builder.OpenElement(51, "p");
+            builder.AddAttribute(52, "style", "color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;");
+            builder.AddContent(53, selectedStudent.Email);
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.OpenElement(54, "button");
+            builder.AddAttribute(55, "class", "btn btn-ghost btn-sm");
+            builder.AddAttribute(56, "onclick", EventCallback.Factory.Create(this, () => { selectedStudent = null; }));
+            builder.AddContent(57, "CHANGER");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            // Tutor email input
+            builder.OpenElement(58, "div");
+            builder.AddAttribute(59, "class", "form-group");
+            builder.OpenElement(60, "label");
+            builder.AddContent(61, "EMAIL DU TUTEUR (doit avoir un compte MBANK)");
+            builder.CloseElement();
+            builder.OpenElement(62, "input");
+            builder.AddAttribute(63, "type", "email");
+            builder.AddAttribute(64, "class", "form-input");
+            builder.AddAttribute(65, "placeholder", "tuteur@email.com");
+            builder.AddAttribute(66, "value", assignTuteurEmail);
+            builder.AddAttribute(67, "onchange", EventCallback.Factory.Create(this, (ChangeEventArgs e) => assignTuteurEmail = e.Value?.ToString() ?? ""));
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(68, "button");
+            builder.AddAttribute(69, "class", "btn btn-primary btn-block");
+            builder.AddAttribute(70, "disabled", string.IsNullOrWhiteSpace(assignTuteurEmail) || isProcessing);
+            builder.AddAttribute(71, "onclick", EventCallback.Factory.Create(this, AssignerTuteur));
+            builder.AddContent(72, isProcessing ? "..." : "ASSIGNER LE TUTEUR");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+
+        // Right: Relations existantes
+        builder.OpenElement(73, "div");
+        builder.AddAttribute(74, "class", "card");
+        builder.OpenElement(75, "div");
+        builder.AddAttribute(76, "class", "card-head");
+        builder.OpenElement(77, "i");
+        builder.AddAttribute(78, "class", "bi bi-diagram-3-fill");
+        builder.CloseElement();
+        builder.OpenElement(79, "h2");
+        builder.AddContent(80, "RELATIONS TUTEUR");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(81, "div");
+        builder.AddAttribute(82, "class", "card-body");
+
+        var grouped = relationsTuteur.GroupBy(r => r.Tuteur?.Email ?? "Tuteur inconnu").ToList();
+        if (!grouped.Any())
+        {
+            builder.OpenElement(83, "div");
+            builder.AddAttribute(84, "class", "empty-notif");
+            builder.AddContent(85, "Aucune relation tuteur établie");
+            builder.CloseElement();
+        }
+        else
+        {
+            foreach (var grp in grouped)
+            {
+                builder.OpenElement(86, "div");
+                builder.AddAttribute(87, "style", "margin-bottom: 12px; padding: 8px; border-left: 3px solid var(--blue-500);");
+                builder.OpenElement(88, "div");
+                builder.AddAttribute(89, "style", "font-weight: 700; font-size: 0.75rem; color: var(--blue-500); margin-bottom: 4px;");
+                builder.AddContent(90, $"TUTEUR : {grp.Key}");
+                builder.CloseElement();
+                foreach (var (student, tuteur) in grp)
+                {
+                    builder.OpenElement(91, "div");
+                    builder.AddAttribute(92, "style", "display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 0.7rem;");
+                    builder.OpenElement(93, "span");
+                    builder.AddContent(94, $"{student.Prenom} {student.Nom} · {student.Email}");
+                    builder.CloseElement();
+                    builder.OpenElement(95, "button");
+                    builder.AddAttribute(96, "class", "btn btn-danger btn-sm");
+                    builder.AddAttribute(97, "style", "font-size: 0.55rem; padding: 2px 8px;");
+                    builder.AddAttribute(975, "disabled", isProcessing);
+                    builder.AddAttribute(98, "onclick", EventCallback.Factory.Create(this, () => RevoquerTuteurAdmin(student.Id)));
+                    builder.AddContent(99, isProcessing ? "..." : "RÉVOQUER");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.CloseElement(); // grid
     };
 
     private RenderFragment RenderLogs => builder =>

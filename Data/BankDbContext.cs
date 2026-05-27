@@ -11,9 +11,13 @@ namespace MBANK_ETUDIANT.Data
         public DbSet<UserProfile> UserProfiles { get; set; }
         public DbSet<Transaction> Transactions { get; set; }
         public DbSet<SavingsPocket> SavingsPockets { get; set; }
+        public DbSet<UserLogin> UserLogins { get; set; }
+        public DbSet<Beneficiaire> Beneficiaires { get; set; }
+        public DbSet<CreditRequest> CreditRequests { get; set; }
         
         // Table pour l'historique des tâches administrateur
         public DbSet<AdminLog> AdminLogs { get; set; }
+        public DbSet<NotificationHistory> NotificationHistories { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -1,4 +1,5 @@
 @page "/profil"
+@page "/profil/{UserId:int}"
 @attribute [Authorize]
 @using MBANK_ETUDIANT.Services
 @using MBANK_ETUDIANT.Models
@@ -6,146 +7,268 @@
 @inject BankService Bank
 @inject NotificationService Notif
 @inject UserContext UserCtx
+@inject NavigationManager Nav
 
 <div class="cyber-panel" style="max-width: 900px; margin: auto;">
-    <div style="text-align: center; margin-bottom: 24px;">
-        <h3 style="font-size: 1rem; color: var(--gold-500); font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">
-            DOSSIER_D'INSCRIPTION_V4
-        </h3>
-        <p style="font-size: 0.75rem; color: var(--blue-500);">
-            Completez votre dossier KYC pour debloquer les services Premium <i class="bi bi-shield-check"></i>
-        </p>
-    </div>
 
-    @if (Bank.Profil.PendingPremiumUpgrade)
+    @if (isAdminReview && targetUser != null)
     {
-        <div class="status-banner pending">
-            <i class="bi bi-hourglass-split"></i> DOSSIER EN COURS DE VERIFICATION PAR L'ADMINISTRATION
+        @* ─── MODE ADMIN : REVUE KYC D'UN AUTRE UTILISATEUR ─── *@
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h3 style="font-size: 1rem; color: var(--gold-500); font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">
+                REVUE_KYC_ADMIN
+            </h3>
+            <p style="font-size: 0.75rem; color: var(--blue-500);">
+                Verification du dossier de <strong>@targetUser.Prenom @targetUser.Nom</strong> #@targetUser.Id
+            </p>
         </div>
-    }
-    else
-    {
+
+        @if (!string.IsNullOrEmpty(reviewError))
+        {
+            <div class="status-banner error">@reviewError</div>
+        }
+
         <div class="form-section">
             <h6><i class="bi bi-person-vcard"></i> IDENTITE CIVILE</h6>
             <div class="form-grid">
-                <div class="form-group">
-                    <label>Nom</label>
-                    <input type="text" @bind="kyc.Nom" placeholder="Votre nom" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Prenom</label>
-                    <input type="text" @bind="kyc.Prenom" placeholder="Votre prenom" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Date de naissance</label>
-                    <input type="date" @bind="kyc.DateNaissance" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Lieu de naissance</label>
-                    <input type="text" @bind="kyc.LieuNaissance" placeholder="Ville" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Nationalite</label>
-                    <input type="text" @bind="kyc.Nationalite" placeholder="Marocaine, etc." class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>N Passeport / CIN</label>
-                    <input type="text" @bind="kyc.PassportOuCIN" placeholder="N de document" class="form-input" />
-                </div>
+                <div class="form-group"><label>Nom</label><div class="review-value">@targetUser.Nom</div></div>
+                <div class="form-group"><label>Prenom</label><div class="review-value">@targetUser.Prenom</div></div>
+                <div class="form-group"><label>Email</label><div class="review-value">@targetUser.Email</div></div>
+                <div class="form-group"><label>Date de naissance</label><div class="review-value">@targetUser.DateNaissance?.ToString("dd/MM/yyyy")</div></div>
+                <div class="form-group"><label>Lieu de naissance</label><div class="review-value">@targetUser.LieuNaissance</div></div>
+                <div class="form-group"><label>Nationalite</label><div class="review-value">@targetUser.Nationalite</div></div>
+                <div class="form-group"><label>N Passeport / CIN</label><div class="review-value">@targetUser.PassportOuCIN</div></div>
+                <div class="form-group"><label>Situation matrimoniale</label><div class="review-value">@targetUser.SituationMatrimoniale</div></div>
             </div>
         </div>
 
         <div class="form-section">
             <h6><i class="bi bi-info-circle"></i> COORDONNEES & CURSUS</h6>
             <div class="form-grid">
-                <div class="form-group full-width">
-                    <label>Adresse de residence (Casablanca)</label>
-                    <input type="text" @bind="kyc.AdresseCasablanca" placeholder="Adresse complete" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Situation matrimoniale</label>
-                    <select @bind="kyc.SituationMatrimoniale" class="form-select">
-                        <option value="CELIBATAIRE">CELIBATAIRE</option>
-                        <option value="MARIE(E)">MARIE(E)</option>
-                        <option value="ETUDIANT">ETUDIANT</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Niveau d'etude</label>
-                    <select @bind="kyc.NiveauEtude" class="form-select">
-                        <option value="1ERE ANNEE DEV">1ERE ANNEE DEVELOPPEMENT</option>
-                        <option value="2EME ANNEE DEV">2EME ANNEE DEVELOPPEMENT</option>
-                        <option value="MASTER">MASTER / BAC+5</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Telephone</label>
-                    <input type="text" @bind="kyc.Telephone" placeholder="+212..." class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label>Reseau Social Principal (Obligatoire)</label>
-                    <input type="text" @bind="kyc.ReseauPrincipal" placeholder="Lien LinkedIn ou TikTok" class="form-input" />
-                </div>
+                <div class="form-group full-width"><label>Adresse</label><div class="review-value">@targetUser.AdresseCasablanca</div></div>
+                <div class="form-group"><label>Niveau d'etude</label><div class="review-value">@targetUser.NiveauEtude</div></div>
+                <div class="form-group"><label>Telephone</label><div class="review-value">@targetUser.Telephone</div></div>
+                <div class="form-group"><label>Reseau social</label><div class="review-value">@targetUser.ReseauPrincipal</div></div>
+                <div class="form-group"><label>Inscription</label><div class="review-value">@targetUser.DateInscription.ToString("dd/MM/yyyy HH:mm")</div></div>
             </div>
         </div>
 
         <div class="form-section">
-            <h6><i class="bi bi-cloud-arrow-up"></i> JUSTIFICATIFS (MAX 2MO)</h6>
+            <h6><i class="bi bi-cloud-arrow-up"></i> JUSTIFICATIFS</h6>
             <div class="upload-grid">
-                <div class="upload-card @(string.IsNullOrEmpty(kyc.DocIdentiteUrl) ? "" : "has-file")">
+                <div class="upload-card @(string.IsNullOrEmpty(targetUser.DocIdentiteUrl) ? "" : "has-file")">
                     <div class="upload-icon"><i class="bi bi-card-image"></i></div>
                     <label>SCAN PIECE D'IDENTITE</label>
-                    <InputFile OnChange="@(e => HandleUpload(e, "ID"))" style="font-size: 0.7rem; color: var(--text-muted);" />
-                    @if (!string.IsNullOrEmpty(kyc.DocIdentiteUrl))
+                    @if (!string.IsNullOrEmpty(targetUser.DocIdentiteUrl))
                     {
                         <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
                             <span class="badge badge-success">PRET</span>
-                            <a href="@kyc.DocIdentiteUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                            <a href="@targetUser.DocIdentiteUrl" target="_blank" class="btn btn-ghost btn-sm">VOIR LE DOCUMENT</a>
                         </div>
                     }
+                    else
+                    {
+                        <span class="badge badge-danger">MANQUANT</span>
+                    }
                 </div>
-                <div class="upload-card @(string.IsNullOrEmpty(kyc.DocDomicileUrl) ? "" : "has-file")">
+                <div class="upload-card @(string.IsNullOrEmpty(targetUser.DocDomicileUrl) ? "" : "has-file")">
                     <div class="upload-icon"><i class="bi bi-house-check"></i></div>
                     <label>JUSTIFICATIF DOMICILE</label>
-                    <InputFile OnChange="@(e => HandleUpload(e, "DOMICILE"))" style="font-size: 0.7rem; color: var(--text-muted);" />
-                    @if (!string.IsNullOrEmpty(kyc.DocDomicileUrl))
+                    @if (!string.IsNullOrEmpty(targetUser.DocDomicileUrl))
                     {
                         <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
                             <span class="badge badge-success">PRET</span>
-                            <a href="@kyc.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                            <a href="@targetUser.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">VOIR LE DOCUMENT</a>
                         </div>
+                    }
+                    else
+                    {
+                        <span class="badge badge-danger">MANQUANT</span>
                     }
                 </div>
             </div>
         </div>
 
-        <div class="form-group" style="margin-top: 24px; text-align: center;">
-            <label class="checkbox-container" style="justify-content: center; font-size: 0.8rem; color: var(--text-secondary);">
-                <input type="checkbox" @bind="kyc.CguAcceptees" />
-                J'accepte les conditions d'utilisation et le prelevement de 100 DH pour le passage en Premium.
-            </label>
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button class="btn btn-success btn-block" @onclick="ApprouverKyc" disabled="@isProcessing">
+                @(isProcessing ? "TRAITEMENT..." : "VALIDER LE DOSSIER")
+            </button>
+            <button class="btn btn-danger btn-block" @onclick="RejeterKyc" disabled="@isProcessing">
+                @(isProcessing ? "TRAITEMENT..." : "REJETER LE DOSSIER")
+            </button>
+        </div>
+        <div style="text-align: center; margin-top: 12px;">
+            <button class="btn btn-ghost" @onclick="RetourAdmin">
+                <i class="bi bi-arrow-left"></i> RETOUR AU PANEL ADMIN
+            </button>
+        </div>
+    }
+    else
+    {
+        @* ─── MODE UTILISATEUR : SAISIE / SOUMISSION KYC ─── *@
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h3 style="font-size: 1rem; color: var(--gold-500); font-weight: 700; text-transform: uppercase; letter-spacing: 2px;">
+                DOSSIER_D'INSCRIPTION_V4
+            </h3>
+            <p style="font-size: 0.75rem; color: var(--blue-500);">
+                Completez votre dossier KYC pour debloquer les services Premium <i class="bi bi-shield-check"></i>
+            </p>
         </div>
 
-        <button class="btn btn-primary btn-block @(!PeutSoumettre ? "disabled" : "")"
-                disabled="@(!PeutSoumettre)"
-                @onclick="SoumettreDossier"
-                style="margin-top: 16px;">
-            ENVOYER LE DOSSIER AU MASTER ADMIN
-        </button>
+        @if (Bank.Profil.Statut == UserStatus.PREMIUM)
+        {
+            <div class="status-banner" style="background: var(--success-bg); border: 1px solid var(--success); color: var(--success);">
+                <i class="bi bi-shield-check"></i> COMPTE PREMIUM ACTIF — Vous avez acces a tous les services.
+            </div>
+        }
+        else if (Bank.Profil.PendingPremiumUpgrade)
+        {
+            <div class="status-banner pending">
+                <i class="bi bi-hourglass-split"></i> DOSSIER EN COURS DE VERIFICATION PAR L'ADMINISTRATION
+            </div>
+        }
+        else
+        {
+            <div class="form-section">
+                <h6><i class="bi bi-person-vcard"></i> IDENTITE CIVILE</h6>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Nom</label>
+                        <input type="text" @bind="kyc.Nom" placeholder="Votre nom" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Prenom</label>
+                        <input type="text" @bind="kyc.Prenom" placeholder="Votre prenom" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Date de naissance</label>
+                        <input type="date" @bind="kyc.DateNaissance" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Lieu de naissance</label>
+                        <input type="text" @bind="kyc.LieuNaissance" placeholder="Ville" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Nationalite</label>
+                        <input type="text" @bind="kyc.Nationalite" placeholder="Marocaine, etc." class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>N Passeport / CIN</label>
+                        <input type="text" @bind="kyc.PassportOuCIN" placeholder="N de document" class="form-input" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6><i class="bi bi-info-circle"></i> COORDONNEES & CURSUS</h6>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label>Adresse de residence (Casablanca)</label>
+                        <input type="text" @bind="kyc.AdresseCasablanca" placeholder="Adresse complete" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Situation matrimoniale</label>
+                        <select @bind="kyc.SituationMatrimoniale" class="form-select">
+                            <option value="CELIBATAIRE">CELIBATAIRE</option>
+                            <option value="MARIE(E)">MARIE(E)</option>
+                            <option value="ETUDIANT">ETUDIANT</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Niveau d'etude</label>
+                        <select @bind="kyc.NiveauEtude" class="form-select">
+                            <option value="1ERE ANNEE DEV">1ERE ANNEE DEVELOPPEMENT</option>
+                            <option value="2EME ANNEE DEV">2EME ANNEE DEVELOPPEMENT</option>
+                            <option value="MASTER">MASTER / BAC+5</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Telephone</label>
+                        <input type="text" @bind="kyc.Telephone" placeholder="+212..." class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Reseau Social Principal</label>
+                        <input type="text" @bind="kyc.ReseauPrincipal" placeholder="Optionnel (LinkedIn, TikTok...)" class="form-input" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6><i class="bi bi-cloud-arrow-up"></i> JUSTIFICATIFS (MAX 2MO)</h6>
+                <div class="upload-grid">
+                    <div class="upload-card @(string.IsNullOrEmpty(kyc.DocIdentiteUrl) ? "" : "has-file")">
+                        <div class="upload-icon"><i class="bi bi-card-image"></i></div>
+                        <label>SCAN PIECE D'IDENTITE</label>
+                        <InputFile OnChange="@(e => HandleUpload(e, "ID"))" style="font-size: 0.7rem; color: var(--text-muted);" />
+                        @if (!string.IsNullOrEmpty(kyc.DocIdentiteUrl))
+                        {
+                            <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                                <span class="badge badge-success">PRET</span>
+                                <a href="@kyc.DocIdentiteUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                            </div>
+                        }
+                    </div>
+                    <div class="upload-card @(string.IsNullOrEmpty(kyc.DocDomicileUrl) ? "" : "has-file")">
+                        <div class="upload-icon"><i class="bi bi-house-check"></i></div>
+                        <label>JUSTIFICATIF DOMICILE</label>
+                        <InputFile OnChange="@(e => HandleUpload(e, "DOMICILE"))" style="font-size: 0.7rem; color: var(--text-muted);" />
+                        @if (!string.IsNullOrEmpty(kyc.DocDomicileUrl))
+                        {
+                            <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                                <span class="badge badge-success">PRET</span>
+                                <a href="@kyc.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 24px; text-align: center;">
+                <label class="checkbox-container" style="justify-content: center; font-size: 0.8rem; color: var(--text-secondary);">
+                    <input type="checkbox" @bind="kyc.CguAcceptees" />
+                    J'accepte les conditions d'utilisation et le prelevement de 100 DH pour le passage en Premium.
+                </label>
+            </div>
+
+            <button class="btn btn-primary btn-block @(!PeutSoumettre || isProcessing ? "disabled" : "")"
+                    disabled="@(!PeutSoumettre || isProcessing)"
+                    @onclick="SoumettreDossier"
+                    style="margin-top: 16px;">
+                @(isProcessing ? "TRAITEMENT..." : "ENVOYER LE DOSSIER AU MASTER ADMIN")
+            </button>
+        }
     }
 </div>
 
 @code {
-    private UserProfile kyc = new();
+    [Parameter]
+    public int? UserId { get; set; }
 
-    protected override void OnInitialized()
+    private UserProfile kyc = new();
+    private UserProfile? targetUser;
+    private bool isAdminReview;
+    private bool isProcessing;
+    private string? reviewError;
+
+    protected override async Task OnInitializedAsync()
     {
-        if (UserCtx.KycFormState != null)
+        if (UserId.HasValue && Bank.Profil.IsAdmin)
+        {
+            isAdminReview = true;
+            targetUser = await Bank.GetUserByIdAsync(UserId.Value);
+            if (targetUser == null)
+            {
+                reviewError = "Utilisateur introuvable";
+                isAdminReview = false;
+            }
+        }
+        else if (UserCtx.KycFormState != null)
+        {
             kyc = UserCtx.KycFormState;
+        }
     }
 
     private bool PeutSoumettre =>
-        !string.IsNullOrEmpty(kyc.ReseauPrincipal) &&
         kyc.CguAcceptees &&
         !string.IsNullOrEmpty(kyc.DocIdentiteUrl) &&
         !string.IsNullOrEmpty(kyc.DocDomicileUrl) &&
@@ -179,16 +302,74 @@
 
     private async Task SoumettreDossier()
     {
-        if (Bank.Profil.Solde < 100m)
+        if (isProcessing || Bank.Profil.Solde < 100m)
         {
-            Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
+            if (Bank.Profil.Solde < 100m)
+                Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
             return;
         }
-
-        var success = await Bank.SoumettreDossierKYC(kyc);
-        if (success)
-            Notif.Notify("DOSSIER TRANSMIS AVEC SUCCES (100 DH PRELEVES)", NotificationType.SUCCESS);
-        else
-            Notif.Notify("ERREUR LORS DE LA TRANSMISSION", NotificationType.ERROR);
+        isProcessing = true;
+        try
+        {
+            var success = await Bank.SoumettreDossierKYC(kyc);
+            if (success)
+                Notif.Notify("DOSSIER TRANSMIS AVEC SUCCES (100 DH PRELEVES)", NotificationType.SUCCESS);
+            else
+                Notif.Notify("ERREUR LORS DE LA TRANSMISSION", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
     }
+
+    private async Task ApprouverKyc()
+    {
+        if (targetUser == null) return;
+        isProcessing = true;
+        reviewError = null;
+        try
+        {
+            if (await Bank.ApprouverPremium(targetUser.Id))
+            {
+                Notif.Notify($"Dossier KYC de {targetUser.Prenom} {targetUser.Nom} approuvé", NotificationType.SUCCESS);
+                Nav.NavigateTo("/admin?section=historique");
+            }
+            else
+                reviewError = "Erreur lors de l'approbation";
+        }
+        catch (Exception ex)
+        {
+            reviewError = $"Erreur : {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task RejeterKyc()
+    {
+        if (targetUser == null) return;
+        isProcessing = true;
+        reviewError = null;
+        try
+        {
+            var (success, message) = await Bank.RejeterDossierKycAsync(targetUser.Id);
+            if (success)
+            {
+                Notif.Notify(message, NotificationType.INFO);
+                Nav.NavigateTo("/admin?section=historique");
+            }
+            else
+                reviewError = message;
+        }
+        catch (Exception ex)
+        {
+            reviewError = $"Erreur : {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void RetourAdmin() => Nav.NavigateTo("/admin");
 }

@@ -6,7 +6,7 @@ namespace MBANK_ETUDIANT.Models
     public class Transaction
     {
         public int Id { get; set; }
-        public DateTime Date { get; set; } = DateTime.Now;
+        public DateTime Date { get; set; } = DateTime.UtcNow;
         
         // DÉPÔT, RETRAIT, ÉPARGNE, CRÉDIT
         public string Type { get; set; } = ""; 

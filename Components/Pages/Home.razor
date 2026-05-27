@@ -3,83 +3,190 @@
 @inject BankService BankService
 @inject NavigationManager NavManager
 
-<div class="content-area" style="max-width: 600px;">
-    <div class="balance-card">
-        <div class="balance-label">SOLDE TOTAL</div>
-        <div class="balance-value">@balance.ToString("N2") <span class="currency">DH</span></div>
-    </div>
-
-    <div class="bank-card">
-        <div class="bank-card-watermark">ADN</div>
-        <div class="bank-card-top">
-            <div class="card-chip"></div>
-            <div class="card-status">
-                <div class="card-status-label">STATUT</div>
-                <div class="card-status-value">@BankService.Profil.GetRank()</div>
-            </div>
-        </div>
-        <div class="card-number">
-            **** **** **** @BankService.Profil.Id.ToString("D4")
-        </div>
-        <div class="card-footer">
-            <div>
-                <div class="card-footer-label">TITULAIRE</div>
-                <div class="card-footer-value">@BankService.Profil.Prenom?.ToUpper() @BankService.Profil.Nom?.ToUpper()</div>
-            </div>
-            <div style="text-align: right;">
-                <div class="card-footer-label">SOLDE</div>
-                <div class="card-balance">@BankService.Profil.Solde.ToString("N2") DH</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="action-grid">
-        <button class="action-btn" @onclick="HandleAddMoney">
-            <i class="bi bi-plus-lg icon-gold"></i>
-            Ajouter
-        </button>
-        <button class="action-btn" @onclick="HandleTransfer">
-            <i class="bi bi-arrow-up-right icon-green"></i>
-            Virement
-        </button>
-        <button class="action-btn" @onclick='() => NavManager.NavigateTo("/courant")'>
-            <i class="bi bi-wallet2 icon-blue"></i>
-            Courant
-        </button>
-    </div>
-
-    <h5 class="section-title" style="margin-top: 24px;">ACTIVITE RECENTE</h5>
-    @if (recentTransactions.Any())
+<div class="content-area" style="max-width: 700px;">
+    @if (isLoading)
     {
-        @foreach (var tr in recentTransactions)
-        {
-            <div class="transaction-item">
-                <div class="transaction-info">
-                    <div class="tx-type">@tr.Type</div>
-                    <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
-                </div>
-                <div class="transaction-amount @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" ? "tx-positive" : "tx-negative")">
-                    @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" ? "+" : "-") @tr.Montant.ToString("N2")
-                </div>
-            </div>
-        }
+        <div class="adn-loader">CHARGEMENT...</div>
     }
     else
     {
-        <div class="empty-state">
-            <p>AUCUNE TRANSACTION RECENTE</p>
+        @* ─── BALANCE + CARTE ─── *@
+        <div class="balance-card">
+            <div class="balance-label">SOLDE TOTAL</div>
+            <div class="balance-value">@balance.ToString("N2") <span class="currency">DH</span></div>
         </div>
+
+        <div class="bank-card">
+            <div class="bank-card-watermark">ADN</div>
+            <div class="bank-card-top">
+                <div class="card-chip"></div>
+                <div class="card-status">
+                    <div class="card-status-label">STATUT</div>
+                    <div class="card-status-value">@BankService.Profil.GetRank()</div>
+                </div>
+            </div>
+            <div class="card-number">
+                **** **** **** @BankService.Profil.Id.ToString("D4")
+            </div>
+            <div class="card-footer">
+                <div>
+                    <div class="card-footer-label">TITULAIRE</div>
+                    <div class="card-footer-value">@BankService.Profil.Prenom?.ToUpper() @BankService.Profil.Nom?.ToUpper()</div>
+                </div>
+                <div style="text-align: right;">
+                    <div class="card-footer-label">SOLDE</div>
+                    <div class="card-balance">@BankService.Profil.Solde.ToString("N2") DH</div>
+                </div>
+            </div>
+        </div>
+
+        @* ─── STATS MENSUELLES ─── *@
+        <div class="form-row" style="margin-bottom: 16px;">
+            <div class="stat-card">
+                <div class="stat-label">REVENUS (CE MOIS)</div>
+                <div class="stat-value green">+@revenusMois.ToString("N2") DH</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">DÉPENSES (CE MOIS)</div>
+                <div class="stat-value" style="color: var(--danger);">-@depensesMois.ToString("N2") DH</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">ÉPARGNE TOTALE</div>
+                <div class="stat-value" style="color: var(--blue-500);">@totalEpargne.ToString("N2") DH</div>
+            </div>
+        </div>
+
+        @* ─── MINI GRAPH (7 JOURS) ─── *@
+        @if (dailyBreakdown.Any())
+        {
+            var maxVal = dailyBreakdown.Max(d => Math.Max(d.Entrees, d.Sorties));
+            if (maxVal > 0)
+            {
+                <div class="cyber-panel" style="padding: 16px; margin-bottom: 16px;">
+                    <h6 class="section-title" style="margin-bottom: 12px;">ACTIVITÉ (7 DERNIERS JOURS)</h6>
+                    <div style="display: flex; align-items: flex-end; gap: 6px; height: 80px;">
+                        @foreach (var (jour, entrees, sorties) in dailyBreakdown)
+                        {
+                            var hIn = (entrees / maxVal) * 60;
+                            var hOut = (sorties / maxVal) * 60;
+                            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end;">
+                                <div style="display: flex; gap: 2px; align-items: flex-end; height: 70px;">
+                                    <div style="width: 12px; height: @(hIn.ToString("F0"))px; background: var(--success); border-radius: 3px 3px 0 0; opacity: 0.8;" title="Entrées: @entrees.ToString("N2")"></div>
+                                    <div style="width: 12px; height: @(hOut.ToString("F0"))px; background: var(--danger); border-radius: 3px 3px 0 0; opacity: 0.8;" title="Sorties: @sorties.ToString("N2")"></div>
+                                </div>
+                                <div style="font-size: 0.5rem; color: var(--text-muted); margin-top: 4px;">@jour.ToString("dd/MM")</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+
+        @* ─── ALERTE CRÉDIT EN ATTENTE ─── *@
+        @if (hasPendingCredit)
+        {
+            <div class="warning-box" style="margin-bottom: 16px;">
+                <i class="bi bi-clock-history"></i> DEMANDE DE CRÉDIT EN ATTENTE DE VALIDATION ADMINISTRATIVE
+            </div>
+        }
+
+        @* ─── ACTIONS RAPIDES ─── *@
+        <div class="action-grid">
+            <button class="action-btn" @onclick="HandleAddMoney">
+                <i class="bi bi-plus-lg icon-gold"></i>
+                Ajouter
+            </button>
+            <button class="action-btn" @onclick="HandleTransfer">
+                <i class="bi bi-arrow-up-right icon-green"></i>
+                Virement
+            </button>
+            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/courant")'>
+                <i class="bi bi-wallet2 icon-blue"></i>
+                Courant
+            </button>
+            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/epargne")'>
+                <i class="bi bi-piggy-bank icon-gold"></i>
+                Épargne
+            </button>
+        </div>
+
+        @* ─── RÉSUMÉ ÉPARGNE ─── *@
+        @if (savingsPockets.Any())
+        {
+            <h5 class="section-title" style="margin-top: 24px;">OBJECTIFS D'ÉPARGNE</h5>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                @foreach (var p in savingsPockets)
+                {
+                    var pct = p.Progression;
+                    <div class="card" style="border-left: 3px solid var(--blue-500); padding: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-weight: 600; font-size: 0.8rem;">@p.Objectif.ToUpper()</span>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--success);">@p.MontantActuel.ToString("N2") / @p.MontantCible.ToString("N2") DH</span>
+                        </div>
+                        <div style="height: 6px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden;">
+                            <div style="height: 100%; width: @pct%; background: linear-gradient(90deg, var(--success), var(--blue-500)); border-radius: 4px; transition: width 0.5s;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                            <span style="font-size: 0.55rem; color: var(--text-muted);">@pct% atteint</span>
+                            <span style="font-size: 0.55rem; color: var(--text-muted);">Échéance: @p.DateCible.ToShortDateString()</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @* ─── TRANSACTIONS RÉCENTES ─── *@
+        <h5 class="section-title" style="margin-top: 24px;">ACTIVITE RECENTE</h5>
+        @if (recentTransactions.Any())
+        {
+            @foreach (var tr in recentTransactions)
+            {
+                <div class="transaction-item">
+                    <div class="transaction-info">
+                        <div class="tx-type">@tr.Type</div>
+                        <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
+                    </div>
+                    <div class="transaction-amount @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "tx-positive" : "tx-negative")">
+                        @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "+" : "-") @tr.Montant.ToString("N2")
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-state">
+                <p>AUCUNE TRANSACTION RECENTE</p>
+            </div>
+        }
     }
 </div>
 
 @code {
     private decimal balance;
     private List<Transaction> recentTransactions = new();
+    private decimal revenusMois;
+    private decimal depensesMois;
+    private decimal totalEpargne;
+    private List<(DateTime Jour, decimal Entrees, decimal Sorties)> dailyBreakdown = new();
+    private List<SavingsPocket> savingsPockets = new();
+    private bool hasPendingCredit;
+    private bool isLoading = true;
 
     protected override async Task OnInitializedAsync()
     {
-        balance = await BankService.GetBalanceAsync();
-        recentTransactions = await BankService.GetRecentTransactionsAsync(5);
+        try
+        {
+            balance = await BankService.GetBalanceAsync();
+            recentTransactions = await BankService.GetRecentTransactionsAsync(5);
+            savingsPockets = await BankService.GetPocketsAsync();
+            var stats = await BankService.GetDashboardStatsAsync();
+            revenusMois = stats.RevenusMois;
+            depensesMois = stats.DepensesMois;
+            totalEpargne = stats.TotalEpargne;
+            dailyBreakdown = stats.DailyBreakdown;
+            hasPendingCredit = BankService.Profil.PendingCreditRequest;
+        }
+        finally { isLoading = false; }
     }
 
     private void HandleAddMoney() => NavManager.NavigateTo("/depot");

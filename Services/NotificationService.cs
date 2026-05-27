@@ -19,7 +19,7 @@ namespace MBANK_ETUDIANT.Services
             { 
                 Message = message, 
                 Type = type,
-                Timestamp = DateTime.Now 
+                Timestamp = DateTime.UtcNow 
             };
 
             // On déclenche l'événement pour informer l'UI

@@ -1,39 +1,64 @@
 @page "/historique"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
 @using MBANK_ETUDIANT.Models
 @inject BankService Bank
 
 <div class="cyber-panel">
-    <h3>LOGS_TRANSACTIONS</h3>
+    <h3><i class="bi bi-list-ul"></i> HISTORIQUE DES TRANSACTIONS</h3>
 
-    <div style="overflow-x: auto; margin-top: 16px;">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>DATE</th>
-                    <th>TYPE</th>
-                    <th>MONTANT</th>
-                    <th>FRAIS</th>
-                    <th>MOTIF</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in transactions)
-                {
-                    <tr>
-                        <td>@item.Date.ToShortDateString()</td>
-                        <td class="@(item.Type == "DEPOT" || item.Type == "RECEPTION" ? "tx-positive" : "tx-negative")">
-                            @item.Type
-                        </td>
-                        <td>@item.MontantBrut.ToString("N2") DH</td>
-                        <td style="color: var(--text-muted);">@item.Frais.ToString("N2") DH</td>
-                        <td style="color: var(--text-muted);">@item.Motif</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+    @if (!transactions.Any())
+    {
+        <div class="empty-state" style="margin-top: 16px;">
+            <p><i class="bi bi-inbox"></i> Aucune transaction pour le moment</p>
+        </div>
+    }
+    else
+    {
+        <div style="margin-top: 16px;">
+            @foreach (var item in transactions)
+            {
+                <div class="transaction-item">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div class="tx-icon @GetIconClass(item)">
+                            <i class="@GetIcon(item)"></i>
+                        </div>
+                        <div class="transaction-info">
+                            <div class="tx-type">
+                                @item.Libelle
+                                @if (!string.IsNullOrEmpty(item.Motif) && item.Motif != item.Libelle)
+                                {
+                                    <span style="font-weight: 400; color: var(--text-muted); font-size: 0.75rem;">
+                                        — @item.Motif
+                                    </span>
+                                }
+                            </div>
+                            <div class="tx-date">
+                                <i class="bi bi-clock" style="margin-right: 4px;"></i>
+                                @item.Date.ToString("dd MMM yyyy à HH:mm")
+                                <span class="tx-badge @GetBadgeClass(item)">@item.Type</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="@(IsCredit(item) ? "tx-positive" : "tx-negative")" style="font-weight: 700; font-size: 0.95rem;">
+                            @(IsCredit(item) ? "+" : "-") @item.Montant.ToString("N2") <span style="font-size: 0.65rem;">DH</span>
+                        </div>
+                        <div style="font-size: 0.6rem; color: var(--text-muted); margin-top: 2px;">
+                            @if (item.Frais > 0)
+                            {
+                                <span>Frais: @item.Frais.ToString("N2") DH</span>
+                            }
+                            Solde: @item.SoldeApres.ToString("N2") DH
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div style="margin-top: 16px; font-size: 0.65rem; color: var(--text-muted); text-align: center;">
+            @transactions.Count transaction(s) — Solde actuel : <strong style="color: var(--text-primary);">@Bank.Profil.Solde.ToString("N2") DH</strong>
+        </div>
+    }
 </div>
 
 @code {
@@ -43,4 +68,26 @@
     {
         transactions = await Bank.GetHistoriqueAsync();
     }
+
+    private bool IsCredit(Transaction t) => t.Type switch
+    {
+        "DEPOT" or "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" => true,
+        var _ when t.Type?.Contains("RECU") == true || t.Type?.Contains("REÇU") == true => true,
+        _ => false
+    };
+
+    private string GetIcon(Transaction t) => t.Type switch
+    {
+        "DEPOT" or "DÉPÔT" => "bi bi-arrow-down-circle",
+        "RETRAIT" => "bi bi-arrow-up-circle",
+        "VIREMENT" => "bi bi-send",
+        "RÉCEPTION" => "bi bi-inbox",
+        "ÉPARGNE" => "bi bi-piggy-bank",
+        "CRÉDIT" => "bi bi-cash",
+        _ => "bi bi-circle"
+    };
+
+    private string GetIconClass(Transaction t) => IsCredit(t) ? "tx-icon-in" : "tx-icon-out";
+
+    private string GetBadgeClass(Transaction t) => IsCredit(t) ? "badge-success" : "badge-danger";
 }

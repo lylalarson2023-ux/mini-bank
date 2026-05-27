@@ -1,0 +1,624 @@
+@page "/parametres"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="cyber-panel" style="max-width: 900px; margin: auto;">
+    <div class="admin-tabs">
+        <button class='admin-tab @(activeTab == "profile" ? "active" : "")' @onclick="GoProfile">
+            <i class="bi bi-person-gear"></i> PROFIL
+        </button>
+        <button class='admin-tab @(activeTab == "password" ? "active" : "")' @onclick="GoPassword">
+            <i class="bi bi-shield-lock"></i> MOT DE PASSE
+        </button>
+        <button class='admin-tab @(activeTab == "privacy" ? "active" : "")' @onclick="GoPrivacy">
+            <i class="bi bi-incognito"></i> CONFIDENTIALITE
+        </button>
+        <button class='admin-tab @(activeTab == "legal" ? "active" : "")' @onclick="GoLegal">
+            <i class="bi bi-file-earmark-text"></i> MENTIONS LEGALES
+        </button>
+        <button class='admin-tab @(activeTab == "connexions" ? "active" : "")' @onclick="GoConnexions">
+            <i class="bi bi-clock-history"></i> CONNEXIONS
+        </button>
+        <button class='admin-tab @(activeTab == "plafonds" ? "active" : "")' @onclick="GoPlafonds">
+            <i class="bi bi-sliders"></i> PLAFONDS
+        </button>
+        <button class='admin-tab @(activeTab == "notifs" ? "active" : "")' @onclick="GoNotifs">
+            <i class="bi bi-bell"></i> NOTIFICATIONS
+        </button>
+    </div>
+
+    @if (activeTab == "profile")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-person-gear"></i> INFORMATIONS PERSONNELLES</h6>
+            <EditForm Model="@profileModel" OnValidSubmit="SaveProfile">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Nom</label>
+                        <InputText @bind-Value="profileModel.Nom" class="form-input" placeholder="Votre nom" />
+                    </div>
+                    <div class="form-group">
+                        <label>Prénom</label>
+                        <InputText @bind-Value="profileModel.Prenom" class="form-input" placeholder="Votre prénom" />
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <InputText @bind-Value="profileModel.Email" class="form-input" type="email" placeholder="email@exemple.com" />
+                    </div>
+                    <div class="form-group">
+                        <label>Téléphone</label>
+                        <InputText @bind-Value="profileModel.Telephone" class="form-input" placeholder="+212..." />
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" disabled="@saving">
+                    @(saving ? "ENREGISTREMENT..." : "ENREGISTRER")
+                </button>
+            </EditForm>
+            @if (!string.IsNullOrEmpty(profileMsg))
+            {
+                <div class="@(profileSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @profileMsg
+                </div>
+            }
+        </div>
+    }
+
+    @if (activeTab == "password")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-shield-lock"></i> CHANGER LE MOT DE PASSE</h6>
+            <EditForm Model="@passwordModel" OnValidSubmit="ChangePassword">
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label>Mot de passe actuel</label>
+                        <InputText @bind-Value="passwordModel.CurrentPassword" class="form-input" type="password" placeholder="......" />
+                    </div>
+                    <div class="form-group full-width">
+                        <label>Nouveau mot de passe</label>
+                        <InputText @bind-Value="passwordModel.NewPassword" class="form-input" type="password" placeholder="......" />
+                        <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial (!@@#$%^&*)</small>
+                        @if (!string.IsNullOrEmpty(passwordModel.NewPassword))
+                        {
+                            <div class="password-strength" style="margin-top: 6px;">
+                                <div class="strength-bar @GetStrengthClass(passwordModel.NewPassword)"></div>
+                                <span class="strength-label">@GetStrengthLabel(passwordModel.NewPassword)</span>
+                            </div>
+                        }
+                    </div>
+                    <div class="form-group full-width">
+                        <label>Confirmer le nouveau mot de passe</label>
+                        <InputText @bind-Value="passwordModel.ConfirmPassword" class="form-input" type="password" placeholder="......" />
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" disabled="@saving">
+                    @(saving ? "CHANGEMENT..." : "CHANGER LE MOT DE PASSE")
+                </button>
+            </EditForm>
+            @if (!string.IsNullOrEmpty(pwdMsg))
+            {
+                <div class="@(pwdSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @pwdMsg
+                </div>
+            }
+        </div>
+    }
+
+    @if (activeTab == "privacy")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-palette"></i> APPARENCE</h6>
+            <div class="setting-row">
+                <div>
+                    <strong style="color: var(--text-primary);">Thème</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        Passer entre le thème sombre et clair
+                    </p>
+                </div>
+                <button class="btn btn-ghost btn-sm" @onclick="ToggleTheme">
+                    <i class="bi @(currentTheme == "light" ? "bi-moon-stars" : "bi-sun")"></i>
+                    @(currentTheme == "light" ? "SOMBRE" : "CLAIR")
+                </button>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-incognito"></i> CONFIDENTIALITE</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Conformément à la Loi 09-08 et au RGPD : gérez vos données personnelles et vos préférences.
+            </p>
+
+            <div class="setting-row">
+                <div>
+                    <strong style="color: var(--text-primary);">Tuteur</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        @if (!string.IsNullOrEmpty(Bank.Profil.TuteurEmail))
+                        {
+                            <span>Tuteur actuel : <strong>@Bank.Profil.TuteurEmail</strong></span>
+                        }
+                        else
+                        {
+                            <span>Aucun tuteur défini</span>
+                        }
+                    </p>
+                </div>
+                <button class="btn btn-ghost btn-sm" @onclick="ToggleTuteur">
+                    @(Bank.Profil.TuteurAutorise ? "REVOQUER" : "CONFIGURER")
+                </button>
+            </div>
+
+            @if (showTuteurInput)
+            {
+                <div class="form-group" style="margin-top: 12px;">
+                    <label>Email du tuteur</label>
+                    <input type="email" @bind="tuteurEmail" class="form-input" placeholder="email@tuteur.com" />
+                    <button class="btn btn-primary btn-sm" @onclick="SaveTuteur" style="margin-top: 8px;" disabled="@saving">VALIDER</button>
+                </div>
+            }
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-download"></i> EXPORT DE DONNEES</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Téléchargez l'ensemble de vos données personnelles conformément au droit d'accès et de portabilité (Loi 09-08, art. 4-4).
+            </p>
+            <button class="btn btn-primary" @onclick="ExportData" disabled="@saving">
+                @(saving ? "EXPORT EN COURS..." : "EXPORTER MES DONNEES")
+            </button>
+            @if (!string.IsNullOrEmpty(exportMsg))
+            {
+                <div class="@(exportSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @exportMsg
+                </div>
+            }
+        </div>
+
+        <div class="form-section" style="border-color: var(--danger);">
+            <h6 style="color: var(--danger);"><i class="bi bi-trash"></i> SUPPRESSION DE COMPTE</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Supprimez définitivement votre compte et toutes vos données personnelles (droit à l'effacement - Loi 09-08, art. 4-5).
+                Cette action est <strong style="color: var(--danger);">irréversible</strong>.
+            </p>
+            @if (showDeleteConfirm)
+            {
+                <div style="background: var(--danger-bg); border: 1px solid var(--danger); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 12px;">
+                    <p style="color: var(--text-primary); font-size: 0.8rem; margin-bottom: 12px;">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Êtes-vous sûr de vouloir supprimer votre compte ? Toutes vos données seront définitivement effacées.
+                    </p>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-danger btn-sm" @onclick="ConfirmDelete" disabled="@saving">
+                            @(saving ? "SUPPRESSION..." : "CONFIRMER LA SUPPRESSION")
+                        </button>
+                        <button class="btn btn-ghost btn-sm" @onclick="CancelDelete">ANNULER</button>
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(deleteMsg))
+                {
+                    <div class="@(deleteSuccess ? "status-banner success" : "status-banner error")">
+                        @deleteMsg
+                    </div>
+                }
+            }
+            else
+            {
+                <button class="btn btn-danger" @onclick="() => showDeleteConfirm = true">
+                    <i class="bi bi-trash"></i> SUPPRIMER MON COMPTE
+                </button>
+            }
+        </div>
+    }
+
+    @if (activeTab == "legal")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-file-earmark-text"></i> MENTIONS LEGALES</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Consultez les documents légaux et réglementaires de MBANK.
+            </p>
+            <div class="legal-links" style="display: flex; flex-direction: column; gap: 8px;">
+                <a href="/cgu" target="_blank" class="btn btn-ghost" style="justify-content: flex-start;">
+                    <i class="bi bi-file-earmark-text"></i> Conditions Générales d'Utilisation
+                </a>
+                <a href="/confidentialite" target="_blank" class="btn btn-ghost" style="justify-content: flex-start;">
+                    <i class="bi bi-shield-check"></i> Politique de Confidentialité
+                </a>
+                <a href="/mentions-legales" target="_blank" class="btn btn-ghost" style="justify-content: flex-start;">
+                    <i class="bi bi-info-circle"></i> Mentions Légales
+                </a>
+            </div>
+        </div>
+    }
+
+    @if (activeTab == "connexions")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-clock-history"></i> HISTORIQUE DES CONNEXIONS</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Dernières connexions à votre compte. En cas d'activité suspecte, révoquez toutes les sessions.
+            </p>
+            @if (!loginHistory.Any())
+            {
+                <div class="empty-state"><p>Aucune connexion enregistrée</p></div>
+            }
+            else
+            {
+                <div style="overflow-x: auto;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>DATE</th>
+                                <th>ADRESSE IP</th>
+                                <th>NAVIGATEUR</th>
+                                <th>STATUT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in loginHistory)
+                            {
+                                <tr>
+                                    <td style="font-size: 0.75rem;">@l.Date.ToString("dd/MM/yy HH:mm")</td>
+                                    <td style="font-size: 0.75rem; color: var(--text-muted);">@l.IpAddress</td>
+                                    <td style="font-size: 0.65rem; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis;">@Truncate(l.UserAgent, 60)</td>
+                                    <td>
+                                        <span class="badge @(l.Success ? "badge-success" : "badge-danger")">
+                                            @(l.Success ? "OK" : "ÉCHEC")
+                                        </span>
+                                        @if (!l.Success && !string.IsNullOrEmpty(l.FailureReason))
+                                        {
+                                            <span style="font-size: 0.65rem; color: var(--text-muted); display: block;">@l.FailureReason</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <div style="margin-top: 16px;">
+                <button class="btn btn-danger btn-sm" @onclick="HandleRevokeSessions">
+                    <i class="bi bi-shield-exclamation"></i> REVOQUER TOUTES LES SESSIONS
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (activeTab == "plafonds")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-sliders"></i> PLAFONDS DE TRANSACTIONS</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Limites maximales de vos transactions. Réinitialisées automatiquement chaque jour/mois.
+            </p>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Plafond journalier (DH)</label>
+                    <input type="number" @bind="plafondJournalier" class="form-input" placeholder="5000" />
+                </div>
+                <div class="form-group">
+                    <label>Plafond mensuel (DH)</label>
+                    <input type="number" @bind="plafondMensuel" class="form-input" placeholder="50000" />
+                </div>
+            </div>
+            <button class="btn btn-primary" @onclick="SavePlafonds" disabled="@saving">
+                @(saving ? "ENREGISTREMENT..." : "ENREGISTRER")
+            </button>
+            @if (!string.IsNullOrEmpty(plafondMsg))
+            {
+                <div class="@(plafondSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @plafondMsg
+                </div>
+            }
+        </div>
+    }
+
+    @if (activeTab == "notifs")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-bell"></i> PREFERENCES DE NOTIFICATIONS</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Activez ou désactivez les notifications par email pour chaque type d'opération.
+            </p>
+            @foreach (var (key, label, icon) in notifItems)
+            {
+                <div class="setting-row">
+                    <div>
+                        <strong style="color: var(--text-primary);"><i class="bi @icon"></i> @label</strong>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" checked="@GetNotif(key)" @onclick="() => ToggleNotif(key)" />
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+            }
+            <button class="btn btn-primary" @onclick="SaveNotifs" disabled="@saving">
+                @(saving ? "ENREGISTREMENT..." : "ENREGISTRER")
+            </button>
+            @if (!string.IsNullOrEmpty(notifMsg))
+            {
+                <div class="@(notifSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @notifMsg
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string activeTab = "profile";
+    private string currentTheme = "dark";
+    private bool saving;
+    private string profileMsg = "";
+    private bool profileSuccess;
+    private string pwdMsg = "";
+    private bool pwdSuccess;
+    private bool showTuteurInput;
+    private string tuteurEmail = "";
+    private ProfileModel profileModel = new();
+    private PasswordModel passwordModel = new();
+    private string exportMsg = "";
+    private bool exportSuccess;
+    private string deleteMsg = "";
+    private bool deleteSuccess;
+    private bool showDeleteConfirm;
+
+    // Connexions
+    private List<UserLogin> loginHistory = new();
+    private string revokeMsg = "";
+
+    // Plafonds
+    private decimal plafondJournalier = 5000;
+    private decimal plafondMensuel = 50000;
+    private string plafondMsg = "";
+    private bool plafondSuccess;
+
+    // Notifications
+    private Dictionary<string, bool> notifPrefs = new();
+    private string notifMsg = "";
+    private bool notifSuccess;
+    private List<(string Key, string Label, string Icon)> notifItems = new()
+    {
+        ("connexion", "Connexion", "bi-shield-check"),
+        ("virement", "Virement reçu/envoyé", "bi-send"),
+        ("depot", "Dépôt", "bi-arrow-down-circle"),
+        ("retrait", "Retrait", "bi-arrow-up-circle"),
+        ("epargne", "Épargne", "bi-piggy-bank"),
+        ("credit", "Crédit", "bi-cash-stack"),
+        ("promo", "Offres promotionnelles", "bi-megaphone"),
+    };
+
+    private void GoProfile() { activeTab = "profile"; }
+    private void GoPassword() { activeTab = "password"; }
+    private void GoPrivacy() { activeTab = "privacy"; }
+    private void GoLegal() { activeTab = "legal"; }
+    private void GoConnexions() { activeTab = "connexions"; }
+    private void GoPlafonds() { activeTab = "plafonds"; }
+    private void GoNotifs() { activeTab = "notifs"; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        profileModel.Nom = Bank.Profil.Nom;
+        profileModel.Prenom = Bank.Profil.Prenom;
+        profileModel.Email = Bank.Profil.Email;
+        profileModel.Telephone = Bank.Profil.Telephone;
+        try { currentTheme = await JS.InvokeAsync<string>("mbankTheme.get"); } catch { currentTheme = "dark"; }
+        plafondJournalier = Bank.Profil.PlafondJournalier;
+        plafondMensuel = Bank.Profil.PlafondMensuel;
+        notifPrefs["connexion"] = Bank.Profil.NotifConnexion;
+        notifPrefs["virement"] = Bank.Profil.NotifVirement;
+        notifPrefs["depot"] = Bank.Profil.NotifDepot;
+        notifPrefs["retrait"] = Bank.Profil.NotifRetrait;
+        notifPrefs["epargne"] = Bank.Profil.NotifEpargne;
+        notifPrefs["credit"] = Bank.Profil.NotifCredit;
+        notifPrefs["promo"] = Bank.Profil.NotifPromo;
+        try { loginHistory = await Bank.GetLoginHistoryAsync(20); } catch { }
+    }
+
+    private async Task ToggleTheme()
+    {
+        try { currentTheme = await JS.InvokeAsync<string>("mbankTheme.toggle"); }
+        catch { currentTheme = currentTheme == "dark" ? "light" : "dark"; }
+    }
+
+    private async Task SaveProfile()
+    {
+        saving = true; profileMsg = ""; profileSuccess = false;
+        try
+        {
+            var (success, msg) = await Bank.UpdateProfileAsync(
+                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, profileModel.Email);
+            profileMsg = msg;
+            profileSuccess = success;
+        }
+        catch { profileMsg = "Erreur lors de la sauvegarde"; }
+        finally { saving = false; }
+    }
+
+    private async Task ChangePassword()
+    {
+        pwdMsg = ""; pwdSuccess = false; saving = true;
+        try
+        {
+            if (passwordModel.NewPassword != passwordModel.ConfirmPassword)
+            {
+                pwdMsg = "Les mots de passe ne correspondent pas";
+                return;
+            }
+            var (success, msg) = await Bank.ChangerMotDePasseAsync(passwordModel.CurrentPassword, passwordModel.NewPassword);
+            pwdMsg = msg;
+            pwdSuccess = success;
+            if (success) passwordModel = new();
+        }
+        catch { pwdMsg = "Erreur lors du changement de mot de passe"; }
+        finally { saving = false; }
+    }
+
+    private void ToggleTuteur()
+    {
+        showTuteurInput = !showTuteurInput;
+        if (!showTuteurInput) tuteurEmail = "";
+    }
+
+    private async Task SaveTuteur()
+    {
+        saving = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(tuteurEmail)) return;
+            await Bank.DefinirTuteur(tuteurEmail.Trim());
+            showTuteurInput = false;
+            Notif.Notify("TUTEUR ENREGISTRE", NotificationType.SUCCESS);
+        }
+        catch { Notif.Notify("ERREUR", NotificationType.ERROR); }
+        finally { saving = false; }
+    }
+
+    private async Task ExportData()
+    {
+        saving = true; exportMsg = ""; exportSuccess = false;
+        try
+        {
+            var data = await Bank.ExportPersonalDataAsync();
+            if (string.IsNullOrEmpty(data))
+            {
+                exportMsg = "Erreur lors de l'export des données";
+                return;
+            }
+            var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(data)).ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            var js = $@"const a = document.createElement('a');
+a.href = 'data:text/plain;base64,{base64}';
+a.download = 'mbank_export_donnees_{DateTime.UtcNow:yyyyMMdd}.txt';
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);";
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(100);
+            exportMsg = "Export téléchargé avec succès";
+            exportSuccess = true;
+        }
+        catch { exportMsg = "Erreur lors de l'export"; }
+        finally { saving = false; }
+    }
+
+    private void CancelDelete()
+    {
+        showDeleteConfirm = false;
+        deleteMsg = "";
+    }
+
+    private async Task ConfirmDelete()
+    {
+        saving = true; deleteMsg = "";
+        try
+        {
+            var (success, msg) = await Bank.SupprimerCompteAsync();
+            deleteMsg = msg;
+            deleteSuccess = success;
+            if (success)
+            {
+                showDeleteConfirm = false;
+                await Task.Delay(2000);
+                Nav.NavigateTo("/api/auth/logout", forceLoad: true);
+            }
+        }
+        catch { deleteMsg = "Erreur lors de la suppression"; }
+        finally { saving = false; }
+    }
+
+    private async Task HandleRevokeSessions()
+    {
+        saving = true;
+        try
+        {
+            if (await Bank.RevokeAllSessionsAsync())
+            {
+                revokeMsg = "Toutes les sessions ont été révoquées. Vous allez être déconnecté.";
+                await Task.Delay(2000);
+                Nav.NavigateTo("/api/auth/logout", forceLoad: true);
+            }
+        }
+        catch { revokeMsg = "Erreur lors de la révocation"; }
+        finally { saving = false; }
+    }
+
+    private async Task SavePlafonds()
+    {
+        saving = true; plafondMsg = ""; plafondSuccess = false;
+        try
+        {
+            var (success, msg) = await Bank.UpdatePlafondsAsync(plafondJournalier, plafondMensuel);
+            plafondMsg = msg;
+            plafondSuccess = success;
+        }
+        catch { plafondMsg = "Erreur lors de la sauvegarde"; }
+        finally { saving = false; }
+    }
+
+    private bool GetNotif(string key) => notifPrefs.GetValueOrDefault(key, true);
+    private void ToggleNotif(string key) { notifPrefs[key] = !GetNotif(key); }
+
+    private async Task SaveNotifs()
+    {
+        saving = true; notifMsg = ""; notifSuccess = false;
+        try
+        {
+            var (success, msg) = await Bank.UpdateNotificationPrefsAsync(
+                GetNotif("connexion"), GetNotif("virement"), GetNotif("depot"),
+                GetNotif("retrait"), GetNotif("epargne"), GetNotif("credit"), GetNotif("promo"));
+            notifMsg = msg;
+            notifSuccess = success;
+        }
+        catch { notifMsg = "Erreur lors de la sauvegarde"; }
+        finally { saving = false; }
+    }
+
+    private string Truncate(string s, int max) => s?.Length > max ? s[..max] + "..." : s ?? "";
+
+    private string GetStrengthClass(string pwd)
+    {
+        int score = 0;
+        if (pwd.Length >= 8) score++;
+        if (pwd.Length >= 12) score++;
+        if (pwd.Any(char.IsUpper)) score++;
+        if (pwd.Any(char.IsLower)) score++;
+        if (pwd.Any(char.IsDigit)) score++;
+        if (pwd.Any(c => !char.IsLetterOrDigit(c))) score++;
+        return score switch
+        {
+            <= 2 => "weak",
+            <= 4 => "medium",
+            _ => "strong"
+        };
+    }
+
+    private string GetStrengthLabel(string pwd)
+    {
+        return GetStrengthClass(pwd) switch
+        {
+            "weak" => "Faible",
+            "medium" => "Moyen",
+            "strong" => "Fort",
+            _ => ""
+        };
+    }
+
+    private class ProfileModel
+    {
+        public string Nom { get; set; } = "";
+        public string Prenom { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Telephone { get; set; } = "";
+    }
+
+    private class PasswordModel
+    {
+        public string CurrentPassword { get; set; } = "";
+        public string NewPassword { get; set; } = "";
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

@@ -47,12 +47,12 @@
             Solde = 1000m
         };
 
-        bool succes = await BankService.CreerNouveauCompte(nouveau, testPass);
+        var (success, msg) = await BankService.CreerNouveauCompte(nouveau, testPass);
 
-        if (succes)
-            NotifService.Success("Compte cree avec succes dans la base SQLite.");
+        if (success)
+            NotifService.Success("Compte cree avec succes : " + msg);
         else
-            NotifService.Error("Erreur : L'utilisateur existe deja.");
+            NotifService.Error(msg);
     }
 
     private async Task TesterConnexion()

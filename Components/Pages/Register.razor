@@ -20,6 +20,19 @@
             <div style="height: 2px; width: 60%; margin: 12px auto; background: linear-gradient(90deg, transparent, var(--gold-500), transparent); opacity: 0.4;"></div>
         </div>
 
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+                <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div style="background: var(--success-bg); border: 1px solid var(--success); color: var(--success); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+                <i class="bi bi-check-circle-fill"></i> @successMessage
+            </div>
+        }
+
         <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
             <h6 class="section-title" style="margin-bottom: 16px;">1. IDENTITE ET ACCES ADN</h6>
             <div class="form-row">
@@ -40,6 +53,7 @@
                 <div class="form-group">
                     <label>MOT DE PASSE</label>
                     <input @bind="newUser.MotDePasse" type="password" class="form-input" placeholder="......" />
+                    <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 maj, 1 min, 1 chiffre, 1 spécial</small>
                 </div>
                 <div class="form-group">
                     <label>CONFIRMER</label>
@@ -71,12 +85,12 @@
         <div class="form-group" style="margin-bottom: 20px;">
             <label class="checkbox-container">
                 <input type="checkbox" @bind="newUser.CguAcceptees" />
-                <span style="font-size: 0.7rem; color: var(--text-secondary);">J'ACCEPTE LE PROTOCOLE ADNcorporation</span>
+                <span style="font-size: 0.7rem; color: var(--text-secondary);">J'accepte les <a href="/cgu" target="_blank">Conditions Générales d'Utilisation</a> et la <a href="/confidentialite" target="_blank">Politique de Confidentialité</a></span>
             </label>
         </div>
 
-        <button type="button" class="btn btn-gold btn-block" @onclick="HandleRegister">
-            CREER MON ACCES ADN_ID
+        <button type="button" class="btn btn-gold btn-block" @onclick="HandleRegister" disabled="@isLoading">
+            @(isLoading ? "CREATION EN COURS..." : "CREER MON ACCES ADN_ID")
         </button>
 
         <div class="auth-footer">
@@ -90,46 +104,86 @@
     private string confirmPassword = "";
     private string ville = "";
     private string tel = "";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isLoading = false;
     private List<string> optsV = new() { "Casablanca", "Rabat", "Marrakech", "Tanger", "Agadir" };
 
     private async Task HandleRegister()
     {
+        errorMessage = "";
+        successMessage = "";
         newUser.Ville = ville;
         newUser.Telephone = tel;
         var password = newUser.MotDePasse;
 
         if (string.IsNullOrEmpty(newUser.Email) || string.IsNullOrEmpty(password))
         {
-            Notif.Notify("ERREUR : Identifiants requis.", NotificationType.ERROR);
+            errorMessage = "Email et mot de passe requis.";
             return;
         }
-        if (password.Length < 6)
+        if (password.Length < 8)
         {
-            Notif.Notify("ERREUR : Mot de passe trop court (min. 6 caracteres).", NotificationType.ERROR);
+            errorMessage = "Mot de passe trop court (min. 8 caracteres).";
+            return;
+        }
+        if (!password.Any(char.IsUpper))
+        {
+            errorMessage = "Le mot de passe doit contenir une majuscule.";
+            return;
+        }
+        if (!password.Any(char.IsLower))
+        {
+            errorMessage = "Le mot de passe doit contenir une minuscule.";
+            return;
+        }
+        if (!password.Any(char.IsDigit))
+        {
+            errorMessage = "Le mot de passe doit contenir un chiffre.";
+            return;
+        }
+        if (!password.Any(c => !char.IsLetterOrDigit(c)))
+        {
+            errorMessage = "Le mot de passe doit contenir un caractere special (!@#$%^&*).";
             return;
         }
         if (password != confirmPassword)
         {
-            Notif.Notify("ERREUR : Mots de passe differents.", NotificationType.ERROR);
+            errorMessage = "Mots de passe differents.";
             return;
         }
         if (!newUser.CguAcceptees)
         {
-            Notif.Notify("PROTOCOLE : Acceptez les CGU.", NotificationType.ERROR);
+            errorMessage = "Acceptez les CGU et la Politique de Confidentialite.";
             return;
         }
 
-        bool success = await Bank.CreerNouveauCompte(newUser, password);
+        isLoading = true;
+        try
+        {
+            var (success, msg) = await Bank.CreerNouveauCompte(newUser, password);
 
-        if (success)
-        {
-            Notif.Notify("ACCES ADN CREE", NotificationType.SUCCESS);
-            await Task.Delay(1500);
-            Nav.NavigateTo("/login");
+            if (success)
+            {
+                successMessage = "Compte cree avec succes ! Redirection...";
+                Notif.Notify("COMPTE CREE", NotificationType.SUCCESS);
+                await Task.Delay(1500);
+                Nav.NavigateTo("/login");
+            }
+            else
+            {
+                errorMessage = msg;
+                Notif.Notify(msg, NotificationType.ERROR);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            Notif.Notify("ECHEC : ADN_ID deja utilise.", NotificationType.ERROR);
+            errorMessage = $"Erreur technique : {ex.Message}";
+            Notif.Notify("ERREUR LORS DE LA CREATION", NotificationType.ERROR);
+        }
+        finally
+        {
+            isLoading = false;
         }
     }
 }

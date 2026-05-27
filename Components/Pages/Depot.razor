@@ -20,8 +20,8 @@
                 <label>MONTANT A DEPOSER (DH)</label>
                 <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
             </div>
-            <button class="btn btn-success btn-block" @onclick="EffectuerDepot">
-                <i class="bi bi-plus-circle"></i> VALIDER LE DEPOT
+            <button class="btn btn-success btn-block" @onclick="EffectuerDepot" disabled="@isProcessing">
+                @(isProcessing ? "TRAITEMENT..." : "VALIDER LE DEPOT")
             </button>
         </div>
     }

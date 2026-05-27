@@ -44,7 +44,7 @@ namespace MBANK_ETUDIANT.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("AdminLogs");
+                    b.ToTable("AdminLogs", (string)null);
                 });
 
             modelBuilder.Entity("MBANK_ETUDIANT.Models.SavingsPocket", b =>
@@ -78,7 +78,7 @@ namespace MBANK_ETUDIANT.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SavingsPockets");
+                    b.ToTable("SavingsPockets", (string)null);
                 });
 
             modelBuilder.Entity("MBANK_ETUDIANT.Models.Transaction", b =>
@@ -121,7 +121,7 @@ namespace MBANK_ETUDIANT.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Transactions");
+                    b.ToTable("Transactions", (string)null);
                 });
 
             modelBuilder.Entity("MBANK_ETUDIANT.Models.UserProfile", b =>
@@ -286,7 +286,7 @@ namespace MBANK_ETUDIANT.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("UserProfiles");
+                    b.ToTable("UserProfiles", (string)null);
                 });
 
             modelBuilder.Entity("MBANK_ETUDIANT.Models.SavingsPocket", b =>

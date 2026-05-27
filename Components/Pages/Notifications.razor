@@ -1,0 +1,112 @@
+@page "/notifications"
+@attribute [Authorize]
+@using MBANK_ETUDIANT.Services
+@using MBANK_ETUDIANT.Models
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+
+<div class="cyber-panel" style="max-width: 700px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0;"><i class="bi bi-bell-fill"></i> NOTIFICATIONS</h3>
+        @if (notifications.Any(n => !n.Lu))
+        {
+            <button class="btn btn-ghost btn-sm" @onclick="ToutMarquerLu" disabled="@isProcessing">
+                @(isProcessing ? "..." : "TOUT MARQUER LU")
+            </button>
+        }
+    </div>
+
+    @if (!notifications.Any())
+    {
+        <div class="empty-state">
+            <i class="bi bi-bell-slash" style="font-size: 2rem; color: var(--text-muted);"></i>
+            <p>AUCUNE NOTIFICATION</p>
+        </div>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            @foreach (var n in notifications)
+            {
+                <div class="transaction-item @(!n.Lu ? "" : "")"
+                     style="@(!n.Lu ? "border-left: 3px solid var(--blue-500); background: rgba(0,0,0,0.1);" : "")">
+                    <div class="transaction-info">
+                        <div class="tx-type">
+                            @if (n.Type == "SUCCESS") { <i class="bi bi-check-circle-fill" style="color: var(--success);"></i> }
+                            else if (n.Type == "ERROR") { <i class="bi bi-exclamation-circle-fill" style="color: var(--danger);"></i> }
+                            else { <i class="bi bi-info-circle-fill" style="color: var(--blue-500);"></i> }
+                            @n.Categorie
+                        </div>
+                        <div class="tx-date">@n.Date.ToString("dd/MM/yyyy HH:mm")</div>
+                        <div style="font-size: 0.75rem; margin-top: 4px;">@n.Message</div>
+                    </div>
+                    <div class="transaction-amount">
+                        @if (!n.Lu)
+                        {
+                            <button class="btn btn-ghost btn-sm" @onclick="() => MarquerLu(n.Id)" disabled="@isProcessing" title="Marquer comme lu">
+                                <i class="bi bi-envelope-open"></i>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (notifications.Count >= 20)
+        {
+            <div style="text-align: center; margin-top: 16px;">
+                <button class="btn btn-ghost btn-sm" @onclick="SupprimerAnciennes" disabled="@isProcessing">
+                    @(isProcessing ? "..." : "NETTOYER LES ANCIENNES (30+ JOURS)")
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<NotificationHistory> notifications = new();
+    private bool isProcessing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        notifications = await Bank.GetNotificationsAsync(50);
+    }
+
+    private async Task MarquerLu(int id)
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            await Bank.MarkAsReadAsync(id);
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task ToutMarquerLu()
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            await Bank.MarkAllAsReadAsync();
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task SupprimerAnciennes()
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            var count = await Bank.DeleteOldNotificationsAsync(30);
+            Notif.Notify($"{count} notification(s) supprimée(s)", NotificationType.INFO);
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { isProcessing = false; }
+    }
+}

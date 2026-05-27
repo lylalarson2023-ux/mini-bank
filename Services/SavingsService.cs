@@ -16,12 +16,15 @@ namespace MBANK_ETUDIANT.Services
         private readonly BankDbContext _context;
         private readonly UserContext _user;
         private readonly ILogger<SavingsService> _logger;
+        private readonly NotificationHistoryService _notifHist;
 
-        public SavingsService(BankDbContext context, UserContext user, ILogger<SavingsService> logger)
+        public SavingsService(BankDbContext context, UserContext user, ILogger<SavingsService> logger,
+            NotificationHistoryService notifHist)
         {
             _context = context;
             _user = user;
             _logger = logger;
+            _notifHist = notifHist;
         }
 
         public async Task<List<SavingsPocket>> GetPocketsAsync()
@@ -29,7 +32,7 @@ namespace MBANK_ETUDIANT.Services
                 .Where(p => p.UserId == _user.Profil.Id)
                 .ToListAsync();
 
-        public async Task<bool> CreerPocheEpargne(string obj, decimal montantInitial, DateTime fin)
+        public async Task<bool> CreerPocheEpargne(string obj, decimal montantInitial, DateTime fin, decimal montantCible = 0)
         {
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
@@ -37,12 +40,15 @@ namespace MBANK_ETUDIANT.Services
                 var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null || u.Solde < montantInitial) return false;
 
+                if (montantCible <= 0) montantCible = montantInitial * 2;
+
                 u.Solde -= montantInitial;
                 _context.SavingsPockets.Add(new SavingsPocket
                 {
                     UserId = _user.Profil.Id,
                     Objectif = obj,
                     Cible = fin,
+                    MontantCible = montantCible,
                     MontantActuel = montantInitial
                 });
                 var result = await _context.SaveChangesAsync() > 0;
@@ -50,6 +56,7 @@ namespace MBANK_ETUDIANT.Services
                 if (result)
                 {
                     _user.Profil.Solde = u.Solde;
+                    await _notifHist.AddNotificationAsync($"Poche d'épargne créée : {obj} ({montantInitial:N2} DH)", "SUCCESS", "EPARGNE");
                     _logger.LogInformation("Poche d'épargne créée : {Objectif} avec {Montant} DH pour {Email}", obj, montantInitial, _user.Profil.Email);
                 }
                 return result;
@@ -73,6 +80,7 @@ namespace MBANK_ETUDIANT.Services
                 _context.SavingsPockets.Remove(p);
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
+                await _notifHist.AddNotificationAsync($"Poche d'épargne récupérée : {p.MontantActuel:N2} DH reversés", "INFO", "EPARGNE");
                 _logger.LogInformation("Poche d'épargne #{Id} cassée par {Email}", id, _user.Profil.Email);
                 return true;
             }
@@ -101,6 +109,7 @@ namespace MBANK_ETUDIANT.Services
                 _user.Profil.Solde = u.Solde;
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
+                await _notifHist.AddNotificationAsync($"Poche boostée de {mnt:N2} DH", "SUCCESS", "EPARGNE");
                 _logger.LogInformation("Poche #{Id} boostée de {Montant} DH par {Email}", id, mnt, _user.Profil.Email);
                 return true;
             }
@@ -133,6 +142,37 @@ namespace MBANK_ETUDIANT.Services
                 }
             }
             return result;
+        }
+
+        public async Task<decimal> GetTotalInvestiThisMonthAsync()
+        {
+            var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var studentIds = await _context.UserProfiles
+                .Where(u => u.TuteurEmail == _user.Profil.Email && u.TuteurAutorise)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            if (!studentIds.Any()) return 0;
+
+            return await _context.SavingsPockets
+                .Where(p => studentIds.Contains(p.UserId) && p.DateCreation >= debutMois)
+                .SumAsync(p => p.MontantActuel);
+        }
+
+        public async Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20)
+        {
+            var studentIds = await _context.UserProfiles
+                .Where(u => u.TuteurEmail == _user.Profil.Email && u.TuteurAutorise)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            if (!studentIds.Any()) return new();
+
+            return await _context.Transactions
+                .Where(t => studentIds.Contains(t.UserId))
+                .OrderByDescending(t => t.Date)
+                .Take(count)
+                .ToListAsync();
         }
     }
 }

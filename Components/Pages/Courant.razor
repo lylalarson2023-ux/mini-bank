@@ -46,8 +46,8 @@
                     <div class="tx-type">@tr.Type</div>
                     <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
                 </div>
-                <div class="transaction-amount @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" ? "tx-positive" : "tx-negative")">
-                    @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" ? "+" : "-") @tr.Montant.ToString("N2")
+                <div class="transaction-amount @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "tx-positive" : "tx-negative")">
+                    @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "+" : "-") @tr.Montant.ToString("N2")
                 </div>
             </div>
         }

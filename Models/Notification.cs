@@ -6,6 +6,6 @@ namespace MBANK_ETUDIANT.Models
     {
         public string Message { get; set; } = "";
         public NotificationType Type { get; set; }
-        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     }
 }

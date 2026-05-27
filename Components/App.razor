@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="@Assets["MBANK_ETUDIANT.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <script>!function(){var e=localStorage.getItem('mbank_theme')||'dark';document.documentElement.setAttribute('data-theme',e)}();</script>
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 <body>
@@ -19,5 +20,6 @@
         <Routes @rendermode="InteractiveServer" />
     </CascadingAuthenticationState>
     <script src="_framework/blazor.web.js"></script>
+    <script src="js/theme.js"></script>
 </body>
 </html>

@@ -50,6 +50,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<FileService>();
 builder.Services.AddScoped<BankService>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<NotificationHistoryService>();
 
 // --- AUTHENTIFICATION AVEC COOKIE ---
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -83,7 +84,21 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BankDbContext>();
-    db.Database.Migrate();
+    db.Database.EnsureCreated();
+
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PremiumValidatedAt datetime"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PremiumRejectedAt datetime"); } catch { }
+    try { db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS CreditRequests (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserId INTEGER NOT NULL,
+            Montant TEXT NOT NULL,
+            DureeMois INTEGER NOT NULL,
+            Categorie TEXT NOT NULL DEFAULT '',
+            Statut TEXT NOT NULL DEFAULT 'EN_ATTENTE',
+            DateDemande TEXT NOT NULL,
+            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
+        )"); } catch { }
 
     if (!db.UserProfiles.Any(u => u.IsAdmin))
     {
@@ -100,6 +115,10 @@ using (var scope = app.Services.CreateScope())
         });
         db.SaveChanges();
     }
+
+    // Migration des mots de passe existants vers BCrypt
+    var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
+    await authService.MigreMotsDePasseEnClair();
 }
 
 app.UseExceptionHandler("/Error", createScopeForErrors: true);
