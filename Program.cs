@@ -10,6 +10,7 @@ using MBANK_ETUDIANT.Data;
 using MBANK_ETUDIANT.Models;
 using Serilog;
 using Microsoft.AspNetCore.HttpOverrides;
+using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,14 +41,24 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContext<BankDbContext>(options =>
     options.UseSqlite("Data Source=MbankData.db"));
 
+// --- STRIPE ---
+var stripeSecret = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
+var stripePublishable = Environment.GetEnvironmentVariable("STRIPE_PUBLISHABLE_KEY");
+var stripeWebhook = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET");
+if (!string.IsNullOrEmpty(stripeSecret)) builder.Configuration["Stripe:SecretKey"] = stripeSecret;
+if (!string.IsNullOrEmpty(stripePublishable)) builder.Configuration["Stripe:PublishableKey"] = stripePublishable;
+if (!string.IsNullOrEmpty(stripeWebhook)) builder.Configuration["Stripe:WebhookSecret"] = stripeWebhook;
+builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
+builder.Services.AddScoped<StripeService>();
+
 // --- SERVICES MÉTIER SPÉCIALISÉS ---
 builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<MBANK_ETUDIANT.Services.AccountService>();
 builder.Services.AddScoped<SavingsService>();
 builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<AdminService>();
-builder.Services.AddScoped<FileService>();
+builder.Services.AddScoped<MBANK_ETUDIANT.Services.FileService>();
 builder.Services.AddScoped<BankService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NotificationHistoryService>();
@@ -164,6 +175,13 @@ app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
+});
+
+// --- STRIPE SUCCESS (retour après paiement réussi) ---
+app.MapGet("/api/stripe/success", async (HttpContext ctx, StripeService stripe, string session_id, int user_id) =>
+{
+    await stripe.ConfirmerDepotAsync(session_id);
+    return Results.Redirect("/depot?paid=ok");
 });
 
 app.MapRazorComponents<App>()

@@ -830,7 +830,7 @@
             builder.CloseElement();
             builder.OpenElement(50, "button");
             builder.AddAttribute(51, "class", "btn btn-ghost btn-sm");
-            builder.AddAttribute(52, "onclick", EventCallback.Factory.Create(this, () => { creditTarget = null; targetId = 0; }));
+            builder.AddAttribute(sequence: 52, "onclick", EventCallback.Factory.Create(this, () => { creditTarget = null; targetId = 0; }));
             builder.AddContent(53, "CHANGER");
             builder.CloseElement();
             builder.CloseElement();

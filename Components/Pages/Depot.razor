@@ -5,6 +5,8 @@
 @inject BankService Bank
 @inject NotificationService Notif
 @inject NavigationManager Nav
+@inject StripeService Stripe
+@inject IHttpContextAccessor Http
 
 <div class="cyber-panel" style="max-width: 480px;">
     <h3>MODULE DE DEPOT</h3>
@@ -12,6 +14,16 @@
     <div class="warning-box">
         SOLDE ACTUEL : <span class="highlight">@Bank.Profil.Solde.ToString("N2") DH</span>
     </div>
+
+    @if (paidOk)
+    {
+        <div class="success-panel" style="margin-top: 16px;">
+            <h5>PAIEMENT REUSSI</h5>
+            <p style="color: var(--text-secondary); font-size: 0.75rem;">
+                VOTRE COMPTE A ETE CREDITE.
+            </p>
+        </div>
+    }
 
     @if (Bank.Profil.IsAdmin)
     {
@@ -27,13 +39,16 @@
     }
     else
     {
-        <div class="error-panel" style="margin-top: 24px;">
-            <h5>ACCES REFUSE</h5>
-            <p style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 8px;">
-                LES DEPOTS SONT RESERVES A L'ADMINISTRATEUR.
-            </p>
-            <p style="color: var(--text-muted); font-size: 0.7rem;">
-                CONTACTEZ L'ADMINISTRATION POUR CREDITER VOTRE COMPTE.
+        <div style="margin-top: 24px;">
+            <div class="form-group">
+                <label>MONTANT A DEPOSER VIA STRIPE (DH)</label>
+                <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+            </div>
+            <button class="btn btn-primary btn-block" @onclick="PayerParCarte" disabled="@isProcessing">
+                @(isProcessing ? "REDIRECTION VERS STRIPE..." : "PAYER PAR CARTE")
+            </button>
+            <p style="color: var(--text-muted); font-size: 0.65rem; margin-top: 8px; text-align: center;">
+                PAIEMENT SECURISE VIA STRIPE &mdash; CARTES ACCEPTEES : CB, VISA, MASTERCARD
             </p>
         </div>
     }
@@ -46,6 +61,13 @@
 @code {
     private decimal montant;
     private bool isProcessing;
+    private bool paidOk;
+
+    protected override void OnInitialized()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        paidOk = uri.Query.Contains("paid=ok");
+    }
 
     private async Task EffectuerDepot()
     {
@@ -61,6 +83,21 @@
             }
             else
                 Notif.Notify("ERREUR LORS DU DEPOT", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task PayerParCarte()
+    {
+        if (isProcessing || montant <= 0) return;
+        isProcessing = true;
+        try
+        {
+            var url = await Stripe.CreerSessionDepotAsync(montant);
+            if (url != null)
+                Nav.NavigateTo(url);
+            else
+                Notif.Notify("ERREUR DE PAIEMENT", NotificationType.ERROR);
         }
         finally { isProcessing = false; }
     }
