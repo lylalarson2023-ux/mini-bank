@@ -72,6 +72,15 @@ namespace ADN_pay.Services
                 .ToListAsync();
         }
 
+        // Demandes de l'utilisateur connecté (suivi de statut côté client)
+        public async Task<List<CreditRequest>> GetMesDemandesAsync()
+        {
+            return await _context.CreditRequests
+                .Where(c => c.UserId == _user.Profil.Id)
+                .OrderByDescending(c => c.DateDemande)
+                .ToListAsync();
+        }
+
         public async Task<bool> RejeterDemandeAsync(int demandeId, string motif)
         {
             var demande = await _context.CreditRequests.FindAsync(demandeId);

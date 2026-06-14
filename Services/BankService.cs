@@ -82,6 +82,7 @@ namespace ADN_pay.Services
         public Task<bool> VerifierEligibiliteCredit(int userId) => _credit.VerifierEligibiliteCredit(userId);
         public Task<bool> SoumettreDemandeCredit(long montantCentimes, string categorie, int dureeMois)
             => _credit.SoumettreDemandeCredit(montantCentimes, categorie, dureeMois);
+        public Task<List<CreditRequest>> GetMesDemandesCreditAsync() => _credit.GetMesDemandesAsync();
 
         // --- ADMIN --- ADR-001 : montants en centimes (long)
         public Task<List<UserProfile>> GetDossiersEnAttenteAsync() => _admin.GetDossiersEnAttenteAsync();

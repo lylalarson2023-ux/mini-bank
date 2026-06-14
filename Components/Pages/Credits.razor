@@ -9,6 +9,34 @@
         <span class="page-header-badge">Simulation avec tableau d'amortissement</span>
     </div>
 
+    @* ─── MES DEMANDES (suivi de statut) ─── *@
+    @if (mesDemandes.Any())
+    {
+        <div class="form-section">
+            <h6>Mes demandes de crédit</h6>
+            <div class="mes-demandes-list">
+                @foreach (var d in mesDemandes)
+                {
+                    <div class="demande-row demande-@d.Statut.ToLowerInvariant()">
+                        <div class="demande-main">
+                            <div class="demande-montant">@((d.Montant / 100m).ToString("N2")) DH</div>
+                            <div class="demande-meta">
+                                @d.Categorie · @d.DureeMois mois · @d.DateDemande.ToLocalTime().ToString("dd/MM/yyyy")
+                            </div>
+                            @if (d.Statut == "REJETE" && !string.IsNullOrWhiteSpace(d.MotifRejet))
+                            {
+                                <div class="demande-motif"><strong>Motif du refus :</strong> @d.MotifRejet</div>
+                            }
+                        </div>
+                        <span class="badge" style="background: @StatutCouleur(d.Statut); color: #fff;">
+                            @StatutLabel(d.Statut)
+                        </span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
     @* ─── ÉLIGIBILITÉ ─── *@
     @if (!eligible)
     {
@@ -166,6 +194,45 @@
     </button>
 </div>
 
+<style>
+    .mes-demandes-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .demande-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        background: var(--bg-secondary, rgba(255,255,255,0.03));
+        border: 1px solid var(--border, rgba(255,255,255,0.08));
+        border-left: 3px solid var(--gold-400);
+        border-radius: var(--radius-md, 10px);
+    }
+    .demande-row.demande-approuve { border-left-color: var(--success); }
+    .demande-row.demande-rejete { border-left-color: var(--danger); }
+    .demande-row.demande-en_attente { border-left-color: var(--gold-400); }
+    .demande-montant {
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--text-primary);
+    }
+    .demande-meta {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-top: 3px;
+    }
+    .demande-motif {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border, rgba(255,255,255,0.08));
+    }
+</style>
+
 @code {
     private void ChoisirCategorie(string cat)
     {
@@ -179,6 +246,22 @@
     private int nbTransactions;
     private long fluxTotal;  // centimes (ADR-001)
     private bool isProcessing;
+    private List<CreditRequest> mesDemandes = new();
+
+    private static string StatutLabel(string s) => s switch
+    {
+        "EN_ATTENTE" => "En attente",
+        "APPROUVE" => "Accordé",
+        "REJETE" => "Refusé",
+        _ => s
+    };
+
+    private static string StatutCouleur(string s) => s switch
+    {
+        "APPROUVE" => "var(--success)",
+        "REJETE" => "var(--danger)",
+        _ => "var(--gold-400)"
+    };
 
     // Scoring
     private int scorePoints;
@@ -197,6 +280,7 @@
         nbTransactions = historique.Count;
         fluxTotal = historique.Sum(t => t.MontantBrut);
         eligible = await Bank.VerifierEligibiliteCredit(Bank.Profil.Id);
+        mesDemandes = await Bank.GetMesDemandesCreditAsync();
         CalculerScore();
     }
 
@@ -273,6 +357,7 @@
             {
                 Notif.Notify("Demande transmise - En attente de validation par l'administrateur", NotificationType.INFO);
                 montantDemande = 0;
+                mesDemandes = await Bank.GetMesDemandesCreditAsync();
             }
             else
                 Notif.Notify("Erreur lors de l'enregistrement de la demande", NotificationType.ERROR);
