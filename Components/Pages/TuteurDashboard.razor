@@ -1,15 +1,13 @@
 @page "/tuteur-dashboard"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Models
 @inject BankService Bank
 @inject NotificationService Notif
 @inject IJSRuntime JS
 
 <div class="cyber-panel" style="border-color: var(--blue-border); max-width: 800px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h3 style="color: var(--blue-500); margin: 0;">CONTRÔLE_TUTEUR_V2</h3>
-        <span class="badge badge-info">SESSION_SECURISEE</span>
+        <h3 style="color: var(--blue-500); margin: 0;">ESPACE TUTEUR</h3>
+        <span class="badge badge-info">SÉCURISÉ</span>
     </div>
 
     @* ─── STATS ─── *@
@@ -20,11 +18,11 @@
         </div>
         <div class="stat-card">
             <div class="stat-label">TOTAL INVESTI</div>
-            <div class="stat-value green">@pochesSurveillees.Sum(x => x.Pocket.CapitalActuel).ToString("N2") DH</div>
+            <div class="stat-value green">@((pochesSurveillees.Sum(x => x.Pocket.CapitalActuel) / 100m).ToString("N2")) DH</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">INVESTI CE MOIS</div>
-            <div class="stat-value" style="color: var(--blue-500);">+@totalInvestiMois.ToString("N2") DH</div>
+            <div class="stat-value" style="color: var(--blue-500);">+@((totalInvestiMois / 100m).ToString("N2")) DH</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">NICHES ACTIVES</div>
@@ -55,7 +53,7 @@
                                 <div style="font-size: 0.65rem; color: var(--text-muted);">@first.StudentEmail · @group.Count() poche(s)</div>
                             </div>
                             <div style="text-align: right;">
-                                <div style="font-size: 0.8rem; font-weight: 600; color: var(--success);">@totalGroup.ToString("N2") DH</div>
+                                <div style="font-size: 0.8rem; font-weight: 600; color: var(--success);">@((totalGroup / 100m).ToString("N2")) DH</div>
                             </div>
                         </div>
 
@@ -67,14 +65,14 @@
                             <div style="padding: 8px 0; border-top: 1px solid var(--border-color);">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                     <span style="font-size: 0.75rem; font-weight: 600;">@p.Objectif.ToUpper()</span>
-                                    <span style="font-size: 0.7rem; font-weight: 700;">@p.CapitalActuel.ToString("N2") DH</span>
+                                    <span style="font-size: 0.7rem; font-weight: 700;">@((p.CapitalActuel / 100m).ToString("N2")) DH</span>
                                 </div>
                                 @* Progress bar *@
                                 <div style="height: 6px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden; margin-bottom: 2px;">
                                     <div style="height: 100%; width: @(Math.Min(pct, 100))%; background: linear-gradient(90deg, var(--success), var(--blue-500)); border-radius: 4px;"></div>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 0.55rem; color: var(--text-muted);">
-                                    <span>@pct% · Cible: @p.MontantCible.ToString("N2") DH</span>
+                                    <span>@pct% · Cible: @((p.MontantCible / 100m).ToString("N2")) DH</span>
                                     <span>Échéance: @p.DateCible.ToShortDateString()</span>
                                 </div>
                                 @* Quick boost buttons *@
@@ -103,7 +101,7 @@
                     <div class="log-line">
                         <span class="log-ts">[@tx.Date.ToString("dd/MM HH:mm")]</span>
                         <span class="log-act">@tx.Type</span>
-                        <span class="log-det">:: @(tx.Montant.ToString("N2")) DH — @tx.Motif</span>
+                        <span class="log-det">:: @((tx.Montant / 100m).ToString("N2")) DH — @tx.Motif</span>
                     </div>
                 }
             </div>
@@ -114,7 +112,7 @@
 @code {
     private List<TuteurPocketView> pochesSurveillees = new();
     private int etudiantsSuivis;
-    private decimal totalInvestiMois;
+    private long totalInvestiMois;
     private bool isProcessing;
     private List<Transaction> recentActivity = new();
 
@@ -136,10 +134,10 @@
         isProcessing = true;
         try
         {
-            bool success = await Bank.BoosterPocheAsync(p.Id, montant);
+            bool success = await Bank.BoosterPocheAsync(p.Id, (long)(montant * 100));
             if (success)
             {
-                Notif.Notify($"Poche boostée de {montant} DH", NotificationType.SUCCESS);
+                Notif.Notify($"Poche boostée de {montant:N2} DH", NotificationType.SUCCESS);
                 await ChargerDonnees();
             }
             else

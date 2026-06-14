@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Options;
 using Stripe;
 using Stripe.Checkout;
-using AppAccount = MBANK_ETUDIANT.Services.AccountService;
+using AppAccount = ADN_pay.Services.AccountService;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class StripeOptions
     {
@@ -32,9 +32,9 @@ namespace MBANK_ETUDIANT.Services
 
         public string PublishableKey => _options.PublishableKey;
 
-        public async Task<string?> CreerSessionDepotAsync(decimal montantDh)
+        // ADR-001 : montantCentimes déjà en centimes (long), pas de conversion ici
+        public async Task<string?> CreerSessionDepotAsync(long montantCentimes)
         {
-            var montantCentimes = (long)(montantDh * 100);
             var userId = _user.Profil?.Id;
             if (userId == null) return null;
 
@@ -54,7 +54,7 @@ namespace MBANK_ETUDIANT.Services
                             ProductData = new SessionLineItemPriceDataProductDataOptions
                             {
                                 Name = "Dépôt compte ADN.eco+",
-                                Description = $"Dépôt de {montantDh:N2} DH"
+                                Description = $"Dépôt de {montantCentimes / 100m:N2} DH"
                             }
                         },
                         Quantity = 1
@@ -66,7 +66,7 @@ namespace MBANK_ETUDIANT.Services
                 Metadata = new Dictionary<string, string>
                 {
                     { "user_id", userId.ToString() ?? "" },
-                    { "amount_dh", montantDh.ToString("F2") },
+                    { "amount_cents", montantCentimes.ToString() },
                     { "type", "depot" }
                 }
             };
@@ -83,11 +83,17 @@ namespace MBANK_ETUDIANT.Services
 
             if (session.PaymentStatus != "paid") return false;
 
-            var montantDh = decimal.Parse(session.Metadata["amount_dh"]);
-            var userId = int.Parse(session.Metadata["user_id"]);
+            if (!session.Metadata.TryGetValue("amount_cents", out var amountStr)
+                || !long.TryParse(amountStr, out var montantCentimes)
+                || montantCentimes <= 0)
+                return false;
+
+            if (!session.Metadata.TryGetValue("user_id", out var userIdStr)
+                || !int.TryParse(userIdStr, out var userId))
+                return false;
 
             await _auth.InitializeAsync(userId);
-            return await _account.ExecuterOperationAsync(montantDh, "Dépôt par carte Stripe", "DEPOT");
+            return await _account.ExecuterOperationAsync(montantCentimes, "Dépôt par carte Stripe", "DÉPÔT");
         }
 
         private string GetBaseUrl()

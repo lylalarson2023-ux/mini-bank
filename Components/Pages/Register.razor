@@ -1,9 +1,6 @@
 @page "/register"
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
-@using MBANK_ETUDIANT.Models
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Components.Layout
 @using System.Text.RegularExpressions
 @inject BankService Bank
 @inject NavigationManager Nav
@@ -11,93 +8,106 @@
 
 <NotificationOverlay />
 
-<div class="auth-wrapper" style="max-width: 520px;">
-    <div class="auth-card">
-        <div class="auth-header">
-            <div class="auth-title">
-                <span class="gold">M</span>BANK<span style="font-size: 0.7rem; color: var(--blue-500); margin-left: 8px;">ADN_ENROLEMENT</span>
+@if (showSuccess)
+{
+    <div class="auth-wrapper register-success">
+        <div class="auth-card" style="text-align: center; padding: 60px 40px;">
+            <div class="success-check">
+                <svg viewBox="0 0 52 52" class="checkmark-svg">
+                    <circle cx="26" cy="26" r="25" fill="none" class="checkmark-circle" />
+                    <path fill="none" d="M14 27l7 7 16-16" class="checkmark-check" />
+                </svg>
             </div>
-            <div style="height: 2px; width: 60%; margin: 12px auto; background: linear-gradient(90deg, transparent, var(--gold-500), transparent); opacity: 0.4;"></div>
-        </div>
-
-        @if (!string.IsNullOrEmpty(errorMessage))
-        {
-            <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
-                <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
-            </div>
-        }
-        @if (!string.IsNullOrEmpty(successMessage))
-        {
-            <div style="background: var(--success-bg); border: 1px solid var(--success); color: var(--success); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
-                <i class="bi bi-check-circle-fill"></i> @successMessage
-            </div>
-        }
-
-        <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
-            <h6 class="section-title" style="margin-bottom: 16px;">1. IDENTITE ET ACCES ADN</h6>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>PRENOM</label>
-                    <input @bind="newUser.Prenom" class="form-input" placeholder="Dan" />
-                </div>
-                <div class="form-group">
-                    <label>NOM</label>
-                    <input @bind="newUser.Nom" class="form-input" placeholder="Larson" />
-                </div>
-            </div>
-            <div class="form-group">
-                <label>EMAIL (ADN_ID)</label>
-                <input @bind="newUser.Email" type="email" class="form-input" placeholder="nom@adn.ma" />
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>MOT DE PASSE</label>
-                    <input @bind="newUser.MotDePasse" type="password" class="form-input" placeholder="......" />
-                    <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 maj, 1 min, 1 chiffre, 1 spécial</small>
-                </div>
-                <div class="form-group">
-                    <label>CONFIRMER</label>
-                    <input @bind="confirmPassword" type="password" class="form-input" placeholder="......" />
-                </div>
-            </div>
-        </div>
-
-        <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
-            <h6 class="section-title" style="margin-bottom: 16px;">2. COORDONNEES RESEAU</h6>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>VILLE</label>
-                    <select @bind="ville" class="form-select">
-                        <option value="">-- Choix --</option>
-                        @foreach (var v in optsV)
-                        {
-                            <option value="@v">@v</option>
-                        }
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>TELEPHONE</label>
-                    <input @bind="tel" class="form-input" placeholder="06..." />
-                </div>
-            </div>
-        </div>
-
-        <div class="form-group" style="margin-bottom: 20px;">
-            <label class="checkbox-container">
-                <input type="checkbox" @bind="newUser.CguAcceptees" />
-                <span style="font-size: 0.7rem; color: var(--text-secondary);">J'accepte les <a href="/cgu" target="_blank">Conditions Générales d'Utilisation</a> et la <a href="/confidentialite" target="_blank">Politique de Confidentialité</a></span>
-            </label>
-        </div>
-
-        <button type="button" class="btn btn-gold btn-block" @onclick="HandleRegister" disabled="@isLoading">
-            @(isLoading ? "CREATION EN COURS..." : "CREER MON ACCES ADN_ID")
-        </button>
-
-        <div class="auth-footer">
-            <a href="/login">DEJA ENROLE ? ACCEDER AU TERMINAL</a>
+            <h2 style="color: var(--gold-500); margin: 20px 0 8px; font-weight: 700;">COMPTE CRÉÉ</h2>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">REDIRECTION VERS LE TERMINAL DE CONNEXION...</p>
         </div>
     </div>
-</div>
+}
+else
+{
+    <div class="auth-wrapper" style="max-width: 520px;">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-title">
+                    <img src="images/logo_adn_pay_auth.png" alt="ADN_pay" class="auth-logo" />
+                    <span style="font-size: 0.6rem; color: var(--blue-500); margin-left: 8px; display: block; margin-top: 8px;">ENROLEMENT</span>
+                </div>
+                <div style="height: 2px; width: 60%; margin: 12px auto; background: linear-gradient(90deg, transparent, #0099CC, #30B880, transparent); opacity: 0.4;"></div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+                    <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
+                </div>
+            }
+
+            <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
+                <h6 class="section-title" style="margin-bottom: 16px;">1. IDENTITE ET ACCES ADN</h6>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>PRENOM</label>
+                        <input @bind="newUser.Prenom" class="form-input" placeholder="Dan" />
+                    </div>
+                    <div class="form-group">
+                        <label>NOM</label>
+                        <input @bind="newUser.Nom" class="form-input" placeholder="Larson" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>EMAIL (ADN_ID)</label>
+                    <input @bind="newUser.Email" type="email" class="form-input" placeholder="nom@adn.ma" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>MOT DE PASSE</label>
+                        <input @bind="newUser.MotDePasse" type="password" class="form-input" placeholder="......" />
+                        <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 maj, 1 min, 1 chiffre, 1 spécial</small>
+                    </div>
+                    <div class="form-group">
+                        <label>CONFIRMER</label>
+                        <input @bind="confirmPassword" type="password" class="form-input" placeholder="......" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section" style="margin-bottom: 20px; padding: 20px;">
+                <h6 class="section-title" style="margin-bottom: 16px;">2. COORDONNEES RESEAU</h6>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>VILLE</label>
+                        <select @bind="ville" class="form-select">
+                            <option value="">-- Choix --</option>
+                            @foreach (var v in optsV)
+                            {
+                                <option value="@v">@v</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>TELEPHONE</label>
+                        <input @bind="tel" class="form-input" placeholder="06..." />
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label class="checkbox-container">
+                    <input type="checkbox" @bind="newUser.CguAcceptees" />
+                    <span style="font-size: 0.7rem; color: var(--text-secondary);">J'accepte les <a href="/cgu" target="_blank">Conditions Générales d'Utilisation</a> et la <a href="/confidentialite" target="_blank">Politique de Confidentialité</a></span>
+                </label>
+            </div>
+
+            <button type="button" class="btn btn-gold btn-block" @onclick="HandleRegister" disabled="@isLoading">
+                @(isLoading ? "CREATION EN COURS..." : "CREER MON ACCES ADN_ID")
+            </button>
+
+            <div class="auth-footer">
+                <a href="/login">DEJA ENROLE ? ACCEDER AU TERMINAL</a>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private UserProfile newUser = new();
@@ -105,16 +115,18 @@
     private string ville = "";
     private string tel = "";
     private string errorMessage = "";
-    private string successMessage = "";
     private bool isLoading = false;
-    private List<string> optsV = new() { "Casablanca", "Rabat", "Marrakech", "Tanger", "Agadir" };
+    private bool showSuccess = false;
+    private List<string> optsV = new() { "Casablanca", "Rabat", "Marrakech", "Tanger", "Agadir", "Fès", "Oujda", "Kenitra", "Meknès", "Safi" , "Tétouan", "Khouribga", "El Jadida", "Nador", "Béni Mellal", "Kénitra", "Settat", "Larache", "Sidi Kacem", "Guelmim", "Taza", "Ouarzazate", "Dakhla", "Tan-Tan", "Errachidia", "Sidi Ifni", "Zagora", "Boujdour", "Laayoune", "Assilah", "Fnideq", "Martil", "Al Hoceima", "Tiznit", "Sidi Slimane", "Ouazzane", "Azrou", "Midelt", "Ifrane", "Kelaat M'Gouna" };
 
     private async Task HandleRegister()
     {
         errorMessage = "";
-        successMessage = "";
         newUser.Ville = ville;
         newUser.Telephone = tel;
+        newUser.Role = "STUDENT, TUTEUR,";
+        newUser.CguAcceptees = newUser.CguAcceptees;
+        newUser.Email = newUser.Email?.Trim().ToLower() ?? "";
         var password = newUser.MotDePasse;
 
         if (string.IsNullOrEmpty(newUser.Email) || string.IsNullOrEmpty(password))
@@ -123,6 +135,7 @@
             return;
         }
         if (password.Length < 8)
+
         {
             errorMessage = "Mot de passe trop court (min. 8 caracteres).";
             return;
@@ -165,10 +178,11 @@
 
             if (success)
             {
-                successMessage = "Compte cree avec succes ! Redirection...";
-                Notif.Notify("COMPTE CREE", NotificationType.SUCCESS);
-                await Task.Delay(1500);
-                Nav.NavigateTo("/login");
+                showSuccess = true;
+                Notif.Notify("COMPTE CRÉÉ — Bienvenue sur ADN_pay", NotificationType.SUCCESS);
+                StateHasChanged();
+                await Task.Delay(2000);
+                Nav.NavigateTo("/login", forceLoad: true);
             }
             else
             {

@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Data;
+using ADN_pay.Models;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class NotificationHistoryService
     {

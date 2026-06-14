@@ -1,7 +1,7 @@
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace MBANK_ETUDIANT.Data
+namespace ADN_pay.Data
 {
     public class BankDbContext : DbContext
     {
@@ -18,6 +18,7 @@ namespace MBANK_ETUDIANT.Data
         // Table pour l'historique des tâches administrateur
         public DbSet<AdminLog> AdminLogs { get; set; }
         public DbSet<NotificationHistory> NotificationHistories { get; set; }
+        public DbSet<PawaPayDeposit> PawaPayDeposits { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

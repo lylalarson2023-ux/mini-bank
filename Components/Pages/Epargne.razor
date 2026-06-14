@@ -1,15 +1,12 @@
 @page "/epargne"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Models
 @inject BankService Bank
 @inject NotificationService Notif
-@inject IJSRuntime JS
 
 <div class="content-area" style="max-width: 800px;">
     <div class="page-header">
         <h3>Épargne</h3>
-        <span class="page-header-badge">@mesPoches.Count poche(s) · Total : @totalEpargne.ToString("N2") DH</span>
+        <span class="page-header-badge">@mesPoches.Count poche(s) · Total : @((totalEpargne / 100m).ToString("N2")) DH</span>
     </div>
 
     @* ─── FORMULAIRE DE CRÉATION ─── *@
@@ -32,6 +29,10 @@
                 <label>Date cible</label>
                 <input type="date" @bind="dateCible" class="form-input" />
             </div>
+        </div>
+        <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+            <input type="checkbox" @bind="tuteurVisible" id="chk-tuteur" class="form-checkbox" style="width: 18px; height: 18px; accent-color: var(--blue-500);" />
+            <label for="chk-tuteur" style="margin: 0; cursor: pointer; font-size: 0.8rem;">Visible par mon tuteur</label>
         </div>
         <button class="btn btn-primary" @onclick="CreerPoche" disabled="@isProcessing" style="width: auto;">@(isProcessing ? "Création..." : "Créer l'objectif")</button>
     </div>
@@ -75,7 +76,7 @@
             @foreach (var p in mesPoches)
             {
                 var pct = p.Progression;
-                bool estTuteur = p.Objectif.Contains("TUTEUR", StringComparison.OrdinalIgnoreCase);
+                bool estTuteur = p.TuteurVisible || p.Objectif.Contains("TUTEUR", StringComparison.OrdinalIgnoreCase);
                 bool atteint = pct >= 100;
                 var cardClass = estTuteur ? "pocket-tuteur" : "pocket-standard";
                 if (atteint) cardClass = "pocket-atteint";
@@ -83,20 +84,20 @@
                 <div class="pocket-card @cardClass">
                     <div class="pocket-header">
                         <div>
-                            <div class="pocket-name">@(estTuteur ? "TU " : "")@p.Objectif.ToUpper()</div>
+                            <div class="pocket-name">@p.Objectif.ToUpper()</div>
                             <div class="pocket-meta">
                                 <span>Créée le @p.DateCreation.ToShortDateString()</span>
                                 <span>·</span>
                                 <span>Échéance @p.DateCible.ToShortDateString()</span>
                                 @if (estTuteur)
                                 {
-                                    <span class="locked">🔒 Surveillée</span>
+                                    <span class="locked">Surveillée</span>
                                 }
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div class="pocket-amount">@p.MontantActuel.ToString("N2") DH</div>
-                            <div style="font-size: 0.6rem; color: var(--text-muted);">Objectif: @p.MontantCible.ToString("N2") DH</div>
+                            <div class="pocket-amount">@((p.MontantActuel / 100m).ToString("N2")) DH</div>
+                            <div style="font-size: 0.6rem; color: var(--text-muted);">Objectif: @((p.MontantCible / 100m).ToString("N2")) DH</div>
                         </div>
                     </div>
 
@@ -110,7 +111,7 @@
                             }
                             else
                             {
-                                <span class="pocket-remain">Reste : @((p.MontantCible - p.MontantActuel).ToString("N2")) DH</span>
+                                <span class="pocket-remain">Reste : @(((p.MontantCible - p.MontantActuel) / 100m).ToString("N2")) DH</span>
                             }
                         </div>
                         <div class="progress-track">
@@ -118,21 +119,52 @@
                         </div>
                     </div>
 
-                    <div class="pocket-actions">
-                        <button class="btn btn-primary btn-sm" style="flex: 1;" @onclick="() => BoosterPoche(p)" disabled="@isProcessing">@(isProcessing ? "..." : "Booster")</button>
-                        @if (p.DateCible > DateTime.UtcNow && estTuteur)
-                        {
-                            <button class="btn btn-danger btn-sm" style="flex: 1;" @onclick="() => TenterRetraitForce(p)" disabled="@isProcessing">
-                                @(isProcessing ? "..." : "Retrait anticipé")
-                            </button>
-                        }
-                        else
-                        {
-                            <button class="btn btn-success btn-sm" style="flex: 1;" @onclick="() => CasserPoche(p.Id)" disabled="@isProcessing">
-                                @(isProcessing ? "..." : "Récupérer les fonds")
-                            </button>
-                        }
-                    </div>
+                    @* ─── PANEL BOOST INLINE ─── *@
+                    @if (actionPocheId == p.Id && actionType == "boost")
+                    {
+                        <div class="pocket-inline-action">
+                            <span style="font-size:0.75rem; color:var(--text-muted);">Montant à ajouter (DH)</span>
+                            <div style="display:flex; gap:8px; margin-top:6px;">
+                                <input type="number" @bind="actionMontant" class="form-input" style="flex:1; font-size:0.85rem; padding:6px 10px;"
+                                       placeholder="Ex: 200" @ref="actionInputRef" />
+                                <button class="btn btn-primary btn-sm" @onclick="ConfirmerBoost" disabled="@isProcessing">OK</button>
+                                <button class="btn btn-sm" style="background:var(--bg-secondary);border:1px solid var(--border-color);" @onclick="AnnulerAction">✕</button>
+                            </div>
+                        </div>
+                    }
+                    @* ─── PANEL RETRAIT FORCÉ INLINE ─── *@
+                    else if (actionPocheId == p.Id && actionType == "retrait")
+                    {
+                        <div class="pocket-inline-action" style="border-color:var(--danger);">
+                            <span style="font-size:0.75rem; color:var(--danger); font-weight:700;">
+                                ⚠ Retrait anticipé — Cette poche est surveillée par un tuteur.
+                            </span>
+                            <div style="display:flex; gap:8px; margin-top:8px;">
+                                <button class="btn btn-danger btn-sm" style="flex:1;" @onclick="() => CasserPoche(p.Id, tuteur: true)" disabled="@isProcessing">
+                                    Confirmer le retrait
+                                </button>
+                                <button class="btn btn-sm" style="background:var(--bg-secondary);border:1px solid var(--border-color);" @onclick="AnnulerAction">Annuler</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="pocket-actions">
+                            <button class="btn btn-primary btn-sm" style="flex:1;" @onclick="() => OuvrirBoost(p)" disabled="@isProcessing">Booster</button>
+                            @if (p.DateCible > DateTime.UtcNow && estTuteur)
+                            {
+                                <button class="btn btn-danger btn-sm" style="flex:1;" @onclick="() => OuvrirRetraitForce(p)" disabled="@isProcessing">
+                                    Retrait anticipé
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-success btn-sm" style="flex:1;" @onclick="() => CasserPoche(p.Id)" disabled="@isProcessing">
+                                    Récupérer les fonds
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
             }
         </div>
@@ -152,10 +184,17 @@
     private decimal montantCible;
     private DateTime dateCible = DateTime.UtcNow.AddMonths(3);
     private List<SavingsPocket> mesPoches = new();
+    private bool tuteurVisible;
     private bool tuteurAutorise => Bank.Profil.TuteurAutorise;
     private string emailTuteur = "";
-    private decimal totalEpargne;
+    private long totalEpargne;
     private bool isProcessing;
+
+    // Actions inline (boost / retrait forcé)
+    private int? actionPocheId;
+    private string actionType = "";
+    private decimal actionMontant;
+    private ElementReference actionInputRef;
 
     protected override async Task OnInitializedAsync()
     {
@@ -166,7 +205,7 @@
     private async Task ChargerPoches()
     {
         mesPoches = await Bank.GetPocketsAsync();
-        totalEpargne = mesPoches.Sum(p => p.MontantActuel);
+        totalEpargne = mesPoches.Sum(p => p.MontantActuel); // centimes
     }
 
     private async Task ValiderTuteur()
@@ -217,42 +256,61 @@
         isProcessing = true;
         try
         {
-            var cible = montantCible > 0 ? montantCible : montantInitial * 4;
-            if (await Bank.CreerPocheEpargne(nouvelObjectif, montantInitial, dateCible, cible))
+            var initCents = (long)(montantInitial * 100);
+            var cibleCents = montantCible > 0 ? (long)(montantCible * 100) : initCents * 4;
+            if (await Bank.CreerPocheEpargne(nouvelObjectif, initCents, dateCible, cibleCents, tuteurVisible))
             {
                 Notif.Notify($"Objectif '{nouvelObjectif}' ouvert avec succès", NotificationType.SUCCESS);
                 nouvelObjectif = "";
                 montantInitial = 0;
                 montantCible = 0;
+                tuteurVisible = false;
                 await ChargerPoches();
             }
         }
         finally { isProcessing = false; }
     }
 
-    private async Task BoosterPoche(SavingsPocket poche)
+    private void OuvrirBoost(SavingsPocket p)
     {
-        if (isProcessing) return;
-        string montantStr = await JS.InvokeAsync<string>("prompt", $"Montant à ajouter à la poche '{poche.Objectif}' ?");
-        if (decimal.TryParse(montantStr, out decimal montant) && montant > 0)
-        {
-            isProcessing = true;
-            try
-            {
-                bool success = await Bank.BoosterPocheAsync(poche.Id, montant);
-                if (success)
-                {
-                    Notif.Notify($"Poche boostée de {montant} DH", NotificationType.SUCCESS);
-                    await ChargerPoches();
-                }
-                else
-                    Notif.Notify("Fonds insuffisants", NotificationType.ERROR);
-            }
-            finally { isProcessing = false; }
-        }
+        actionPocheId = p.Id;
+        actionType    = "boost";
+        actionMontant = 0;
     }
 
-    private async Task CasserPoche(int id)
+    private void OuvrirRetraitForce(SavingsPocket p)
+    {
+        actionPocheId = p.Id;
+        actionType    = "retrait";
+    }
+
+    private void AnnulerAction()
+    {
+        actionPocheId = null;
+        actionType    = "";
+        actionMontant = 0;
+    }
+
+    private async Task ConfirmerBoost()
+    {
+        if (isProcessing || actionPocheId == null || actionMontant <= 0) return;
+        isProcessing = true;
+        try
+        {
+            var success = await Bank.BoosterPocheAsync(actionPocheId.Value, (long)(actionMontant * 100));
+            if (success)
+            {
+                Notif.Notify($"Poche boostée de {actionMontant:N2} DH", NotificationType.SUCCESS);
+                AnnulerAction();
+                await ChargerPoches();
+            }
+            else
+                Notif.Notify("Fonds insuffisants", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task CasserPoche(int id, bool tuteur = false)
     {
         if (isProcessing) return;
         isProcessing = true;
@@ -260,30 +318,11 @@
         {
             if (await Bank.CasserPocheEpargne(id))
             {
-                Notif.Notify("Épargne récupérée", NotificationType.INFO);
+                Notif.Notify(tuteur ? "Retrait effectué." : "Épargne récupérée.", NotificationType.INFO);
+                AnnulerAction();
                 await ChargerPoches();
             }
         }
         finally { isProcessing = false; }
-    }
-
-    private async Task TenterRetraitForce(SavingsPocket poche)
-    {
-        if (isProcessing) return;
-        bool confirmer = await JS.InvokeAsync<bool>("confirm", $"ATTENTION : L'objectif '{poche.Objectif}' est surveillé. Confirmer le retrait anticipé ?");
-
-        if (confirmer)
-        {
-            isProcessing = true;
-            try
-            {
-                if (await Bank.CasserPocheEpargne(poche.Id))
-                {
-                    Notif.Notify("Retrait effectué. Alerte envoyée au tuteur.", NotificationType.INFO);
-                    await ChargerPoches();
-                }
-            }
-            finally { isProcessing = false; }
-        }
     }
 }

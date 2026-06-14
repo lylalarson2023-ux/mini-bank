@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build, test et verifie MBANK_ETUDIANT + ADN_server
+    Build, test et verifie ADN_pay + ADN_server
 .DESCRIPTION
     Script CI/CD local. Verifie que tout compile et que les tests passent.
     Usage: .\build.ps1
@@ -10,20 +10,20 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $adn = "C:\Users\hp\ADN_server"
 
-Write-Host "=== MBANK / ADN - BUILD SYSTEM ===" -ForegroundColor Cyan
+Write-Host "=== ADN_pay / ADN - BUILD SYSTEM ===" -ForegroundColor Cyan
 Write-Host ""
 
 # --- 1. Stop tout processus sur le port 5163 ---
 $process = Get-NetTCPConnection -LocalPort 5163 -ErrorAction SilentlyContinue
 if ($process) {
-    Write-Host "> Arret du serveur MBANK (PID $($process.OwningProcess))..." -ForegroundColor Yellow
+    Write-Host "> Arret du serveur ADN_pay (PID $($process.OwningProcess))..." -ForegroundColor Yellow
     Stop-Process -Id $process.OwningProcess -Force
     Start-Sleep 2
 }
 
 # --- 2. Build .NET ---
-Write-Host "> Compilation MBANK_ETUDIANT..." -ForegroundColor Yellow
-$build = dotnet build "$root\MBANK_ETUDIANT.csproj" 2>&1
+Write-Host "> Compilation ADN_pay..." -ForegroundColor Yellow
+$build = dotnet build "$root\ADN_pay.csproj" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "X ECHEC compilation" -ForegroundColor Red
     exit 1
@@ -32,7 +32,7 @@ Write-Host "OK Compilation OK" -ForegroundColor Green
 
 # --- 3. Tests ---
 Write-Host "> Execution des tests..." -ForegroundColor Yellow
-$test = dotnet test "$root\MBANK_ETUDIANT.Tests\MBANK_ETUDIANT.Tests.csproj" --no-restore 2>&1
+$test = dotnet test "$root\ADN_pay.Tests\ADN_pay.Tests.csproj" --no-restore 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "X ECHEC tests" -ForegroundColor Red
     exit 1

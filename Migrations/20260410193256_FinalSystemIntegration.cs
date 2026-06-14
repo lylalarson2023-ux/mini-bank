@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace MBANK_ETUDIANT.Migrations
+namespace ADN_pay.Migrations
 {
     /// <inheritdoc />
     public partial class FinalSystemIntegration : Migration

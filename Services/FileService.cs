@@ -1,9 +1,17 @@
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Http;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class FileService
     {
+        private readonly ILogger<FileService> _logger;
+
+        public FileService(ILogger<FileService> logger)
+        {
+            _logger = logger;
+        }
+
         private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx" };
 
         private static readonly Dictionary<string, byte[][]> MagicBytes = new()
@@ -18,10 +26,22 @@ namespace MBANK_ETUDIANT.Services
 
         public async Task<string> EnregistrerFichierSurDisque(IBrowserFile f)
         {
-            var ext = Path.GetExtension(f.Name).ToLower();
+            using var stream = f.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            return await SaveFileAsync(f.Name, stream);
+        }
+
+        public async Task<string> EnregistrerFichierSurDisque(IFormFile f)
+        {
+            using var stream = f.OpenReadStream();
+            return await SaveFileAsync(f.FileName, stream);
+        }
+
+        private async Task<string> SaveFileAsync(string fileName, Stream contentStream)
+        {
+            var ext = Path.GetExtension(fileName).ToLower();
             if (!AllowedExtensions.Contains(ext))
             {
-                Console.WriteLine($"[UPLOAD_BLOCKED] Type de fichier non autorisé : {ext}");
+                _logger.LogWarning("[UPLOAD_BLOCKED] Type de fichier non autorisé : {Ext}", ext);
                 return string.Empty;
             }
 
@@ -31,25 +51,21 @@ namespace MBANK_ETUDIANT.Services
 
             var filePath = Path.Combine(uploadsDir, $"{Guid.NewGuid():N}{ext}");
 
-            // Vérifier les magic bytes avant d'écrire
-            using (var uploadStream = f.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024))
-            {
-                if (MagicBytes.TryGetValue(ext, out var signatures))
-                {
-                    var header = new byte[signatures[0].Length];
-                    var bytesRead = await uploadStream.ReadAsync(header, 0, header.Length);
-                    if (bytesRead < header.Length || !signatures.Any(sig => header.Take(sig.Length).SequenceEqual(sig)))
-                    {
-                        Console.WriteLine($"[UPLOAD_BLOCKED] Contenu invalide pour l'extension {ext} : {f.Name}");
-                        return string.Empty;
-                    }
-                    uploadStream.Seek(0, SeekOrigin.Begin);
-                }
+            using var ms = new MemoryStream();
+            await contentStream.CopyToAsync(ms);
+            var fileBytes = ms.ToArray();
 
-                using var fs = new FileStream(filePath, FileMode.Create);
-                await uploadStream.CopyToAsync(fs);
+            if (MagicBytes.TryGetValue(ext, out var signatures))
+            {
+                var header = fileBytes.Take(signatures[0].Length).ToArray();
+                if (!signatures.Any(sig => header.SequenceEqual(sig)))
+                {
+                    _logger.LogWarning("[UPLOAD_BLOCKED] Contenu invalide pour l'extension {Ext} : {Name}", ext, fileName);
+                    return string.Empty;
+                }
             }
 
+            await File.WriteAllBytesAsync(filePath, fileBytes);
             return $"/uploads/{Path.GetFileName(filePath)}";
         }
     }

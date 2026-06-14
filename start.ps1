@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Démarre MBANK + ADN_server (Django) en un clic.
+    Démarre ADN_pay + ADN_server (Django) en un clic.
 .DESCRIPTION
     - Tue les process sur les ports 5163 (Blazor) et 8000 (Django)
     - Démarre ADN_server (Django) en arrière-plan
-    - Compile et lance MBANK_ETUDIANT (Blazor)
+    - Compile et lance ADN_pay (Blazor)
     - Ouvre le navigateur
     - Affiche les URLs pour les testeurs sur le réseau
 #>
@@ -14,7 +14,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $adn = "C:\Users\hp\ADN_server"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   MBANK / ADN - LAUNCH SEQUENCE        " -ForegroundColor Cyan
+Write-Host "   ADN_pay / ADN - LAUNCH SEQUENCE        " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -40,12 +40,12 @@ if (Test-Path $python) {
     Write-Host "> Python venv non trouve (ADN_server ignore)" -ForegroundColor Yellow
 }
 
-# ─── 3. Démarre MBANK (Blazor:5163) ───
-Write-Host "> Demarrage MBANK_ETUDIANT (Blazor:5163)..." -ForegroundColor Yellow
+# ─── 3. Démarre ADN_pay (Blazor:5163) ───
+Write-Host "> Demarrage ADN_pay (Blazor:5163)..." -ForegroundColor Yellow
 
 try {
-    $process = Start-Process -NoNewWindow -FilePath "dotnet" -ArgumentList "run --project `"$root\MBANK_ETUDIANT.csproj`"" -PassThru
-    Write-Host "  MBANK PID: $($process.Id)" -ForegroundColor Gray
+    $process = Start-Process -NoNewWindow -FilePath "dotnet" -ArgumentList "run --project `"$root\ADN_pay.csproj`"" -PassThru
+    Write-Host "  ADN_pay PID: $($process.Id)" -ForegroundColor Gray
 } catch {
     Write-Host "ERREUR au demarrage : $_" -ForegroundColor Red
     exit 1
@@ -56,7 +56,7 @@ Start-Sleep 5
 # ─── 4. Vérifie que le serveur est bien lancé ───
 $check = Get-NetTCPConnection -LocalPort 5163 -ErrorAction SilentlyContinue
 if (-not $check) {
-    Write-Host "ATTENTION : MBANK n'a pas demarre sur le port 5163" -ForegroundColor Red
+    Write-Host "ATTENTION : ADN_pay n'a pas demarre sur le port 5163" -ForegroundColor Red
     Write-Host "Verifiez les logs ci-dessus pour les erreurs." -ForegroundColor Red
     exit 1
 }
@@ -80,7 +80,7 @@ if (Test-Path $python) {
     Write-Host "  API Django       : http://${ip}:8000/admin" -ForegroundColor Cyan
 }
 Write-Host ""
-Write-Host "  Identifiants admin: admin@mbank.ma / Admin123!" -ForegroundColor Yellow
+Write-Host "  Identifiants admin: admin@adnpay.ma / Admin123!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Appuyez sur Ctrl+C pour arreter." -ForegroundColor Gray
 

@@ -1,0 +1,60 @@
+@inject IJSRuntime JS
+@inject NotificationService Notif
+@implements IAsyncDisposable
+
+<div class="upload-card @(string.IsNullOrEmpty(CurrentUrl) ? "" : "has-file")">
+    <div class="upload-icon">
+        <i class="@IconClass"></i>
+    </div>
+    <label>@Label</label>
+    <input type="file" id="@InputId" hidden accept=".jpg,.jpeg,.png,.pdf,.doc,.docx" />
+    <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('@InputId').click()">CHOISIR UN FICHIER</button>
+    @if (!string.IsNullOrEmpty(CurrentUrl))
+    {
+        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+            <span class="badge badge-success">PRET</span>
+            <a href="@CurrentUrl" target="_blank" class="btn btn-ghost btn-sm">APERCU</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string IconClass { get; set; } = "";
+    [Parameter] public string CurrentUrl { get; set; } = "";
+    [Parameter] public EventCallback<string> OnFileUploaded { get; set; }
+
+    private string InputId { get; } = $"upload-input-{Guid.NewGuid():N}";
+    private DotNetObjectReference<UploadCard>? _selfRef;
+
+    protected override void OnInitialized()
+    {
+        _selfRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("setupFileUpload", _selfRef, InputId);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnUploadComplete(string url)
+    {
+        await OnFileUploaded.InvokeAsync(url);
+        Notif.Notify("FICHIER TELEVERSE AVEC SUCCES", NotificationType.SUCCESS);
+    }
+
+    [JSInvokable]
+    public async Task OnUploadError(string message)
+    {
+        Notif.Notify("ERREUR TELEVERSEMENT: " + message, NotificationType.ERROR);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _selfRef?.Dispose();
+    }
+}

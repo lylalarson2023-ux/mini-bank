@@ -1,4 +1,4 @@
-# 🏦 MBANKWEB - PROJECT MANIFESTO
+# 🏦 ADN_pay - PROJECT MANIFESTO
 
 ## 🌌 Vision & Lore
 Simulation bancaire futuriste se déroulant à Casablanca. 

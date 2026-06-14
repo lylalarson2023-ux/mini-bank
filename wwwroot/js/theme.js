@@ -1,9 +1,9 @@
-window.mbankTheme = {
+window.adnTheme = {
     get: function () {
-        return localStorage.getItem('mbank_theme') || 'dark';
+        return localStorage.getItem('adn_theme') || 'dark';
     },
     set: function (theme) {
-        localStorage.setItem('mbank_theme', theme);
+        localStorage.setItem('adn_theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
     },
     toggle: function () {
@@ -15,6 +15,8 @@ window.mbankTheme = {
 };
 
 (function () {
-    var theme = window.mbankTheme.get();
+    var theme = window.adnTheme.get();
     document.documentElement.setAttribute('data-theme', theme);
 })();
+
+

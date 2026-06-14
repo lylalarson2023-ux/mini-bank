@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Data;
+using ADN_pay.Models;
 using Microsoft.AspNetCore.Http;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class AuthService
     {
@@ -23,7 +23,7 @@ namespace MBANK_ETUDIANT.Services
             _notifHist = notifHist;
         }
 
-        private async Task LogLoginAsync(int userId, string email, bool success, string? reason = null)
+        private async Task LogLoginAsync(int? userId, string email, bool success, string? reason = null)
         {
             var log = new UserLogin
             {
@@ -61,7 +61,7 @@ namespace MBANK_ETUDIANT.Services
             var user = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailLower);
             if (user == null || string.IsNullOrEmpty(user.MotDePasseHash))
             {
-                await LogLoginAsync(0, email, false, "Compte introuvable");
+                await LogLoginAsync(user?.Id, email, false, "Compte introuvable");
                 _logger.LogWarning("Échec connexion : {Email} introuvable", email);
                 return false;
             }
@@ -141,7 +141,7 @@ namespace MBANK_ETUDIANT.Services
                 if (result)
                 {
                     if (_user.EstConnecte && _user.Profil.Id > 0)
-                        await _notifHist.AddNotificationAsync("Bienvenue sur MBANK — votre compte a été créé avec succès", "SUCCESS", "COMPTE");
+                        await _notifHist.AddNotificationAsync("Bienvenue sur ADN_pay — votre compte a été créé avec succès", "SUCCESS", "COMPTE");
                     _logger.LogInformation("Nouveau compte créé : {Email}", u.Email);
                 }
                 return (result, result ? "Compte créé avec succès" : "Erreur lors de la création du compte");

@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Data;
+using ADN_pay.Models;
+using ADN_pay.Shared.Infrastructure;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class AccountService
     {
@@ -20,16 +21,18 @@ namespace MBANK_ETUDIANT.Services
             _notifHist = notifHist;
         }
 
-        public async Task<bool> ExecuterOperationAsync(decimal montant, string motif, string type = "VIREMENT")
+        // ADR-001 : montantCentimes en long
+        public async Task<bool> ExecuterOperationAsync(long montantCentimes, string motif, string type = "VIREMENT")
         {
-            if (montant <= 0 || ((type == "RETRAIT" || type == "VIREMENT") && _user.Profil.Solde < montant))
+            if (montantCentimes <= 0 || ((type == "RETRAIT" || type == "VIREMENT") && _user.Profil.Solde < montantCentimes))
             {
-                _logger.LogWarning("{Type} refusé : montant={Montant}, solde={Solde}", type, montant, _user.Profil.Solde);
+                _logger.LogWarning("{Type} refusé : montant={Montant}, solde={Solde}",
+                    type, montantCentimes.ToDh(), _user.Profil.Solde.ToDh());
                 return false;
             }
             if (type == "RETRAIT" || type == "VIREMENT")
             {
-                var (allow, msg) = VerifierPlafond(montant);
+                var (allow, msg) = VerifierPlafond(montantCentimes);
                 if (!allow)
                 {
                     _logger.LogWarning("{Type} refusé : {Msg}", type, msg);
@@ -41,17 +44,17 @@ namespace MBANK_ETUDIANT.Services
 
             if (type == "RETRAIT" || type == "VIREMENT")
             {
-                user.Solde -= montant;
-                user.MontantJournalierUtilise += montant;
-                user.MontantMensuelUtilise += montant;
+                user.Solde -= montantCentimes;
+                user.MontantJournalierUtilise += montantCentimes;
+                user.MontantMensuelUtilise += montantCentimes;
             }
-            else user.Solde += montant;
+            else user.Solde += montantCentimes;
 
             user.NombreTransactions++;
             _context.Transactions.Add(new Transaction
             {
                 UserId = user.Id,
-                Montant = montant,
+                Montant = montantCentimes,
                 Type = type,
                 Motif = motif,
                 SoldeApres = user.Solde,
@@ -64,11 +67,11 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil.MontantMensuelUtilise = user.MontantMensuelUtilise;
 
             var label = type switch { "DÉPÔT" => "Dépôt", "RETRAIT" => "Retrait", "VIREMENT" => "Virement", _ => type };
-            var sens = type == "DÉPÔT" ? "de" : "de";
             await _notifHist.AddNotificationAsync(
-                $"{label} {sens} {montant:N2} DH — {motif}", "SUCCESS", type);
+                $"{label} de {montantCentimes.ToDh()} — {motif}", "SUCCESS", type);
 
-            _logger.LogInformation("{Type} de {Montant} DH effectué par {Email}", type, montant, _user.Profil.Email);
+            _logger.LogInformation("{Type} de {Montant} effectué par {Email}",
+                type, montantCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -78,10 +81,10 @@ namespace MBANK_ETUDIANT.Services
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
 
-        public async Task<decimal> GetBalanceAsync()
+        public async Task<long> GetBalanceAsync()
         {
             var account = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-            return account?.Solde ?? 0;
+            return account?.Solde ?? 0L;
         }
 
         public async Task<List<Transaction>> GetRecentTransactionsAsync(int count)
@@ -91,26 +94,22 @@ namespace MBANK_ETUDIANT.Services
                 .Take(count)
                 .ToListAsync();
 
-        // --- DASHBOARD STATS ---
-        public async Task<(decimal RevenusMois, decimal DepensesMois, decimal TotalEpargne, List<(DateTime Jour, decimal Entrees, decimal Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
+        // ADR-001 : tous les montants retournés en centimes (long)
+        public async Task<(long RevenusMois, long DepensesMois, long TotalEpargne,
+            List<(DateTime Jour, long Entrees, long Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
         {
             var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
             var transactionsMois = await _context.Transactions
                 .Where(t => t.UserId == _user.Profil.Id && t.Date >= debutMois)
                 .ToListAsync();
 
-            var revenus = transactionsMois
-                .Where(t => t.Type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT")
-                .Sum(t => t.Montant);
-            var depenses = transactionsMois
-                .Where(t => t.Type is "RETRAIT" or "VIREMENT")
-                .Sum(t => t.Montant);
+            var revenus  = transactionsMois.Where(t => t.IsEntree).Sum(t => t.Montant);
+            var depenses = transactionsMois.Where(t => t.IsSortie).Sum(t => t.Montant);
 
             var totalEpargne = await _context.SavingsPockets
                 .Where(p => p.UserId == _user.Profil.Id)
                 .SumAsync(p => p.MontantActuel);
 
-            // Daily breakdown for chart (last 7 days)
             var septJours = DateTime.UtcNow.Date.AddDays(-6);
             var daily = Enumerable.Range(0, 7).Select(offset =>
             {
@@ -118,40 +117,43 @@ namespace MBANK_ETUDIANT.Services
                 var dayTx = transactionsMois.Where(t => t.Date.Date == day).ToList();
                 return (
                     Jour: day,
-                    Entrees: dayTx.Where(t => t.Type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT").Sum(t => t.Montant),
-                    Sorties: dayTx.Where(t => t.Type is "RETRAIT" or "VIREMENT").Sum(t => t.Montant)
+                    Entrees: dayTx.Where(t => t.IsEntree).Sum(t => t.Montant),
+                    Sorties: dayTx.Where(t => t.IsSortie).Sum(t => t.Montant)
                 );
             }).ToList();
 
             return (revenus, depenses, totalEpargne, daily);
         }
 
-        // --- TUTEUR ---
-        public async Task<bool> EffectuerVirementAsync(string emailDestinataire, decimal montant, string motif)
+        // ADR-001 : montantCentimes en long
+        public async Task<bool> EffectuerVirementAsync(string emailDestinataire, long montantCentimes, string motif)
         {
-            var (allow, msg) = VerifierPlafond(montant);
+            var (allow, msg) = VerifierPlafond(montantCentimes);
             if (!allow) return false;
 
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
                 var sender = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-                if (sender == null || sender.Solde < montant) return false;
+                if (sender == null || sender.Solde < montantCentimes) return false;
 
-                var recipient = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailDestinataire.Trim().ToLower());
+                var targetEmail = emailDestinataire.Trim().ToLower();
+                if (sender.Email.ToLower() == targetEmail) return false;
+
+                var recipient = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == targetEmail);
                 if (recipient == null) return false;
 
-                sender.Solde -= montant;
-                sender.MontantJournalierUtilise += montant;
-                sender.MontantMensuelUtilise += montant;
-                recipient.Solde += montant;
+                sender.Solde -= montantCentimes;
+                sender.MontantJournalierUtilise += montantCentimes;
+                sender.MontantMensuelUtilise += montantCentimes;
+                recipient.Solde += montantCentimes;
                 sender.NombreTransactions++;
                 recipient.NombreTransactions++;
 
                 _context.Transactions.Add(new Transaction
                 {
                     UserId = sender.Id,
-                    Montant = montant,
+                    Montant = montantCentimes,
                     Type = "VIREMENT",
                     Motif = motif,
                     SoldeApres = sender.Solde,
@@ -161,7 +163,7 @@ namespace MBANK_ETUDIANT.Services
                 _context.Transactions.Add(new Transaction
                 {
                     UserId = recipient.Id,
-                    Montant = montant,
+                    Montant = montantCentimes,
                     Type = "RÉCEPTION",
                     Motif = $"Virement de {sender.Email}",
                     SoldeApres = recipient.Solde,
@@ -174,11 +176,11 @@ namespace MBANK_ETUDIANT.Services
                 _user.Profil.Solde = sender.Solde;
                 _user.Profil.MontantJournalierUtilise = sender.MontantJournalierUtilise;
                 _user.Profil.MontantMensuelUtilise = sender.MontantMensuelUtilise;
-                _logger.LogInformation("Virement de {Montant} DH de {Sender} vers {Recipient}", montant, sender.Email, recipient.Email);
+                _logger.LogInformation("Virement de {Montant} de {Sender} vers {Recipient}",
+                    montantCentimes.ToDh(), PiiMasker.MaskEmail(sender.Email), PiiMasker.MaskEmail(recipient.Email));
 
-                // Notify recipient
                 await _notifHist.AddNotificationForUserAsync(recipient.Id,
-                    $"Virement reçu de {sender.Email} : {montant:N2} DH", "SUCCESS", "VIREMENT");
+                    $"Virement reçu de {sender.Email} : {montantCentimes.ToDh()}", "SUCCESS", "VIREMENT");
 
                 return true;
             }
@@ -199,7 +201,8 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil.TuteurAutorise = true;
             await _context.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Tuteur autorisé : {email}", "SUCCESS", "TUTEUR");
-            _logger.LogInformation("Tuteur {TuteurEmail} autorisé pour {Email}", email, _user.Profil.Email);
+            _logger.LogInformation("Tuteur {TuteurEmail} autorisé pour {Email}",
+                PiiMasker.MaskEmail(email), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -213,7 +216,7 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil.TuteurAutorise = false;
             await _context.SaveChangesAsync();
             await _notifHist.AddNotificationAsync("Tuteur révoqué", "INFO", "TUTEUR");
-            _logger.LogInformation("Tuteur révoqué pour {Email}", _user.Profil.Email);
+            _logger.LogInformation("Tuteur révoqué pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -240,7 +243,7 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil.Email = u.Email;
 
             await _notifHist.AddNotificationAsync("Profil mis à jour", "SUCCESS", "PROFIL");
-            _logger.LogInformation("Profil mis à jour pour {Email}", _user.Profil.Email);
+            _logger.LogInformation("Profil mis à jour pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Profil mis à jour avec succès");
         }
 
@@ -286,11 +289,11 @@ namespace MBANK_ETUDIANT.Services
             await _context.SaveChangesAsync();
 
             await _notifHist.AddNotificationAsync("Mot de passe changé", "SUCCESS", "PROFIL");
-            _logger.LogInformation("Mot de passe changé pour {Email}", _user.Profil.Email);
+            _logger.LogInformation("Mot de passe changé pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Mot de passe changé avec succès");
         }
 
-        // --- EXPORT DES DONNEES (RGPD / Loi 09-08) ---
+        // --- EXPORT DES DONNÉES (RGPD / Loi 09-08) ---
         public async Task<string> ExportPersonalDataAsync()
         {
             var u = await _context.UserProfiles
@@ -301,7 +304,7 @@ namespace MBANK_ETUDIANT.Services
             if (u == null) return "";
 
             var export = new System.Text.StringBuilder();
-            export.AppendLine("=== EXPORT DES DONNEES PERSONNELLES - MBANK ===");
+            export.AppendLine("=== EXPORT DES DONNEES PERSONNELLES - ADN_pay ===");
             export.AppendLine($"Date d'export : {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
             export.AppendLine($"Conforme à la Loi 09-08 et au RGPD");
             export.AppendLine();
@@ -322,8 +325,8 @@ namespace MBANK_ETUDIANT.Services
             export.AppendLine($"Matricule : {u.MatriculeEtudiant}");
             export.AppendLine();
             export.AppendLine("--- DONNEES FINANCIERES ---");
-            export.AppendLine($"Solde : {u.Solde} DH");
-            export.AppendLine($"Dette : {u.Dette} DH");
+            export.AppendLine($"Solde : {u.Solde.ToDh()}");
+            export.AppendLine($"Dette : {u.Dette.ToDh()}");
             export.AppendLine($"Statut : {u.Statut}");
             export.AppendLine($"Date d'inscription : {u.DateInscription:yyyy-MM-dd HH:mm}");
             export.AppendLine($"Nombre de transactions : {u.NombreTransactions}");
@@ -331,13 +334,13 @@ namespace MBANK_ETUDIANT.Services
             export.AppendLine("--- HISTORIQUE DES TRANSACTIONS ---");
             foreach (var t in u.Transactions.OrderByDescending(x => x.Date))
             {
-                export.AppendLine($"[{t.Date:yyyy-MM-dd HH:mm}] {t.Type} - {t.Motif} - {t.Montant} DH");
+                export.AppendLine($"[{t.Date:yyyy-MM-dd HH:mm}] {t.Type} - {t.Motif} - {t.Montant.ToDh()}");
             }
             export.AppendLine();
             export.AppendLine("--- POCKETS D'EPARGNE ---");
             foreach (var p in u.SavingsPockets)
             {
-                export.AppendLine($"{p.Objectif} : {p.MontantActuel} DH (fin : {p.Cible:yyyy-MM-dd})");
+                export.AppendLine($"{p.Objectif} : {p.MontantActuel.ToDh()} (fin : {p.Cible:yyyy-MM-dd})");
             }
             export.AppendLine();
             export.AppendLine("--- TUTEUR ---");
@@ -361,7 +364,7 @@ namespace MBANK_ETUDIANT.Services
             if (u.Solde > 0)
                 return (false, "Veuillez transférer ou retirer votre solde avant de supprimer votre compte");
 
-            _logger.LogWarning("SUPPRESSION COMPTE : {Email} (Id={Id})", u.Email, u.Id);
+            _logger.LogWarning("SUPPRESSION COMPTE : {Email} (Id={Id})", PiiMasker.MaskEmail(u.Email), u.Id);
 
             _context.Transactions.RemoveRange(u.Transactions);
             _context.SavingsPockets.RemoveRange(u.SavingsPockets);
@@ -371,14 +374,14 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil = new();
             _user.EstConnecte = false;
 
-            _logger.LogInformation("Compte supprimé : {Email}", u.Email);
+            _logger.LogInformation("Compte supprimé : {Email}", PiiMasker.MaskEmail(u.Email));
             return (true, "Votre compte a été supprimé avec succès. Vous allez être redirigé.");
         }
 
-        // --- KYC ---
+        // --- KYC --- frais = 100 DH = 10 000 centimes
         public async Task<bool> SoumettreDossierKYC(UserProfile kyc)
         {
-            if (_user.Profil.Solde < 100m) return false;
+            if (_user.Profil.Solde < 10_000L) return false;
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -399,12 +402,12 @@ namespace MBANK_ETUDIANT.Services
                 u.DocDomicileUrl = kyc.DocDomicileUrl;
                 u.CguAcceptees = kyc.CguAcceptees;
                 u.PendingPremiumUpgrade = true;
-                u.Solde -= 100m;
+                u.Solde -= 10_000L; // 100 DH en centimes
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
                 _user.Profil.Solde = u.Solde;
                 await _notifHist.AddNotificationAsync("Dossier KYC soumis — en attente de validation", "INFO", "KYC");
-                _logger.LogInformation("Dossier KYC soumis pour {Email}", _user.Profil.Email);
+                _logger.LogInformation("Dossier KYC soumis pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
             }
             catch
@@ -412,6 +415,35 @@ namespace MBANK_ETUDIANT.Services
                 await tx.RollbackAsync();
                 throw;
             }
+        }
+
+        // ADR-001 : soldes en centimes (long)
+        public async Task<List<(DateTime Jour, long Solde)>> GetBalanceCurve30DaysAsync()
+        {
+            var today = DateTime.UtcNow.Date;
+            var from  = today.AddDays(-29);
+
+            var txs = await _context.Transactions
+                .Where(t => t.UserId == _user.Profil.Id && t.Date >= from)
+                .ToListAsync();
+
+            // Net par jour : positif = entrée, négatif = sortie
+            var dailyNet = new Dictionary<DateTime, long>();
+            foreach (var tx in txs)
+            {
+                var day = tx.Date.Date;
+                dailyNet[day] = dailyNet.GetValueOrDefault(day) + (tx.IsEntree ? tx.Montant : -tx.Montant);
+            }
+
+            // Reconstitution vers le passé depuis le solde actuel
+            var curve = new long[30];
+            curve[29] = _user.Profil.Solde;
+            for (int i = 28; i >= 0; i--)
+                curve[i] = curve[i + 1] - dailyNet.GetValueOrDefault(from.AddDays(i + 1));
+
+            return Enumerable.Range(0, 30)
+                .Select(i => (from.AddDays(i), curve[i]))
+                .ToList();
         }
 
         // --- HISTORIQUE CONNEXIONS ---
@@ -424,46 +456,48 @@ namespace MBANK_ETUDIANT.Services
                 .ToListAsync();
         }
 
-        // --- PLAFONDS ---
+        // --- PLAFONDS --- ADR-001 : montantCentimes en long
         public void ReinitialiserPlafondsSiNecessaire()
         {
             var now = DateTime.UtcNow;
             var u = _user.Profil;
             if (u.DerniereReinitPlafond.Date != now.Date)
             {
-                u.MontantJournalierUtilise = 0;
+                u.MontantJournalierUtilise = 0L;
                 u.DerniereReinitPlafond = now;
             }
             if (u.DerniereReinitPlafond.Month != now.Month || u.DerniereReinitPlafond.Year != now.Year)
             {
-                u.MontantMensuelUtilise = 0;
+                u.MontantMensuelUtilise = 0L;
             }
         }
 
-        public (bool Allow, string Message) VerifierPlafond(decimal montant)
+        public (bool Allow, string Message) VerifierPlafond(long montantCentimes)
         {
             ReinitialiserPlafondsSiNecessaire();
             var u = _user.Profil;
-            if (u.MontantJournalierUtilise + montant > u.PlafondJournalier)
-                return (false, $"Plafond journalier dépassé ({u.PlafondJournalier:N0} DH/jour)");
-            if (u.MontantMensuelUtilise + montant > u.PlafondMensuel)
-                return (false, $"Plafond mensuel dépassé ({u.PlafondMensuel:N0} DH/mois)");
+            if (u.MontantJournalierUtilise + montantCentimes > u.PlafondJournalier)
+                return (false, $"Plafond journalier dépassé ({u.PlafondJournalier.ToDh()}/jour)");
+            if (u.MontantMensuelUtilise + montantCentimes > u.PlafondMensuel)
+                return (false, $"Plafond mensuel dépassé ({u.PlafondMensuel.ToDh()}/mois)");
             return (true, "");
         }
 
-        public async Task<(bool Success, string Message)> UpdatePlafondsAsync(decimal journalier, decimal mensuel)
+        public async Task<(bool Success, string Message)> UpdatePlafondsAsync(long journalierCentimes, long mensuelCentimes)
         {
             var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
-            if (journalier <= 0 || mensuel <= 0) return (false, "Les plafonds doivent être positifs");
-            if (journalier > mensuel) return (false, "Le plafond journalier ne peut pas dépasser le plafond mensuel");
-            u.PlafondJournalier = journalier;
-            u.PlafondMensuel = mensuel;
+            if (journalierCentimes <= 0 || mensuelCentimes <= 0) return (false, "Les plafonds doivent être positifs");
+            if (journalierCentimes > mensuelCentimes) return (false, "Le plafond journalier ne peut pas dépasser le plafond mensuel");
+            u.PlafondJournalier = journalierCentimes;
+            u.PlafondMensuel = mensuelCentimes;
             await _context.SaveChangesAsync();
-            _user.Profil.PlafondJournalier = journalier;
-            _user.Profil.PlafondMensuel = mensuel;
-            await _notifHist.AddNotificationAsync($"Plafonds mis à jour : {journalier:N0} DH/jour, {mensuel:N0} DH/mois", "SUCCESS", "PLAFOND");
-            _logger.LogInformation("Plafonds mis à jour pour {Email}: {J}/{M}", _user.Profil.Email, journalier, mensuel);
+            _user.Profil.PlafondJournalier = journalierCentimes;
+            _user.Profil.PlafondMensuel = mensuelCentimes;
+            await _notifHist.AddNotificationAsync(
+                $"Plafonds mis à jour : {journalierCentimes.ToDh()}/jour, {mensuelCentimes.ToDh()}/mois", "SUCCESS", "PLAFOND");
+            _logger.LogInformation("Plafonds mis à jour pour {Email}: {J}/{M}",
+                PiiMasker.MaskEmail(_user.Profil.Email), journalierCentimes.ToDh(), mensuelCentimes.ToDh());
             return (true, "Plafonds mis à jour");
         }
 
@@ -493,7 +527,8 @@ namespace MBANK_ETUDIANT.Services
             });
             await _context.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Bénéficiaire ajouté : {nom} ({emailLower})", "SUCCESS", "BENEFICIAIRE");
-            _logger.LogInformation("Bénéficiaire {Nom} ({Email}) ajouté par {User}", nom, emailLower, _user.Profil.Email);
+            _logger.LogInformation("Bénéficiaire {Nom} ({Email}) ajouté par {User}",
+                nom, PiiMasker.MaskEmail(emailLower), PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Bénéficiaire ajouté");
         }
 
@@ -504,7 +539,7 @@ namespace MBANK_ETUDIANT.Services
             _context.Beneficiaires.Remove(b);
             await _context.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Bénéficiaire #{id} supprimé", "INFO", "BENEFICIAIRE");
-            _logger.LogInformation("Bénéficiaire #{Id} supprimé par {User}", id, _user.Profil.Email);
+            _logger.LogInformation("Bénéficiaire #{Id} supprimé par {User}", id, PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -530,7 +565,8 @@ namespace MBANK_ETUDIANT.Services
             _user.Profil.NotifCredit = credit;
             _user.Profil.NotifPromo = promo;
             await _notifHist.AddNotificationAsync("Préférences de notification mises à jour", "SUCCESS", "PARAMETRES");
-            _logger.LogInformation("Préférences notifications mises à jour pour {Email}", _user.Profil.Email);
+            _logger.LogInformation("Préférences notifications mises à jour pour {Email}",
+                PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Préférences enregistrées");
         }
 
@@ -543,7 +579,7 @@ namespace MBANK_ETUDIANT.Services
             await _context.SaveChangesAsync();
             _user.Profil.SecurityStamp = u.SecurityStamp;
             await _notifHist.AddNotificationAsync("Toutes les sessions ont été révoquées", "INFO", "SECURITE");
-            _logger.LogWarning("Toutes les sessions révoquées pour {Email}", _user.Profil.Email);
+            _logger.LogWarning("Toutes les sessions révoquées pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 

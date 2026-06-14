@@ -3,45 +3,75 @@
 @rendermode InteractiveServer
 @using System.Security.Cryptography
 @using System.Text
-@using MBANK_ETUDIANT.Services
 @inject BankService Bank
 @inject NavigationManager Nav
 @inject NotificationService Notif
 @inject IConfiguration Config
 <NotificationOverlay />
-@using MBANK_ETUDIANT.Models
 
-<div class="auth-wrapper">
+<div class="auth-wrapper login-page">
+
+    <div class="login-shape login-shape-1"></div>
+    <div class="login-shape login-shape-2"></div>
+    <div class="login-shape login-shape-3"></div>
+    <div class="login-shape login-shape-4"></div>
+    <div class="login-shape login-shape-5"></div>
+
     <div class="auth-card">
         <div class="auth-header">
-            <h1 class="auth-title"><span class="gold">M</span>BANK</h1>
-            <div class="auth-subtitle">ADNcorporation | TERMINAL</div>
+            <h1 class="auth-title"><img src="images/logo_adn_pay_auth.png" alt="ADN_pay" class="auth-logo" /></h1>
+            <div class="auth-subtitle">BY ADNCORP | TERMINAL</div>
+            <div class="auth-subtitle-line adn"></div>
         </div>
 
         @if (!string.IsNullOrEmpty(errorMessage))
         {
-            <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+            <div class="login-error">
                 <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
             </div>
         }
 
-        <div class="form-group">
-            <label>ADRESSE E-MAIL</label>
-            <input @bind="email" type="email" placeholder="nom@exemple.com" class="form-input" />
-        </div>
+        @if (!showTwoFactor)
+        {
+            <div class="form-group">
+                <label>ADRESSE E-MAIL</label>
+                <input @bind="email" type="email" placeholder="nom@exemple.com" class="form-input" disabled="@isLoading" />
+            </div>
 
-        <div class="form-group">
-            <label>MOT DE PASSE</label>
-            <input @bind="mdp" type="password" placeholder="......" class="form-input" />
-        </div>
+            <div class="form-group">
+                <label>MOT DE PASSE</label>
+                <input @bind="mdp" type="password" placeholder="......" class="form-input" disabled="@isLoading" />
+            </div>
 
-        <button class="btn btn-gold btn-block" @onclick="HandleLogin" disabled="@isLoading">
-            @(isLoading ? "CONNEXION..." : "SE CONNECTER")
-        </button>
+            <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="HandleLogin" disabled="@isLoading">
+                @(isLoading ? "CONNEXION..." : "SE CONNECTER")
+            </button>
 
-        <div class="auth-footer">
-            <a href="/register">(inscription)</a>
-        </div>
+            <div class="auth-footer">
+                <a href="/register">(inscription)</a>
+            </div>
+        }
+        else
+        {
+            <div style="text-align: center; margin-bottom: 20px;">
+                <i class="bi bi-shield-lock-fill" style="font-size: 2rem; color: var(--blue-500);"></i>
+                <p style="margin: 8px 0 4px; font-size: 0.85rem; font-weight: 600;">AUTHENTIFICATION À DEUX FACTEURS</p>
+                <p style="font-size: 0.7rem; color: var(--text-muted);">Saisissez le code généré par votre application</p>
+            </div>
+
+            <div class="form-group">
+                <label>CODE 2FA</label>
+                <input @bind="twoFactorCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="form-input" style="text-align: center; font-size: 1.4rem; letter-spacing: 8px; font-family: var(--font-mono);" />
+            </div>
+
+            <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="ValidateTwoFactor" disabled="@isLoading">
+                @(isLoading ? "VÉRIFICATION..." : "VALIDER LE CODE")
+            </button>
+
+            <div class="auth-footer">
+                <a href="javascript:void(0)" @onclick="CancelTwoFactor">(annuler)</a>
+            </div>
+        }
     </div>
 </div>
 
@@ -51,6 +81,8 @@
     private string mdp = "";
     private string errorMessage = "";
     private bool isLoading = false;
+    private bool showTwoFactor;
+    private string twoFactorCode = "";
 
     private static string SignToken(string payload, string secret) =>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
@@ -82,21 +114,13 @@
 
             if (success)
             {
-                Notif.Notify("ACCES ACCORDE", NotificationType.SUCCESS);
-                var userId = Bank.Profil.Id;
-                if (userId == 0)
+                if (Bank.IsTwoFactorRequired)
                 {
-                    errorMessage = "ERREUR : ID UTILISATEUR INVALIDE";
+                    showTwoFactor = true;
                     return;
                 }
-                var secret = Config["LoginSecret"];
-                if (string.IsNullOrEmpty(secret))
-                {
-                    errorMessage = "ERREUR DE CONFIGURATION SERVEUR";
-                    return;
-                }
-                var sig = SignToken(userId.ToString(), secret);
-                Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&sig={sig}", forceLoad: true);
+
+                await CompleteLogin(Bank.Profil.Id);
             }
             else
             {
@@ -111,5 +135,62 @@
         {
             isLoading = false;
         }
+    }
+
+    private async Task ValidateTwoFactor()
+    {
+        errorMessage = "";
+        isLoading = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(twoFactorCode) || twoFactorCode.Length != 6)
+            {
+                errorMessage = "Code 2FA invalide (6 chiffres requis).";
+                return;
+            }
+
+            if (Bank.IsTwoFactorRequired && Bank.VerifyTwoFactorCode(Bank.Profil.TwoFactorSecret ?? "", twoFactorCode))
+            {
+                await CompleteLogin(Bank.Profil.Id);
+            }
+            else
+            {
+                errorMessage = "Code 2FA incorrect. Réessayez.";
+            }
+        }
+        catch
+        {
+            errorMessage = "Erreur technique lors de la vérification 2FA.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void CancelTwoFactor()
+    {
+        showTwoFactor = false;
+        twoFactorCode = "";
+        Bank.Deconnexion();
+    }
+
+    private async Task CompleteLogin(int userId)
+    {
+        if (userId == 0)
+        {
+            errorMessage = "ERREUR : ID UTILISATEUR INVALIDE";
+            return;
+        }
+        var secret = Config["LoginSecret"];
+        if (string.IsNullOrEmpty(secret))
+        {
+            errorMessage = "ERREUR DE CONFIGURATION SERVEUR";
+            return;
+        }
+        Notif.Notify("ACCES ACCORDE", NotificationType.SUCCESS);
+        var sig = SignToken(userId.ToString(), secret);
+        Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&sig={sig}", forceLoad: true);
     }
 }

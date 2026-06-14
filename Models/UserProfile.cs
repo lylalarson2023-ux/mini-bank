@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
-namespace MBANK_ETUDIANT.Models
+namespace ADN_pay.Models
 {
     public enum UserStatus { STANDARD, PREMIUM, VIP, PENDING }
 
@@ -14,13 +14,14 @@ namespace MBANK_ETUDIANT.Models
         public string Nom { get; set; } = "";
         public string Prenom { get; set; } = "";
         public string Email { get; set; } = "";
-        
+
         [JsonIgnore]
         public string MotDePasse { get; set; } = "";
         public string MotDePasseHash { get; set; } = "";
-        
-        public decimal Solde { get; set; } = 0m;
-        public decimal Dette { get; set; } = 0m;
+
+        // ADR-001 : montants en centimes (long)
+        public long Solde { get; set; } = 0L;
+        public long Dette { get; set; } = 0L;
         public UserStatus Statut { get; set; } = UserStatus.STANDARD;
         public int NombreTransactions { get; set; } = 0;
         public DateTime DerniereMajInterets { get; set; } = DateTime.UtcNow;
@@ -60,14 +61,14 @@ namespace MBANK_ETUDIANT.Models
         public bool TuteurAutorise { get; set; } = false;
 
         // --- SÉCURITÉ ---
-        public string SecurityStamp { get; set; } = Guid.NewGuid().ToString();
+        public string SecurityStamp { get; set; } = "";
 
-        // --- PLAFONDS TRANSACTIONS ---
-        public decimal PlafondJournalier { get; set; } = 5000m;
-        public decimal PlafondMensuel { get; set; } = 50000m;
+        // --- PLAFONDS TRANSACTIONS (centimes) ---
+        public long PlafondJournalier { get; set; } = 500_000L;   // 5 000 DH
+        public long PlafondMensuel { get; set; } = 5_000_000L;    // 50 000 DH
         public DateTime DerniereReinitPlafond { get; set; } = DateTime.UtcNow;
-        public decimal MontantJournalierUtilise { get; set; }
-        public decimal MontantMensuelUtilise { get; set; }
+        public long MontantJournalierUtilise { get; set; } = 0L;
+        public long MontantMensuelUtilise { get; set; } = 0L;
 
         // --- PRÉFÉRENCES NOTIFICATIONS ---
         public bool NotifConnexion { get; set; } = true;
@@ -78,21 +79,28 @@ namespace MBANK_ETUDIANT.Models
         public bool NotifCredit { get; set; } = true;
         public bool NotifPromo { get; set; } = false;
 
+        // --- 2FA ---
+        public bool TwoFactorEnabled { get; set; } = false;
+        public string? TwoFactorSecret { get; set; }
+
         // --- WORKFLOW ADMINISTRATIF ---
         public bool PendingPremiumUpgrade { get; set; } = false;
         public bool PendingCreditRequest { get; set; } = false;
-        public decimal PendingCreditAmount { get; set; } = 0m;
+        public long PendingCreditAmount { get; set; } = 0L;
         public string PendingCreditMotif { get; set; } = "";
         public bool IsAdmin { get; set; } = false;
         public DateTime? PremiumValidatedAt { get; set; }
         public DateTime? PremiumRejectedAt { get; set; }
+        public string? KycRejetMotif { get; set; }
+
+        public string Role { get; set; } = "";
 
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();
         public List<SavingsPocket> SavingsPockets { get; set; } = new();
 
         // --- MÉTHODES UTILES ---
-        public string GetFullName() => $"{Prenom} {Nom}";  
+        public string GetFullName() => $"{Prenom} {Nom}";
         public string GetInitials() => $"{Prenom.FirstOrDefault()}{Nom.FirstOrDefault()}".ToUpper();
         public string GetRank()
         {
@@ -102,7 +110,7 @@ namespace MBANK_ETUDIANT.Models
                 UserStatus.PREMIUM => "Premium",
                 UserStatus.VIP => "VIP",
                 _ => "Inconnu"
-            };  
+            };
         }
     }
 }

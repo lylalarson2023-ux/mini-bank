@@ -57,6 +57,9 @@ tunnel*.txt
 test_server_pid.txt
 test_tunnel.bat
 
+# Tableau de bord d'état (généré par etat.ps1)
+etat.html
+
 # OS
 Thumbs.db
 Desktop.ini

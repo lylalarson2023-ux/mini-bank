@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MBANK_ETUDIANT.csproj" />
+    <ProjectReference Include="..\ADN_pay.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,7 +1,10 @@
-namespace MBANK_ETUDIANT.Models
+using System.ComponentModel.DataAnnotations;
+
+namespace ADN_pay.Models
 {
     public class AdminLog
     {
+        [Key]
         public int Id { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
         public string Action { get; set; } = ""; // ex: "VALIDATION_PREMIUM"

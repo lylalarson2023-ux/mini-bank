@@ -1,57 +1,60 @@
 @page "/depot"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Models
+@using ADN_pay.Services
 @inject BankService Bank
+@inject StripeService Stripe
+@inject IPawaPayService PawaPay
 @inject NotificationService Notif
 @inject NavigationManager Nav
-@inject StripeService Stripe
-@inject IHttpContextAccessor Http
 
 <div class="cyber-panel" style="max-width: 480px;">
-    <h3>MODULE DE DEPOT</h3>
+    <h3>MODULE DE DÉPÔT</h3>
 
     <div class="warning-box">
-        SOLDE ACTUEL : <span class="highlight">@Bank.Profil.Solde.ToString("N2") DH</span>
+        SOLDE ACTUEL : <span class="highlight">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</span>
     </div>
 
-    @if (paidOk)
+    @if (!string.IsNullOrEmpty(configError))
     {
-        <div class="success-panel" style="margin-top: 16px;">
-            <h5>PAIEMENT REUSSI</h5>
-            <p style="color: var(--text-secondary); font-size: 0.75rem;">
-                VOTRE COMPTE A ETE CREDITE.
-            </p>
+        <div class="alert alert-danger" style="margin-top: 16px; font-size: 0.75rem;">
+            @configError
         </div>
     }
 
-    @if (Bank.Profil.IsAdmin)
-    {
-        <div style="margin-top: 24px;">
-            <div class="form-group">
-                <label>MONTANT A DEPOSER (DH)</label>
-                <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
-            </div>
-            <button class="btn btn-success btn-block" @onclick="EffectuerDepot" disabled="@isProcessing">
-                @(isProcessing ? "TRAITEMENT..." : "VALIDER LE DEPOT")
+    <div class="depot-step">
+        <div class="depot-step-label">1. MONTANT À DÉPOSER (DH)</div>
+        <input type="number" @bind="montant" class="form-input depot-montant-input" placeholder="0.00" />
+    </div>
+
+    <div class="depot-step">
+        <div class="depot-step-label">2. MOYEN DE PAIEMENT</div>
+        <div class="depot-choices">
+            <button class="depot-choice @(selectedMethod == "stripe" ? "active" : "")" @onclick="SelectStripe" disabled="@(montant <= 0 || !stripeConfigured)">
+                <span class="depot-choice-icon">
+                    <img src="/images/logo_adn_pay_blanc.png" alt="ADN_pay" class="depot-choice-logo" />
+                </span>
+                <span class="depot-choice-label">CARTE BANCAIRE</span>
+                <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
+            </button>
+            <button class="depot-choice @(selectedMethod == "pawapay" ? "active" : "")" @onclick="SelectPawaPay" disabled="@(montant <= 0 || !pawaPayConfigured)">
+                <span class="depot-choice-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="5" y="2" width="14" height="20" rx="2" />
+                        <line x1="12" y1="18" x2="12.01" y2="18" />
+                        <path d="M8 8h8v3H8z" />
+                    </svg>
+                </span>
+                <span class="depot-choice-label">MOBILE MONEY</span>
+                <span class="depot-choice-sub">@(pawaPayConfigured ? "MTN · M-Pesa · Orange Money" : "Non configuré")</span>
             </button>
         </div>
-    }
-    else
-    {
-        <div style="margin-top: 24px;">
-            <div class="form-group">
-                <label>MONTANT A DEPOSER VIA STRIPE (DH)</label>
-                <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
-            </div>
-            <button class="btn btn-primary btn-block" @onclick="PayerParCarte" disabled="@isProcessing">
-                @(isProcessing ? "REDIRECTION VERS STRIPE..." : "PAYER PAR CARTE")
-            </button>
-            <p style="color: var(--text-muted); font-size: 0.65rem; margin-top: 8px; text-align: center;">
-                PAIEMENT SECURISE VIA STRIPE &mdash; CARTES ACCEPTEES : CB, VISA, MASTERCARD
-            </p>
-        </div>
-    }
+    </div>
+
+    <div class="depot-step">
+        <button class="btn btn-primary btn-block depot-confirm" @onclick="EffectuerDepot" disabled="@(!canConfirm)">
+            @(isProcessing ? "TRAITEMENT..." : "CONFIRMER LE DÉPÔT")
+        </button>
+    </div>
 
     <div style="margin-top: 24px; text-align: center;">
         <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">&larr; RETOUR DASHBOARD</a>
@@ -60,45 +63,57 @@
 
 @code {
     private decimal montant;
+    private string? selectedMethod;
     private bool isProcessing;
-    private bool paidOk;
+    private bool stripeConfigured;
+    private bool pawaPayConfigured;
+    private string? configError;
+
+    private bool canConfirm => montant > 0 && !string.IsNullOrEmpty(selectedMethod) && !isProcessing
+        && (selectedMethod == "stripe" ? stripeConfigured : pawaPayConfigured);
 
     protected override void OnInitialized()
     {
-        var uri = Nav.ToAbsoluteUri(Nav.Uri);
-        paidOk = uri.Query.Contains("paid=ok");
+        stripeConfigured = !string.IsNullOrEmpty(Stripe.PublishableKey);
+        pawaPayConfigured = PawaPay.EstConfigured;
+        if (!stripeConfigured && !pawaPayConfigured)
+            configError = "Aucun moyen de paiement configuré. Contactez l'administrateur (clés Stripe / token PawaPay manquants).";
+        else if (!stripeConfigured)
+            configError = "Paiement par carte indisponible (Stripe non configuré). Seul le Mobile Money est disponible.";
+        else if (!pawaPayConfigured)
+            configError = "Paiement Mobile Money indisponible (PawaPay non configuré). Seule la carte bancaire est disponible.";
     }
+
+    private void SelectStripe() { selectedMethod = "stripe"; }
+    private void SelectPawaPay() { selectedMethod = "pawapay"; }
 
     private async Task EffectuerDepot()
     {
-        if (isProcessing || montant <= 0) return;
+        if (isProcessing || montant <= 0 || string.IsNullOrEmpty(selectedMethod)) return;
         isProcessing = true;
-        try
-        {
-            var success = await Bank.ExecuterOperationAsync(montant, "Depot volontaire", "DEPOT");
-            if (success)
-            {
-                Notif.Notify($"DEPOT DE {montant:N2} DH EFFECTUE", NotificationType.SUCCESS);
-                montant = 0;
-            }
-            else
-                Notif.Notify("ERREUR LORS DU DEPOT", NotificationType.ERROR);
-        }
-        finally { isProcessing = false; }
-    }
 
-    private async Task PayerParCarte()
-    {
-        if (isProcessing || montant <= 0) return;
-        isProcessing = true;
         try
         {
-            var url = await Stripe.CreerSessionDepotAsync(montant);
-            if (url != null)
-                Nav.NavigateTo(url);
-            else
-                Notif.Notify("ERREUR DE PAIEMENT", NotificationType.ERROR);
+            if (selectedMethod == "stripe")
+            {
+                var url = await Stripe.CreerSessionDepotAsync((long)(montant * 100));
+                if (!string.IsNullOrEmpty(url))
+                    Nav.NavigateTo(url, forceLoad: true);
+                else
+                {
+                    Notif.Notify("ERREUR STRIPE : Impossible de créer la session de paiement. Vérifiez la configuration.", NotificationType.ERROR);
+                    isProcessing = false;
+                }
+            }
+            else if (selectedMethod == "pawapay")
+            {
+                Nav.NavigateTo($"/pawapay/deposit?amount={montant:F2}", forceLoad: true);
+            }
         }
-        finally { isProcessing = false; }
+        catch (Exception ex)
+        {
+            Notif.Notify($"ERREUR : {ex.Message}", NotificationType.ERROR);
+            isProcessing = false;
+        }
     }
 }

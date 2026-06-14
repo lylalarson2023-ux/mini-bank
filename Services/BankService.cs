@@ -1,7 +1,7 @@
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Models;
 using Microsoft.AspNetCore.Components.Forms;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class BankService
     {
@@ -13,11 +13,12 @@ namespace MBANK_ETUDIANT.Services
         private readonly FileService _file;
         private readonly UserContext _user;
         private readonly NotificationHistoryService _notifHist;
+        private readonly TwoFactorService _twoFactor;
 
         public BankService(
             AuthService auth, AccountService account, SavingsService savings,
             CreditService credit, AdminService admin, FileService file, UserContext user,
-            NotificationHistoryService notifHist)
+            NotificationHistoryService notifHist, TwoFactorService twoFactor)
         {
             _auth = auth;
             _account = account;
@@ -27,6 +28,7 @@ namespace MBANK_ETUDIANT.Services
             _file = file;
             _user = user;
             _notifHist = notifHist;
+            _twoFactor = twoFactor;
         }
 
         // --- ÉTAT PARTAGÉ ---
@@ -40,15 +42,19 @@ namespace MBANK_ETUDIANT.Services
         public void Deconnexion() => _auth.Deconnexion();
         public Task<(bool Success, string Message)> CreerNouveauCompte(UserProfile u, string password) => _auth.CreerNouveauCompte(u, password);
 
-        // --- COMPTE ---
-        public Task<bool> ExecuterOperationAsync(decimal montant, string motif, string type = "VIREMENT")
-            => _account.ExecuterOperationAsync(montant, motif, type);
+        // --- COMPTE --- ADR-001 : montants en centimes (long)
+        public Task<bool> ExecuterOperationAsync(long montantCentimes, string motif, string type = "VIREMENT")
+            => _account.ExecuterOperationAsync(montantCentimes, motif, type);
         public Task<List<Transaction>> GetHistoriqueAsync() => _account.GetHistoriqueAsync();
-        public Task<decimal> GetBalanceAsync() => _account.GetBalanceAsync();
+        public Task<long> GetBalanceAsync() => _account.GetBalanceAsync();
         public Task<List<Transaction>> GetRecentTransactionsAsync(int count) => _account.GetRecentTransactionsAsync(count);
-        public Task<(decimal RevenusMois, decimal DepensesMois, decimal TotalEpargne, List<(DateTime Jour, decimal Entrees, decimal Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
+        public Task<(long RevenusMois, long DepensesMois, long TotalEpargne,
+            List<(DateTime Jour, long Entrees, long Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
             => _account.GetDashboardStatsAsync();
-        public Task<bool> EffectuerVirementAsync(string emailDestinataire, decimal montant, string motif) => _account.EffectuerVirementAsync(emailDestinataire, montant, motif);
+        public Task<List<(DateTime Jour, long Solde)>> GetBalanceCurve30DaysAsync()
+            => _account.GetBalanceCurve30DaysAsync();
+        public Task<bool> EffectuerVirementAsync(string emailDestinataire, long montantCentimes, string motif)
+            => _account.EffectuerVirementAsync(emailDestinataire, montantCentimes, motif);
         public Task<bool> DefinirTuteur(string email) => _account.DefinirTuteur(email);
         public Task<bool> RevoquerTuteur() => _account.RevoquerTuteur();
         public Task<bool> SoumettreDossierKYC(UserProfile kyc) => _account.SoumettreDossierKYC(kyc);
@@ -61,36 +67,39 @@ namespace MBANK_ETUDIANT.Services
         public Task<string> ExportPersonalDataAsync() => _account.ExportPersonalDataAsync();
         public Task<(bool Success, string Message)> SupprimerCompteAsync() => _account.SupprimerCompteAsync();
 
-        // --- ÉPARGNE ---
+        // --- ÉPARGNE --- ADR-001 : montants en centimes (long)
         public Task<List<SavingsPocket>> GetPocketsAsync() => _savings.GetPocketsAsync();
-        public Task<bool> CreerPocheEpargne(string obj, decimal montantInitial, DateTime fin, decimal montantCible = 0) => _savings.CreerPocheEpargne(obj, montantInitial, fin, montantCible);
+        public Task<bool> CreerPocheEpargne(string obj, long montantInitialCentimes, DateTime fin,
+            long montantCibleCentimes = 0L, bool tuteurVisible = false)
+            => _savings.CreerPocheEpargne(obj, montantInitialCentimes, fin, montantCibleCentimes, tuteurVisible);
         public Task<bool> CasserPocheEpargne(int id) => _savings.CasserPocheEpargne(id);
-        public Task<bool> BoosterPocheAsync(int id, decimal mnt) => _savings.BoosterPocheAsync(id, mnt);
+        public Task<bool> BoosterPocheAsync(int id, long montantCentimes) => _savings.BoosterPocheAsync(id, montantCentimes);
         public Task<List<TuteurPocketView>> GetPocketsForTuteurAsync() => _savings.GetPocketsForTuteurAsync();
-        public Task<decimal> GetTotalInvestiThisMonthAsync() => _savings.GetTotalInvestiThisMonthAsync();
+        public Task<long> GetTotalInvestiThisMonthAsync() => _savings.GetTotalInvestiThisMonthAsync();
         public Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20) => _savings.GetRecentActivityForTuteurAsync(count);
 
-        // --- CRÉDIT ---
+        // --- CRÉDIT --- ADR-001 : montant en centimes (long)
         public Task<bool> VerifierEligibiliteCredit(int userId) => _credit.VerifierEligibiliteCredit(userId);
-        public Task<bool> SoumettreDemandeCredit(decimal montant, string categorie, int dureeMois)
-            => _credit.SoumettreDemandeCredit(montant, categorie, dureeMois);
+        public Task<bool> SoumettreDemandeCredit(long montantCentimes, string categorie, int dureeMois)
+            => _credit.SoumettreDemandeCredit(montantCentimes, categorie, dureeMois);
 
-        // --- ADMIN ---
+        // --- ADMIN --- ADR-001 : montants en centimes (long)
         public Task<List<UserProfile>> GetDossiersEnAttenteAsync() => _admin.GetDossiersEnAttenteAsync();
-        public Task<decimal> GetTotalBankBalanceAsync() => _admin.GetTotalBankBalanceAsync();
+        public Task<long> GetTotalBankBalanceAsync() => _admin.GetTotalBankBalanceAsync();
         public Task<List<AdminLog>> GetAdminLogsAsync() => _admin.GetAdminLogsAsync();
         public Task<bool> ApprouverPremium(int id) => _admin.ApprouverPremium(id);
-        public Task<bool> ApprouverCredit(int id, decimal montantForce = 0) => _admin.ApprouverCredit(id, montantForce);
-        public Task<bool> AdminDepot(int userId, decimal montant) => _admin.AdminDepot(userId, montant);
+        public Task<bool> ApprouverCredit(int id, long montantForceCentimes = 0L) => _admin.ApprouverCredit(id, montantForceCentimes);
+        public Task<bool> RejeterCreditAsync(int userId, string motif) => _admin.RejeterCreditAsync(userId, motif);
+        public Task<bool> AdminDepot(int userId, long montantCentimes) => _admin.AdminDepot(userId, montantCentimes);
 
         // --- CONNEXIONS ---
         public Task<List<UserLogin>> GetLoginHistoryAsync(int count = 20) => _account.GetLoginHistoryAsync(count);
         public Task<bool> RevokeAllSessionsAsync() => _account.RevokeAllSessionsAsync();
 
-        // --- PLAFONDS ---
-        public (bool Allow, string Message) VerifierPlafond(decimal montant) => _account.VerifierPlafond(montant);
-        public Task<(bool Success, string Message)> UpdatePlafondsAsync(decimal journalier, decimal mensuel)
-            => _account.UpdatePlafondsAsync(journalier, mensuel);
+        // --- PLAFONDS --- ADR-001 : montants en centimes (long)
+        public (bool Allow, string Message) VerifierPlafond(long montantCentimes) => _account.VerifierPlafond(montantCentimes);
+        public Task<(bool Success, string Message)> UpdatePlafondsAsync(long journalierCentimes, long mensuelCentimes)
+            => _account.UpdatePlafondsAsync(journalierCentimes, mensuelCentimes);
 
         // --- BÉNÉFICIAIRES ---
         public Task<List<Beneficiaire>> GetBeneficiairesAsync() => _account.GetBeneficiairesAsync();
@@ -108,7 +117,7 @@ namespace MBANK_ETUDIANT.Services
 
         // --- ADMIN KYC ---
         public Task<UserProfile?> GetUserByIdAsync(int userId) => _admin.GetUserByIdAsync(userId);
-        public Task<(bool Success, string Message)> RejeterDossierKycAsync(int userId) => _admin.RejeterDossierKycAsync(userId);
+        public Task<(bool Success, string Message)> RejeterDossierKycAsync(int userId, string? motif = null) => _admin.RejeterDossierKycAsync(userId, motif);
         public Task<List<UserProfile>> GetHistoriqueDossiersAsync() => _admin.GetHistoriqueDossiersAsync();
 
         // --- ADMIN TUTEURS ---
@@ -119,12 +128,44 @@ namespace MBANK_ETUDIANT.Services
 
         // --- NOTIFICATIONS HISTORIQUE ---
         public Task<List<NotificationHistory>> GetNotificationsAsync(int count = 20) => _notifHist.GetNotificationsAsync(count);
-        public Task<int> GetUnreadCountAsync() => _notifHist.GetUnreadCountAsync();
-        public Task MarkAsReadAsync(int id) => _notifHist.MarkAsReadAsync(id);
-        public Task MarkAllAsReadAsync() => _notifHist.MarkAllAsReadAsync();
-        public Task<int> DeleteOldNotificationsAsync(int keepDays = 30) => _notifHist.DeleteOldNotificationsAsync(keepDays);
+        public async Task<int> GetUnreadCountAsync()
+        {
+            NotifCount = await _notifHist.GetUnreadCountAsync();
+            return NotifCount;
+        }
+        public async Task MarkAsReadAsync(int id)
+        {
+            await _notifHist.MarkAsReadAsync(id);
+            NotifCount = await _notifHist.GetUnreadCountAsync();
+            NotifCountChanged?.Invoke();
+        }
+        public async Task MarkAllAsReadAsync()
+        {
+            await _notifHist.MarkAllAsReadAsync();
+            NotifCount = 0;
+            NotifCountChanged?.Invoke();
+        }
+        public async Task<int> DeleteOldNotificationsAsync(int keepDays = 30)
+        {
+            var count = await _notifHist.DeleteOldNotificationsAsync(keepDays);
+            NotifCount = await _notifHist.GetUnreadCountAsync();
+            NotifCountChanged?.Invoke();
+            return count;
+        }
+
+        public int NotifCount { get; private set; }
+        public event Action? NotifCountChanged;
 
         // --- FICHIERS ---
         public Task<string> EnregistrerFichierSurDisque(IBrowserFile f) => _file.EnregistrerFichierSurDisque(f);
+
+        // --- 2FA ---
+        public string GenerateTwoFactorSecret() => _twoFactor.GenerateSecret();
+        public string GenerateTwoFactorQrUri(string secret, string email) => _twoFactor.GenerateQrUri(secret, email);
+        public Task<(bool, string)> EnableTwoFactorAsync(string code) => _twoFactor.EnableAsync(code);
+        public Task DisableTwoFactorAsync() => _twoFactor.DisableAsync();
+        public bool VerifyTwoFactorCode(string secret, string code) => _twoFactor.VerifyCodeWithWindow(secret, code);
+        public bool IsTwoFactorRequired => _twoFactor.IsTwoFactorRequired;
+        public Task<bool> UserHasTwoFactorAsync(int userId) => _twoFactor.UserHasTwoFactorAsync(userId);
     }
 }

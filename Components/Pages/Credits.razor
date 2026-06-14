@@ -1,7 +1,5 @@
 @page "/credits"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Models
 @inject BankService Bank
 @inject NotificationService Notif
 
@@ -26,7 +24,7 @@
                         Minimum 3 transactions validées (actuel : @nbTransactions)
                     </li>
                     <li class="elig-neutral">
-                        Volume de flux : @fluxTotal.ToString("N2") DH (requis : 2x le montant du prêt)
+                        Volume de flux : @((fluxTotal / 100m).ToString("N2")) DH (requis : 2x le montant du prêt)
                     </li>
                 </ul>
             </div>
@@ -74,12 +72,11 @@
         </div>
     </div>
 
-    @* ─── RÉSULTATS SIMULATION ─── *@
+    @* ─── RÉSULTATS SIMULATION (AMORTISSEMENT FRANÇAIS) ─── *@
     @if (montantDemande > 0)
     {
-        var interets = CalculerInteretTotal();
-        var totalRemboursement = montantDemande + interets;
-        var mensualite = totalRemboursement / dureeMois;
+        var tauxMensuel = TauxMensuel();
+        var mensualite = CalculerMensualite();
 
         <div class="credit-result-grid">
             <div class="credit-result-item">
@@ -87,26 +84,18 @@
                 <div class="cri-value">@montantDemande.ToString("N2") DH</div>
             </div>
             <div class="credit-result-item">
-                <div class="cri-label">Total intérêts</div>
-                <div class="cri-value negative">+@interets.ToString("N2") DH</div>
+                <div class="cri-label">Mensualité fixe</div>
+                <div class="cri-value positive">@mensualite.ToString("N2") DH</div>
+                <div class="cri-sub">sur @dureeMois mois (amort. français)</div>
             </div>
             <div class="credit-result-item">
-                <div class="cri-label">Mensualité</div>
-                <div class="cri-value positive">@mensualite.ToString("N2") DH</div>
-                <div class="cri-sub">sur @dureeMois mois</div>
+                <div class="cri-label">TAE</div>
+                <div class="cri-value">@(Math.Round(tauxMensuel * 12 * 100, 2))%</div>
             </div>
         </div>
 
-        @* ─── TOTAL ─── *@
-        <div class="credit-result-item" style="margin-bottom: 16px; text-align: left; display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
-            <div>
-                <div class="cri-label">Total à rembourser</div>
-                <div class="cri-value" style="font-size: 0.95rem;">@totalRemboursement.ToString("N2") DH</div>
-            </div>
-            <div style="text-align: right;">
-                <span class="badge badge-info">TAUX @(Math.Round(TauxMensuel() * 12 * 100, 1))% / AN</span>
-            </div>
-        </div>
+        var interetsTotal = 0m;
+        var amortTotal = 0m;
 
         @* ─── SCORING ─── *@
         <div class="credit-score-card" style="border-left-color: @scoreCouleur;">
@@ -120,7 +109,7 @@
             <div class="score-details">@scoreDetails</div>
         </div>
 
-        @* ─── TABLEAU D'AMORTISSEMENT ─── *@
+        @* ─── TABLEAU D'AMORTISSEMENT FRANÇAIS ─── *@
         <div class="credit-table-wrap">
             <div class="credit-table-scroll">
                 <table class="data-table">
@@ -129,30 +118,41 @@
                             <th>Mois</th>
                             <th>Mensualité</th>
                             <th>Intérêts</th>
-                            <th>Amortissement</th>
-                            <th>Solde restant</th>
+                            <th>Capital remboursé</th>
+                            <th>Capital restant</th>
                         </tr>
                     </thead>
                     <tbody>
                         @{
                             var soldeRestant = montantDemande;
-                            var tauxMensuel = TauxMensuel();
                         }
                         @for (int m = 1; m <= dureeMois; m++)
                         {
                             var interetMois = soldeRestant * tauxMensuel;
                             var amortMois = mensualite - interetMois;
+                            if (m == dureeMois) amortMois = soldeRestant; // dernier mois : ajustement
                             soldeRestant -= amortMois;
-                            if (soldeRestant < 0) soldeRestant = 0;
+                            if (soldeRestant < 0.005m) soldeRestant = 0;
+                            interetsTotal += interetMois;
+                            amortTotal += amortMois;
                             <tr>
                                 <td>@m</td>
-                                <td>@mensualite.ToString("N2")</td>
+                                <td>@((interetMois + amortMois).ToString("N2"))</td>
                                 <td>@interetMois.ToString("N2")</td>
                                 <td>@amortMois.ToString("N2")</td>
                                 <td>@soldeRestant.ToString("N2")</td>
                             </tr>
                         }
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>Total</th>
+                            <th>@((interetsTotal + amortTotal).ToString("N2"))</th>
+                            <th>@interetsTotal.ToString("N2")</th>
+                            <th>@amortTotal.ToString("N2")</th>
+                            <th>0.00</th>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>
@@ -161,7 +161,7 @@
     @* ─── SOUMISSION ─── *@
     <button class="btn btn-primary btn-block"
             @onclick="SoumettreDemande"
-            disabled="@(isProcessing || !eligible || montantDemande <= 0)">
+            disabled="@(isProcessing || !eligible || montantDemande <= 0 || nbTransactions < 3)">
         @(isProcessing ? "Traitement en cours..." : "Soumettre la demande")
     </button>
 </div>
@@ -177,7 +177,7 @@
     private int dureeMois = 6;
     private bool eligible;
     private int nbTransactions;
-    private decimal fluxTotal;
+    private long fluxTotal;  // centimes (ADR-001)
     private bool isProcessing;
 
     // Scoring
@@ -214,14 +214,14 @@
         else if (nbTransactions >= 5) reasons.Add($"Activité ({nbTransactions} tx): +{nbTransactions * 5}");
         else reasons.Add($"Activité ({nbTransactions} tx): +{nbTransactions * 5}");
 
-        if (fluxTotal > 50000) { points += 25; reasons.Add("Flux > 50k: +25"); }
-        else if (fluxTotal > 10000) { points += 15; reasons.Add("Flux > 10k: +15"); }
-        else if (fluxTotal > 1000) { points += 5; reasons.Add("Flux > 1k: +5"); }
+        if (fluxTotal > 5_000_000L) { points += 25; reasons.Add("Flux > 50k: +25"); }
+        else if (fluxTotal > 1_000_000L) { points += 15; reasons.Add("Flux > 10k: +15"); }
+        else if (fluxTotal > 100_000L) { points += 5; reasons.Add("Flux > 1k: +5"); }
 
         if (Bank.Profil.DateInscription < DateTime.UtcNow.AddDays(-30)) { points += 10; reasons.Add("Ancienneté: +10"); }
         else { points += 3; reasons.Add("Compte récent: +3"); }
 
-        if (Bank.Profil.Solde > 10000) { points += 10; reasons.Add("Solde élevé: +10"); }
+        if (Bank.Profil.Solde > 1_000_000L) { points += 10; reasons.Add("Solde élevé: +10"); }
 
         scorePoints = Math.Min(points, 100);
 
@@ -247,16 +247,20 @@
         return tauxAnnuel / 12m;
     }
 
-    private decimal CalculerInteretTotal()
+    private decimal CalculerMensualite()
     {
-        if (montantDemande <= 0) return 0;
-        return montantDemande * (1 + TauxMensuel() * dureeMois) - montantDemande;
+        if (montantDemande <= 0 || dureeMois <= 0) return 0;
+        var r = TauxMensuel();
+        if (r == 0) return montantDemande / dureeMois;
+        var unPlusR = 1m + r;
+        var denom = (decimal)(Math.Pow((double)unPlusR, dureeMois) - 1d);
+        return denom == 0 ? montantDemande / dureeMois : montantDemande * r * (decimal)Math.Pow((double)unPlusR, dureeMois) / denom;
     }
 
     private async Task SoumettreDemande()
     {
         if (isProcessing || montantDemande <= 0) return;
-        if (fluxTotal < (montantDemande * 2))
+        if (fluxTotal < (long)(montantDemande * 2 * 100))
         {
             Notif.Notify("Volume de transactions insuffisant (2x requis)", NotificationType.ERROR);
             return;
@@ -264,7 +268,7 @@
         isProcessing = true;
         try
         {
-            var success = await Bank.SoumettreDemandeCredit(montantDemande, categorie, dureeMois);
+            var success = await Bank.SoumettreDemandeCredit((long)(montantDemande * 100), categorie, dureeMois);
             if (success)
             {
                 Notif.Notify("Demande transmise - En attente de validation par l'administrateur", NotificationType.INFO);

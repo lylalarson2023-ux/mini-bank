@@ -13,16 +13,22 @@
         @* ─── BALANCE + CARTE ─── *@
         <div class="balance-card">
             <div class="balance-label">SOLDE TOTAL</div>
-            <div class="balance-value">@balance.ToString("N2") <span class="currency">DH</span></div>
+            <div class="balance-value">@((balance / 100m).ToString("N2")) <span class="currency">DH</span></div>
         </div>
 
         <div class="bank-card">
-            <div class="bank-card-watermark">ADN</div>
             <div class="bank-card-top">
-                <div class="card-chip"></div>
+                <div style="display: flex; align-items: center;">
+                    <div class="card-chip"></div>
+                    <div class="card-contactless"></div>
+                </div>
                 <div class="card-status">
                     <div class="card-status-label">STATUT</div>
                     <div class="card-status-value">@BankService.Profil.GetRank()</div>
+                    @if (BankService.Profil.Statut == UserStatus.STANDARD)
+                    {
+                        <a href="/profil" class="card-status-upgrade">Passer en Premium →</a>
+                    }
                 </div>
             </div>
             <div class="card-number">
@@ -35,51 +41,36 @@
                 </div>
                 <div style="text-align: right;">
                     <div class="card-footer-label">SOLDE</div>
-                    <div class="card-balance">@BankService.Profil.Solde.ToString("N2") DH</div>
+                    <div class="card-balance">@((BankService.Profil.Solde / 100m).ToString("N2")) DH</div>
                 </div>
             </div>
+            <div class="card-network"><span>ADN / VISA</span></div>
+            <div class="card-disclaimer">Carte virtuelle · sans valeur bancaire réelle</div>
         </div>
 
         @* ─── STATS MENSUELLES ─── *@
         <div class="form-row" style="margin-bottom: 16px;">
             <div class="stat-card">
                 <div class="stat-label">REVENUS (CE MOIS)</div>
-                <div class="stat-value green">+@revenusMois.ToString("N2") DH</div>
+                <div class="stat-value green">+@((revenusMois / 100m).ToString("N2")) DH</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">DÉPENSES (CE MOIS)</div>
-                <div class="stat-value" style="color: var(--danger);">-@depensesMois.ToString("N2") DH</div>
+                <div class="stat-value" style="color: var(--danger);">-@((depensesMois / 100m).ToString("N2")) DH</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">ÉPARGNE TOTALE</div>
-                <div class="stat-value" style="color: var(--blue-500);">@totalEpargne.ToString("N2") DH</div>
+                <div class="stat-value" style="color: var(--blue-500);">@((totalEpargne / 100m).ToString("N2")) DH</div>
             </div>
         </div>
 
-        @* ─── MINI GRAPH (7 JOURS) ─── *@
-        @if (dailyBreakdown.Any())
+        @* ─── COURBE SOLDE 30 JOURS ─── *@
+        @if (balanceCurve.Count > 1)
         {
-            var maxVal = dailyBreakdown.Max(d => Math.Max(d.Entrees, d.Sorties));
-            if (maxVal > 0)
-            {
-                <div class="cyber-panel" style="padding: 16px; margin-bottom: 16px;">
-                    <h6 class="section-title" style="margin-bottom: 12px;">ACTIVITÉ (7 DERNIERS JOURS)</h6>
-                    <div style="display: flex; align-items: flex-end; gap: 6px; height: 80px;">
-                        @foreach (var (jour, entrees, sorties) in dailyBreakdown)
-                        {
-                            var hIn = (entrees / maxVal) * 60;
-                            var hOut = (sorties / maxVal) * 60;
-                            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end;">
-                                <div style="display: flex; gap: 2px; align-items: flex-end; height: 70px;">
-                                    <div style="width: 12px; height: @(hIn.ToString("F0"))px; background: var(--success); border-radius: 3px 3px 0 0; opacity: 0.8;" title="Entrées: @entrees.ToString("N2")"></div>
-                                    <div style="width: 12px; height: @(hOut.ToString("F0"))px; background: var(--danger); border-radius: 3px 3px 0 0; opacity: 0.8;" title="Sorties: @sorties.ToString("N2")"></div>
-                                </div>
-                                <div style="font-size: 0.5rem; color: var(--text-muted); margin-top: 4px;">@jour.ToString("dd/MM")</div>
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
+            <div class="cyber-panel" style="padding: 16px; margin-bottom: 16px;">
+                <h6 class="section-title" style="margin-bottom: 10px;">ÉVOLUTION DU SOLDE (30 JOURS)</h6>
+                @((MarkupString)svgContent)
+            </div>
         }
 
         @* ─── ALERTE CRÉDIT EN ATTENTE ─── *@
@@ -94,7 +85,7 @@
         <div class="action-grid">
             <button class="action-btn" @onclick="HandleAddMoney">
                 <i class="bi bi-plus-lg icon-gold"></i>
-                Ajouter
+                Dépôt
             </button>
             <button class="action-btn" @onclick="HandleTransfer">
                 <i class="bi bi-arrow-up-right icon-green"></i>
@@ -121,7 +112,7 @@
                     <div class="card" style="border-left: 3px solid var(--blue-500); padding: 12px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <span style="font-weight: 600; font-size: 0.8rem;">@p.Objectif.ToUpper()</span>
-                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--success);">@p.MontantActuel.ToString("N2") / @p.MontantCible.ToString("N2") DH</span>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--success);">@((p.MontantActuel / 100m).ToString("N2")) / @((p.MontantCible / 100m).ToString("N2")) DH</span>
                         </div>
                         <div style="height: 6px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden;">
                             <div style="height: 100%; width: @pct%; background: linear-gradient(90deg, var(--success), var(--blue-500)); border-radius: 4px; transition: width 0.5s;"></div>
@@ -146,8 +137,8 @@
                         <div class="tx-type">@tr.Type</div>
                         <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
                     </div>
-                    <div class="transaction-amount @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "tx-positive" : "tx-negative")">
-                        @(tr.Type == "DEPOT" || tr.Type == "RECEPTION" || tr.Type == "DÉPÔT" || tr.Type == "RÉCEPTION" || tr.Type == "CRÉDIT" ? "+" : "-") @tr.Montant.ToString("N2")
+                    <div class="transaction-amount @(tr.IsEntree ? "tx-positive" : "tx-negative")">
+                        @(tr.IsEntree ? "+" : "-") @((tr.Montant / 100m).ToString("N2"))
                     </div>
                 </div>
             }
@@ -162,15 +153,18 @@
 </div>
 
 @code {
-    private decimal balance;
+    private long balance;
     private List<Transaction> recentTransactions = new();
-    private decimal revenusMois;
-    private decimal depensesMois;
-    private decimal totalEpargne;
-    private List<(DateTime Jour, decimal Entrees, decimal Sorties)> dailyBreakdown = new();
+    private long revenusMois;
+    private long depensesMois;
+    private long totalEpargne;
     private List<SavingsPocket> savingsPockets = new();
     private bool hasPendingCredit;
     private bool isLoading = true;
+
+    // Courbe 30 jours
+    private List<(DateTime Jour, long Solde)> balanceCurve = new();
+    private string svgContent = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,10 +177,57 @@
             revenusMois = stats.RevenusMois;
             depensesMois = stats.DepensesMois;
             totalEpargne = stats.TotalEpargne;
-            dailyBreakdown = stats.DailyBreakdown;
             hasPendingCredit = BankService.Profil.PendingCreditRequest;
+            balanceCurve = await BankService.GetBalanceCurve30DaysAsync();
+            BuildSvgData();
         }
         finally { isLoading = false; }
+    }
+
+    private void BuildSvgData()
+    {
+        if (balanceCurve.Count < 2) return;
+        const double W = 560; const double H = 80; const double padTop = 10;
+
+        long minS = balanceCurve.Min(p => p.Solde);
+        long maxS = balanceCurve.Max(p => p.Solde);
+        double range = Math.Max(maxS - minS, 1);
+        int n = balanceCurve.Count - 1;
+
+        (double px, double py) Pt(int i) => (
+            (i / (double)n) * W,
+            padTop + (1.0 - (balanceCurve[i].Solde - minS) / range) * H
+        );
+
+        var pts = Enumerable.Range(0, balanceCurve.Count).Select(Pt).ToList();
+        string stroke = "M" + string.Join(" L", pts.Select(p => $"{p.px:F1},{p.py:F1}"));
+        string bot    = (padTop + H).ToString("F1");
+        string fill   = $"M0,{bot} L" + string.Join(" L", pts.Select(p => $"{p.px:F1},{p.py:F1}")) + $" L{W:F1},{bot} Z";
+        var    last   = pts[^1];
+        string maxLY  = (padTop + 4).ToString("F1");
+        string minLY  = (padTop + H - 4).ToString("F1");
+        string maxLbl = (maxS / 100m).ToString("N0") + " DH";
+        string minLbl = (minS / 100m).ToString("N0") + " DH";
+        string d0     = System.Net.WebUtility.HtmlEncode(balanceCurve[0].Jour.ToString("dd/MM"));
+        string d14    = System.Net.WebUtility.HtmlEncode(balanceCurve[14].Jour.ToString("dd/MM"));
+        string d29    = System.Net.WebUtility.HtmlEncode(balanceCurve[^1].Jour.ToString("dd/MM"));
+
+        svgContent = $@"<svg viewBox=""0 0 560 110"" style=""width:100%;display:block;overflow:visible;"">
+  <defs>
+    <linearGradient id=""balGrad"" x1=""0"" y1=""0"" x2=""0"" y2=""1"">
+      <stop offset=""0%"" stop-color=""#30B880"" stop-opacity=""0.28""/>
+      <stop offset=""100%"" stop-color=""#30B880"" stop-opacity=""0""/>
+    </linearGradient>
+  </defs>
+  <path d=""{fill}"" fill=""url(#balGrad)""/>
+  <path d=""{stroke}"" fill=""none"" stroke=""#30B880"" stroke-width=""2"" stroke-linejoin=""round"" stroke-linecap=""round""/>
+  <circle cx=""{last.px:F1}"" cy=""{last.py:F1}"" r=""4"" fill=""#30B880""/>
+  <text x=""0""   y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""start"">{d0}</text>
+  <text x=""280"" y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""middle"">{d14}</text>
+  <text x=""560"" y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""end"">{d29}</text>
+  {(maxS != minS ? $@"<text x=""2"" y=""{maxLY}"" fill=""#6b7280"" font-size=""8"" dominant-baseline=""middle"">{maxLbl}</text>
+  <text x=""2"" y=""{minLY}"" fill=""#6b7280"" font-size=""8"" dominant-baseline=""middle"">{minLbl}</text>" : "")}
+</svg>";
     }
 
     private void HandleAddMoney() => NavManager.NavigateTo("/depot");

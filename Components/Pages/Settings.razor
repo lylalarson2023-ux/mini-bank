@@ -15,11 +15,11 @@
         <button class='admin-tab @(activeTab == "password" ? "active" : "")' @onclick="GoPassword">
             <i class="bi bi-shield-lock"></i> MOT DE PASSE
         </button>
-        <button class='admin-tab @(activeTab == "privacy" ? "active" : "")' @onclick="GoPrivacy">
-            <i class="bi bi-incognito"></i> CONFIDENTIALITE
+        <button class='admin-tab @(activeTab == "security" ? "active" : "")' @onclick="GoSecurity">
+            <i class="bi bi-shield-lock-fill"></i> SÉCURITÉ
         </button>
         <button class='admin-tab @(activeTab == "legal" ? "active" : "")' @onclick="GoLegal">
-            <i class="bi bi-file-earmark-text"></i> MENTIONS LEGALES
+            <i class="bi bi-incognito"></i> LÉGAL
         </button>
         <button class='admin-tab @(activeTab == "connexions" ? "active" : "")' @onclick="GoConnexions">
             <i class="bi bi-clock-history"></i> CONNEXIONS
@@ -108,7 +108,80 @@
         </div>
     }
 
-    @if (activeTab == "privacy")
+    @if (activeTab == "security")
+    {
+        <div class="form-section">
+            <h6><i class="bi bi-shield-lock-fill"></i> AUTHENTIFICATION À DEUX FACTEURS</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Ajoutez une couche de sécurité supplémentaire avec Google Authenticator, Microsoft Authenticator ou Authy.
+            </p>
+
+            @if (!Bank.Profil.TwoFactorEnabled)
+            {
+                @if (!showTwoFactorSetup)
+                {
+                    <button class="btn btn-primary" @onclick="StartTwoFactorSetup" disabled="@saving">
+                        @(saving ? "..." : "ACTIVER LA 2FA")
+                    </button>
+                }
+                else
+                {
+                    <div style="background: rgba(59,130,246,0.05); border: 1px solid var(--blue-border); border-radius: var(--radius-sm); padding: 20px; margin-bottom: 16px;">
+                        <p style="font-size: 0.8rem; margin-bottom: 12px; color: var(--text-secondary);">
+                            1. Scannez le QR code avec votre application d'authentification
+                        </p>
+
+                        @if (!string.IsNullOrEmpty(twoFactorQrUri))
+                        {
+                            <div style="text-align: center; margin-bottom: 16px;">
+                                <img src="https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=@Uri.EscapeDataString(twoFactorQrUri)&choe=UTF-8"
+                                     alt="QR Code 2FA" style="border-radius: var(--radius-sm); background: white; padding: 8px;" />
+                            </div>
+                            <p style="font-size: 0.75rem; text-align: center; margin-bottom: 12px; color: var(--text-muted);">
+                                Ou saisissez manuellement la clé :
+                                <code style="display: block; margin-top: 4px; font-size: 0.8rem; letter-spacing: 2px; color: var(--blue-500);">@twoFactorSecret</code>
+                            </p>
+                        }
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>2. Saisissez le code à 6 chiffres</label>
+                            <input type="text" @bind="twoFactorSetupCode" maxlength="6" class="form-input" placeholder="000000" style="text-align: center; font-size: 1.2rem; letter-spacing: 6px; font-family: var(--font-mono);" />
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" @onclick="ConfirmTwoFactorSetup" disabled="@saving || string.IsNullOrEmpty(twoFactorSetupCode) || twoFactorSetupCode.Length != 6">
+                            @(saving ? "VÉRIFICATION..." : "CONFIRMER")
+                        </button>
+                        <button class="btn btn-ghost" @onclick="CancelTwoFactorSetup">ANNULER</button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="setting-row">
+                    <div>
+                        <span class="badge badge-success"><i class="bi bi-shield-check"></i> 2FA ACTIVE</span>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 8px 0 0;">
+                            Vos identifiants sont protégés par l'authentification à deux facteurs.
+                        </p>
+                    </div>
+                    <button class="btn btn-danger btn-sm" @onclick="DisableTwoFactor" disabled="@saving">
+                        @(saving ? "..." : "DÉSACTIVER")
+                    </button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(twoFactorMsg))
+            {
+                <div class="@(twoFactorSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
+                    @twoFactorMsg
+                </div>
+            }
+        </div>
+    }
+
+    @if (activeTab == "legal")
     {
         <div class="form-section">
             <h6><i class="bi bi-palette"></i> APPARENCE</h6>
@@ -178,6 +251,16 @@
         </div>
 
         <div class="form-section" style="border-color: var(--danger);">
+            <h6 style="color: var(--danger);"><i class="bi bi-box-arrow-right"></i> DÉCONNEXION</h6>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
+                Mettez fin à votre session sécurisée sur cet appareil.
+            </p>
+            <button class="btn btn-danger" @onclick="HandleLogout">
+                <i class="bi bi-power"></i> SE DÉCONNECTER
+            </button>
+        </div>
+
+        <div class="form-section" style="border-color: var(--danger);">
             <h6 style="color: var(--danger);"><i class="bi bi-trash"></i> SUPPRESSION DE COMPTE</h6>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
                 Supprimez définitivement votre compte et toutes vos données personnelles (droit à l'effacement - Loi 09-08, art. 4-5).
@@ -211,14 +294,11 @@
                 </button>
             }
         </div>
-    }
 
-    @if (activeTab == "legal")
-    {
         <div class="form-section">
             <h6><i class="bi bi-file-earmark-text"></i> MENTIONS LEGALES</h6>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
-                Consultez les documents légaux et réglementaires de MBANK.
+                Consultez les documents légaux et réglementaires d'ADN_pay.
             </p>
             <div class="legal-links" style="display: flex; flex-direction: column; gap: 8px;">
                 <a href="/cgu" target="_blank" class="btn btn-ghost" style="justify-content: flex-start;">
@@ -366,6 +446,14 @@
     private bool deleteSuccess;
     private bool showDeleteConfirm;
 
+    // 2FA
+    private bool showTwoFactorSetup;
+    private string twoFactorSecret = "";
+    private string twoFactorQrUri = "";
+    private string twoFactorSetupCode = "";
+    private string twoFactorMsg = "";
+    private bool twoFactorSuccess;
+
     // Connexions
     private List<UserLogin> loginHistory = new();
 
@@ -392,7 +480,7 @@
 
     private void GoProfile() { activeTab = "profile"; }
     private void GoPassword() { activeTab = "password"; }
-    private void GoPrivacy() { activeTab = "privacy"; }
+    private void GoSecurity() { activeTab = "security"; }
     private void GoLegal() { activeTab = "legal"; }
     private void GoConnexions() { activeTab = "connexions"; }
     private void GoPlafonds() { activeTab = "plafonds"; }
@@ -404,9 +492,9 @@
         profileModel.Prenom = Bank.Profil.Prenom;
         profileModel.Email = Bank.Profil.Email;
         profileModel.Telephone = Bank.Profil.Telephone;
-        try { currentTheme = await JS.InvokeAsync<string>("mbankTheme.get"); } catch { currentTheme = "dark"; }
-        plafondJournalier = Bank.Profil.PlafondJournalier;
-        plafondMensuel = Bank.Profil.PlafondMensuel;
+        try { currentTheme = await JS.InvokeAsync<string>("adnTheme.get"); } catch { currentTheme = "dark"; }
+        plafondJournalier = Bank.Profil.PlafondJournalier / 100m;
+        plafondMensuel = Bank.Profil.PlafondMensuel / 100m;
         notifPrefs["connexion"] = Bank.Profil.NotifConnexion;
         notifPrefs["virement"] = Bank.Profil.NotifVirement;
         notifPrefs["depot"] = Bank.Profil.NotifDepot;
@@ -419,7 +507,7 @@
 
     private async Task ToggleTheme()
     {
-        try { currentTheme = await JS.InvokeAsync<string>("mbankTheme.toggle"); }
+        try { currentTheme = await JS.InvokeAsync<string>("adnTheme.toggle"); }
         catch { currentTheme = currentTheme == "dark" ? "light" : "dark"; }
     }
 
@@ -491,7 +579,7 @@
             var base64 = Convert.ToBase64String(bytes);
             var js = $@"const a = document.createElement('a');
 a.href = 'data:text/plain;base64,{base64}';
-a.download = 'mbank_export_donnees_{DateTime.UtcNow:yyyyMMdd}.txt';
+a.download = 'adnpay_export_donnees_{DateTime.UtcNow:yyyyMMdd}.txt';
 document.body.appendChild(a);
 a.click();
 document.body.removeChild(a);";
@@ -545,12 +633,67 @@ document.body.removeChild(a);";
         finally { saving = false; }
     }
 
+    private async Task HandleLogout()
+    {
+        Bank.Deconnexion();
+        Nav.NavigateTo("/api/auth/logout", forceLoad: true);
+    }
+
+    private void StartTwoFactorSetup()
+    {
+        showTwoFactorSetup = true;
+        twoFactorSecret = Bank.GenerateTwoFactorSecret();
+        twoFactorQrUri = Bank.GenerateTwoFactorQrUri(twoFactorSecret, Bank.Profil.Email);
+        twoFactorSetupCode = "";
+        twoFactorMsg = "";
+    }
+
+    private void CancelTwoFactorSetup()
+    {
+        showTwoFactorSetup = false;
+        twoFactorSecret = "";
+        twoFactorQrUri = "";
+        twoFactorSetupCode = "";
+    }
+
+    private async Task ConfirmTwoFactorSetup()
+    {
+        if (string.IsNullOrEmpty(twoFactorSetupCode) || twoFactorSetupCode.Length != 6) return;
+        saving = true;
+        twoFactorMsg = "";
+        twoFactorSuccess = false;
+        try
+        {
+            Bank.Profil.TwoFactorSecret = twoFactorSecret;
+            var (success, msg) = await Bank.EnableTwoFactorAsync(twoFactorSetupCode);
+            twoFactorMsg = msg;
+            twoFactorSuccess = success;
+            if (success) showTwoFactorSetup = false;
+        }
+        catch { twoFactorMsg = "Erreur technique"; }
+        finally { saving = false; }
+    }
+
+    private async Task DisableTwoFactor()
+    {
+        saving = true;
+        twoFactorMsg = "";
+        try
+        {
+            await Bank.DisableTwoFactorAsync();
+            twoFactorMsg = "2FA désactivée.";
+            twoFactorSuccess = true;
+        }
+        catch { twoFactorMsg = "Erreur technique"; }
+        finally { saving = false; }
+    }
+
     private async Task SavePlafonds()
     {
         saving = true; plafondMsg = ""; plafondSuccess = false;
         try
         {
-            var (success, msg) = await Bank.UpdatePlafondsAsync(plafondJournalier, plafondMensuel);
+            var (success, msg) = await Bank.UpdatePlafondsAsync((long)(plafondJournalier * 100), (long)(plafondMensuel * 100));
             plafondMsg = msg;
             plafondSuccess = success;
         }

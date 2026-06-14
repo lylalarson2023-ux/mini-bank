@@ -1,7 +1,5 @@
 @page "/virement"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Services
-@using MBANK_ETUDIANT.Models
 @inject BankService Bank
 @inject NotificationService Notif
 @inject NavigationManager Nav
@@ -10,51 +8,138 @@
     <h3>MODULE DE VIREMENT</h3>
 
     <div class="warning-box">
-        SOLDE DISPONIBLE : <span class="highlight">@Bank.Profil.Solde.ToString("N2") DH</span>
+        SOLDE DISPONIBLE : <span class="highlight">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</span>
         @if (Bank.Profil.PlafondJournalier > 0)
         {
             <span style="display: block; font-size: 0.7rem; margin-top: 4px; color: var(--text-muted);">
-                Plafond journalier : @Bank.Profil.PlafondJournalier.ToString("N0") DH
-                | Utilisé : @Bank.Profil.MontantJournalierUtilise.ToString("N0") DH
+                Plafond journalier : @((Bank.Profil.PlafondJournalier / 100m).ToString("N0")) DH
+                | Utilisé : @((Bank.Profil.MontantJournalierUtilise / 100m).ToString("N0")) DH
             </span>
         }
     </div>
 
-    <div style="margin-top: 24px;">
-        @if (beneficiaires.Any())
-        {
-            <div class="form-group">
-                <label>BENEFICIAIRE RAPIDE</label>
-                <select class="form-select" @onchange="SelectBeneficiaire">
-                    <option value="">-- Choisir un bénéficiaire --</option>
-                    @foreach (var b in beneficiaires)
-                    {
-                        <option value="@b.Email">@b.Nom - @b.Email</option>
-                    }
-                </select>
+    @if (step == Step.Success)
+    {
+        <div class="depot-success">
+            <div class="success-check">
+                <svg viewBox="0 0 52 52" class="checkmark-svg">
+                    <circle cx="26" cy="26" r="25" fill="none" class="checkmark-circle" />
+                    <path fill="none" d="M14 27l7 7 16-16" class="checkmark-check" />
+                </svg>
             </div>
-        }
-
-        <div class="form-group">
-            <label>DESTINATAIRE (EMAIL)</label>
-            <input type="email" @bind="destinataire" class="form-input" placeholder="email@adn.ma" />
+            <div class="depot-success-text">VIREMENT EFFECTUÉ</div>
+            <div class="depot-success-sub">@montantVire.ToString("N2") DH</div>
         </div>
-
-        <div class="form-group">
-            <label>MONTANT (DH)</label>
-            <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+    }
+    else if (step == Step.Processing)
+    {
+        <div class="depot-loading">
+            <div class="depot-spinner"></div>
+            <div class="depot-loading-text">TRAITEMENT EN COURS...</div>
         </div>
+    }
+    else if (step == Step.Confirm)
+    {
+        <div style="margin-top: 24px;">
+            <div style="border-left: 4px solid var(--primary); background: var(--bg-secondary);
+                        border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+                <div style="font-size: 0.65rem; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 14px;">
+                    RÉCAPITULATIF DU VIREMENT
+                </div>
 
-        <div class="form-group">
-            <label>MOTIF (OPTIONNEL)</label>
-            <input type="text" @bind="motif" class="form-input" placeholder="Ex: Remboursement" />
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">DESTINATAIRE</span>
+                    <span style="font-weight: 700; font-size: 0.9rem;">
+                        @if (!string.IsNullOrEmpty(nomDestinataire))
+                        {
+                            <span>@nomDestinataire</span>
+                            <span style="display: block; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">@destinataire</span>
+                        }
+                        else
+                        {
+                            @destinataire
+                        }
+                    </span>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">MONTANT</span>
+                    <span style="font-weight: 800; font-size: 1.5rem; color: var(--danger);">
+                        -@montant.ToString("N2") <span style="font-size: 0.8rem;">DH</span>
+                    </span>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(motif))
+                {
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">MOTIF</span>
+                        <span style="font-size: 0.85rem;">@motif</span>
+                    </div>
+                }
+
+                <div style="border-top: 1px solid var(--border-color); margin-top: 8px; padding-top: 12px;
+                            display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">SOLDE APRÈS</span>
+                    <span style="font-weight: 700; color: @(soldeApres >= 0 ? "var(--success)" : "var(--danger)");">
+                        @((soldeApres / 100m).ToString("N2")) DH
+                    </span>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <button class="btn btn-block" style="background: var(--bg-secondary); color: var(--text-muted);
+                        border: 1px solid var(--border-color);" @onclick="() => step = Step.Form">
+                    <i class="bi bi-arrow-left"></i> MODIFIER
+                </button>
+                <button class="btn btn-primary btn-block" @onclick="EffectuerVirement">
+                    <i class="bi bi-check-lg"></i> CONFIRMER
+                </button>
+            </div>
         </div>
+    }
+    else
+    {
+        <div style="margin-top: 24px;">
+            @if (beneficiaires.Any())
+            {
+                <div class="form-group">
+                    <label>BENEFICIAIRE RAPIDE</label>
+                    <select class="form-select" @onchange="SelectBeneficiaire">
+                        <option value="">-- Choisir un bénéficiaire --</option>
+                        @foreach (var b in beneficiaires)
+                        {
+                            <option value="@b.Email">@b.Nom - @b.Email</option>
+                        }
+                    </select>
+                </div>
+            }
 
-        <button class="btn btn-primary btn-block" @onclick="EffectuerVirement"
-                disabled="@(isProcessing || string.IsNullOrWhiteSpace(destinataire) || montant <= 0)">
-            @(isProcessing ? "TRAITEMENT..." : "VALIDER LE VIREMENT")
-        </button>
-    </div>
+            <div class="form-group">
+                <label>DESTINATAIRE (EMAIL)</label>
+                <input type="email" @bind="destinataire" class="form-input" placeholder="email@adnpay.ma" />
+            </div>
+
+            <div class="form-group">
+                <label>MONTANT (DH)</label>
+                <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+            </div>
+
+            <div class="form-group">
+                <label>MOTIF (OPTIONNEL)</label>
+                <input type="text" @bind="motif" class="form-input" placeholder="Ex: Remboursement" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(erreur))
+            {
+                <div class="error-box" style="margin-bottom: 12px;">@erreur</div>
+            }
+
+            <button class="btn btn-primary btn-block" @onclick="AllerConfirmation"
+                    disabled="@(string.IsNullOrWhiteSpace(destinataire) || montant <= 0)">
+                <i class="bi bi-arrow-right"></i> CONTINUER
+            </button>
+        </div>
+    }
 
     <div style="margin-top: 24px; display: flex; justify-content: space-between;">
         <a href="/parametres" style="color: var(--text-muted); font-size: 0.75rem;">Gérer mes bénéficiaires</a>
@@ -63,10 +148,16 @@
 </div>
 
 @code {
+    private enum Step { Form, Confirm, Processing, Success }
+    private Step step = Step.Form;
+
     private string destinataire = "";
+    private string nomDestinataire = "";
     private decimal montant;
+    private decimal montantVire;
     private string motif = "";
-    private bool isProcessing;
+    private string erreur = "";
+    private long soldeApres;
     private List<Beneficiaire> beneficiaires = new();
 
     protected override async Task OnInitializedAsync()
@@ -77,45 +168,62 @@
     private void SelectBeneficiaire(ChangeEventArgs e)
     {
         var email = e.Value?.ToString();
-        if (!string.IsNullOrEmpty(email))
+        if (string.IsNullOrEmpty(email)) return;
+        destinataire = email;
+        var b = beneficiaires.FirstOrDefault(x => x.Email == email);
+        if (b != null)
         {
-            destinataire = email;
-            var b = beneficiaires.FirstOrDefault(x => x.Email == email);
-            if (b != null && string.IsNullOrEmpty(motif)) motif = $"Virement à {b.Nom}";
+            nomDestinataire = b.Nom;
+            if (string.IsNullOrEmpty(motif)) motif = $"Virement à {b.Nom}";
         }
+    }
+
+    private void AllerConfirmation()
+    {
+        erreur = "";
+        var montantCentimes = (long)(montant * 100);
+
+        if (montantCentimes <= 0) { erreur = "Montant invalide."; return; }
+        if (Bank.Profil.Solde < montantCentimes) { erreur = "Solde insuffisant."; return; }
+
+        var (allow, msg) = Bank.VerifierPlafond(montantCentimes);
+        if (!allow) { erreur = msg; return; }
+
+        // Résoudre le nom si non déjà fait (saisie manuelle)
+        if (string.IsNullOrEmpty(nomDestinataire))
+        {
+            var b = beneficiaires.FirstOrDefault(x => x.Email == destinataire.Trim().ToLower());
+            nomDestinataire = b?.Nom ?? "";
+        }
+
+        soldeApres = Bank.Profil.Solde - montantCentimes;
+        step = Step.Confirm;
     }
 
     private async Task EffectuerVirement()
     {
-        if (isProcessing || string.IsNullOrWhiteSpace(destinataire) || montant <= 0) return;
-        isProcessing = true;
+        step = Step.Processing;
+        montantVire = montant;
         try
         {
-            if (Bank.Profil.Solde < montant)
-            {
-                Notif.Notify("FONDS INSUFFISANTS", NotificationType.ERROR);
-                return;
-            }
-
-            var (allow, msg) = Bank.VerifierPlafond(montant);
-            if (!allow)
-            {
-                Notif.Notify(msg, NotificationType.ERROR);
-                return;
-            }
-
-            var libelle = (string.IsNullOrWhiteSpace(motif) ? "" : motif);
-            var success = await Bank.EffectuerVirementAsync(destinataire, montant, libelle);
+            var montantCentimes = (long)(montant * 100);
+            var success = await Bank.EffectuerVirementAsync(destinataire.Trim(), montantCentimes, motif);
             if (success)
             {
-                Notif.Notify($"VIREMENT DE {montant:N2} DH VERS {destinataire.ToUpper()} EFFECTUE", NotificationType.SUCCESS);
-                destinataire = "";
-                montant = 0;
-                motif = "";
+                step = Step.Success;
+                await Task.Delay(2000);
+                Nav.NavigateTo("/", forceLoad: true);
             }
             else
-                Notif.Notify("ECHEC : DESTINATAIRE INTROUVABLE OU FONDS INSUFFISANTS", NotificationType.ERROR);
+            {
+                Notif.Notify("DESTINATAIRE INTROUVABLE OU FONDS INSUFFISANTS", NotificationType.ERROR);
+                step = Step.Form;
+            }
         }
-        finally { isProcessing = false; }
+        catch
+        {
+            Notif.Notify("UNE ERREUR EST SURVENUE", NotificationType.ERROR);
+            step = Step.Form;
+        }
     }
 }

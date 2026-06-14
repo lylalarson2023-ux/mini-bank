@@ -1,7 +1,7 @@
 @page "/admin"
 @attribute [Authorize(Policy = "AdminOnly")]
-@using MBANK_ETUDIANT.Models
-@using MBANK_ETUDIANT.Services
+@using ADN_pay.Models
+@using ADN_pay.Services
 @inject AdminService AdminSvc
 @inject BankService Bank
 @inject NotificationService Notif
@@ -19,7 +19,7 @@
         <div class="admin-stats">
             <div class="admin-stat">
                 <span class="label">RÉSERVES TOTALES</span>
-                <span class="value gold">@totalBalance.ToString("N2") MAD</span>
+                <span class="value gold">@((totalBalance / 100m).ToString("N2")) MAD</span>
             </div>
             <div class="admin-stat">
                 <span class="label">UTILISATEURS</span>
@@ -39,9 +39,6 @@
         <button class="admin-tab @(activeTab == "credits" ? "active" : "")" @onclick='() => activeTab = "credits"'>
             <i class="bi bi-currency-exchange"></i> CRÉDITS
             @if (pendingCreditCount > 0) { <span class="tab-badge">@pendingCreditCount</span> }
-        </button>
-        <button class="admin-tab @(activeTab == "depot" ? "active" : "")" @onclick='() => activeTab = "depot"'>
-            <i class="bi bi-cash-stack"></i> DÉPÔT
         </button>
         <button class="admin-tab @(activeTab == "utilisateurs" ? "active" : "")" @onclick='() => activeTab = "utilisateurs"'>
             <i class="bi bi-people"></i> UTILISATEURS
@@ -70,9 +67,6 @@
                 break;
             case "credits":
                 @RenderCredits
-                break;
-            case "depot":
-                @RenderDepot
                 break;
             case "utilisateurs":
                 @RenderUtilisateurs
@@ -121,11 +115,71 @@
     </div>
 }
 
+@* ─── MODAL REJET CRÉDIT ─── *@
+@if (showRejectCreditModal)
+{
+    <div class="modal-overlay" @onclick='() => showRejectCreditModal = false'>
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="card-head">
+                <i class="bi bi-x-circle-fill" style="color: var(--danger);"></i>
+                <h2>REJETER LA DEMANDE DE CRÉDIT</h2>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 16px;">
+                    Utilisateur #@rejectCreditUserId
+                </p>
+                <div class="form-group">
+                    <label>MOTIF DU REJET</label>
+                    <textarea @bind="rejectCreditMotif" class="form-input" rows="3" placeholder="Raison du rejet (visible par l'utilisateur)"></textarea>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button class="btn btn-danger btn-block" @onclick="ConfirmRejectCredit" disabled="@isProcessing">
+                        @(isProcessing ? "TRAITEMENT..." : "REJETER LE CRÉDIT")
+                    </button>
+                    <button class="btn btn-ghost btn-block" @onclick='() => showRejectCreditModal = false'>
+                        ANNULER
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ─── MODAL REJET KYC ─── *@
+@if (showRejectKycModal)
+{
+    <div class="modal-overlay" @onclick='() => showRejectKycModal = false'>
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="card-head">
+                <i class="bi bi-shield-exclamation" style="color: var(--danger);"></i>
+                <h2>REJETER LE DOSSIER KYC</h2>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 16px;">
+                    Utilisateur #@rejectKycUserId — 100 DH seront remboursés
+                </p>
+                <div class="form-group">
+                    <label>MOTIF DU REJET</label>
+                    <textarea @bind="rejectKycMotif" class="form-input" rows="3" placeholder="Expliquer le motif du rejet (visible par l'utilisateur)"></textarea>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button class="btn btn-danger btn-block" @onclick="ConfirmRejectKyc" disabled="@isProcessing">
+                        @(isProcessing ? "TRAITEMENT..." : "REJETER LE DOSSIER")
+                    </button>
+                    <button class="btn btn-ghost btn-block" @onclick='() => showRejectKycModal = false'>
+                        ANNULER
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private ILogger _logger = default!;
     private string activeTab = "dashboard";
     private bool isLoading = true;
-    private decimal totalBalance;
+    private long totalBalance;
     private int totalUsers;
     private int pendingPremiumCount;
     private int pendingCreditCount;
@@ -161,6 +215,12 @@
     private string resetPassword = "";
     private string resetConfirmPassword = "";
     private bool showResetModal;
+    private bool showRejectCreditModal;
+    private int rejectCreditUserId;
+    private string rejectCreditMotif = "";
+    private bool showRejectKycModal;
+    private int rejectKycUserId;
+    private string rejectKycMotif = "";
 
     // Tuteurs
     private List<UserProfile> studentsSansTuteur = new();
@@ -226,7 +286,7 @@
         isProcessing = true;
         try
         {
-            if (await AdminSvc.ApprouverCredit(targetId, creditAmount))
+            if (await AdminSvc.ApprouverCredit(targetId, (long)(creditAmount * 100)))
             {
                 Notif.Notify($"Crédit de {creditAmount:N2} MAD accordé au compte {targetId}", NotificationType.SUCCESS);
                 targetId = 0; creditAmount = 0;
@@ -245,7 +305,7 @@
         isProcessing = true;
         try
         {
-            if (await AdminSvc.AdminDepot(depotTargetId, depotMontant))
+            if (await AdminSvc.AdminDepot(depotTargetId, (long)(depotMontant * 100)))
             {
                 Notif.Notify($"Dépôt de {depotMontant:N2} MAD effectué sur le compte {depotTargetId}", NotificationType.SUCCESS);
                 depotTargetId = 0; depotMontant = 0;
@@ -253,6 +313,45 @@
             }
             else
                 Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task ConfirmRejectCredit()
+    {
+        if (isProcessing || rejectCreditUserId <= 0 || string.IsNullOrWhiteSpace(rejectCreditMotif)) return;
+        isProcessing = true;
+        try
+        {
+            if (await AdminSvc.RejeterCreditAsync(rejectCreditUserId, rejectCreditMotif))
+            {
+                Notif.Notify("Demande de crédit rejetée", NotificationType.ERROR);
+                showRejectCreditModal = false;
+                rejectCreditMotif = "";
+                await ChargerDonnees();
+            }
+            else
+                Notif.Notify("Échec du rejet : utilisateur introuvable", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task ConfirmRejectKyc()
+    {
+        if (isProcessing || rejectKycUserId <= 0) return;
+        isProcessing = true;
+        try
+        {
+            var (success, msg) = await AdminSvc.RejeterDossierKycAsync(rejectKycUserId, rejectKycMotif);
+            if (success)
+            {
+                Notif.Notify($"Dossier KYC rejeté", NotificationType.ERROR);
+                showRejectKycModal = false;
+                rejectKycMotif = "";
+                await ChargerDonnees();
+            }
+            else
+                Notif.Notify(msg, NotificationType.ERROR);
         }
         finally { isProcessing = false; }
     }
@@ -391,7 +490,7 @@
         builder.CloseElement();
         builder.OpenElement(13, "div");
         builder.AddAttribute(14, "class", "stat-value green");
-        builder.AddContent(15, totalBalance.ToString("N2"));
+        builder.AddContent(15, (totalBalance / 100m).ToString("N2"));
         builder.AddContent(16, " MAD");
         builder.CloseElement();
         builder.CloseElement();
@@ -607,7 +706,7 @@
                     {
                         builder.OpenElement(62, "span");
                         builder.AddAttribute(63, "class", "badge badge-info");
-                        builder.AddContent(64, $"Crédit {user.PendingCreditAmount:N0}DH");
+                        builder.AddContent(64, $"Crédit {user.PendingCreditAmount / 100m:N0}DH");
                         builder.CloseElement();
                     }
                     builder.CloseElement();
@@ -630,6 +729,12 @@
                     builder.AddAttribute(86, "class", "btn btn-ghost btn-sm");
                     builder.AddAttribute(87, "onclick", EventCallback.Factory.Create(this, () => Nav.NavigateTo($"/profil/{user.Id}")));
                     builder.AddContent(88, "DÉTAILS");
+                    builder.CloseElement();
+                    builder.OpenElement(89, "button");
+                    builder.AddAttribute(90, "class", "btn btn-danger btn-sm");
+                    builder.AddAttribute(91, "disabled", isProcessing);
+                    builder.AddAttribute(92, "onclick", EventCallback.Factory.Create(this, () => { rejectKycUserId = user.Id; rejectKycMotif = ""; showRejectKycModal = true; }));
+                    builder.AddContent(93, "REJETER");
                     builder.CloseElement();
                     builder.CloseElement();
                     builder.CloseElement();
@@ -813,7 +918,7 @@
                 builder.CloseElement();
                 builder.OpenElement(39, "div");
                 builder.AddAttribute(40, "class", "tx-date");
-                builder.AddContent(41, $"#{u.Id} · {u.Email} · Solde: {u.Solde:N2} MAD");
+                builder.AddContent(41, $"#{u.Id} · {u.Email} · Solde: {u.Solde / 100m:N2} MAD");
                 builder.CloseElement();
                 builder.CloseElement();
                 builder.CloseElement();
@@ -833,7 +938,7 @@
             builder.CloseElement();
             builder.OpenElement(47, "p");
             builder.AddAttribute(48, "style", "color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;");
-            builder.AddContent(49, $"{creditTarget.Email} · Solde: {creditTarget.Solde:N2} MAD · {creditTarget.NiveauEtude}");
+            builder.AddContent(49, $"{creditTarget.Email} · Solde: {creditTarget.Solde / 100m:N2} MAD · {creditTarget.NiveauEtude}");
             builder.CloseElement();
             builder.CloseElement();
             builder.OpenElement(50, "button");
@@ -916,7 +1021,13 @@
                 builder.CloseElement();
                 builder.OpenElement(98, "div");
                 builder.AddAttribute(99, "class", "transaction-amount tx-negative");
-                builder.AddContent(100, $"+{u.PendingCreditAmount:N2} MAD");
+                builder.AddContent(100, $"+{u.PendingCreditAmount / 100m:N2} MAD");
+                builder.CloseElement();
+                builder.OpenElement(101, "button");
+                builder.AddAttribute(102, "class", "btn btn-sm btn-danger");
+                builder.AddAttribute(103, "style", "margin-left: 8px;");
+                builder.AddAttribute(104, "onclick", EventCallback.Factory.Create(this, () => { rejectCreditUserId = u.Id; rejectCreditMotif = ""; showRejectCreditModal = true; }));
+                builder.AddContent(105, "REJETER");
                 builder.CloseElement();
                 builder.CloseElement();
             }
@@ -988,7 +1099,7 @@
                 builder.CloseElement();
                 builder.OpenElement(38, "div");
                 builder.AddAttribute(39, "class", "tx-date");
-                builder.AddContent(40, $"#{u.Id} · {u.Email} · Solde: {u.Solde:N2} MAD");
+                builder.AddContent(40, $"#{u.Id} · {u.Email} · Solde: {u.Solde / 100m:N2} MAD");
                 builder.CloseElement();
                 builder.CloseElement();
                 builder.CloseElement();
@@ -1007,7 +1118,7 @@
             builder.CloseElement();
             builder.OpenElement(47, "p");
             builder.AddAttribute(48, "style", "color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;");
-            builder.AddContent(49, $"{depotTarget.Email} · Solde actuel: {depotTarget.Solde:N2} MAD");
+            builder.AddContent(49, $"{depotTarget.Email} · Solde actuel: {depotTarget.Solde / 100m:N2} MAD");
             builder.CloseElement();
             builder.CloseElement();
             builder.OpenElement(50, "button");
@@ -1119,7 +1230,7 @@
                 builder.AddContent(47, string.IsNullOrEmpty(u.Telephone) ? "—" : u.Telephone);
                 builder.CloseElement();
                 builder.OpenElement(48, "td");
-                builder.AddContent(49, $"{u.Solde:N2}");
+                builder.AddContent(49, $"{u.Solde / 100m:N2}");
                 builder.CloseElement();
                 builder.OpenElement(50, "td");
                 builder.AddAttribute(51, "style", "font-size: 0.7rem; color: var(--text-muted);");
@@ -1334,7 +1445,7 @@
             builder.OpenElement(58, "div");
             builder.AddAttribute(59, "class", "form-group");
             builder.OpenElement(60, "label");
-            builder.AddContent(61, "EMAIL DU TUTEUR (doit avoir un compte MBANK)");
+            builder.AddContent(61, "EMAIL DU TUTEUR (doit avoir un compte ADN_pay)");
             builder.CloseElement();
             builder.OpenElement(62, "input");
             builder.AddAttribute(63, "type", "email");

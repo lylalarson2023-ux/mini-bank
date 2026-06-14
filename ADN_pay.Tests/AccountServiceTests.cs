@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
-using MBANK_ETUDIANT.Services;
+using ADN_pay.Data;
+using ADN_pay.Models;
+using ADN_pay.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace MBANK_ETUDIANT.Tests;
+namespace ADN_pay.Tests;
 
 public class AccountServiceTests : IDisposable
 {
@@ -23,12 +23,13 @@ public class AccountServiceTests : IDisposable
         _db.Database.EnsureCreated();
 
         _user = new UserContext();
-        _service = new AccountService(_db, _user, NullLogger<AccountService>.Instance);
+        var notifHist = new NotificationHistoryService(_db, _user);
+        _service = new AccountService(_db, _user, NullLogger<AccountService>.Instance, notifHist);
 
-        // Seed : 2 users
+        // Seed : 2 users — montants en centimes (ADR-001)
         _db.UserProfiles.AddRange(
-            new UserProfile { Id = 1, Email = "sender@test.ma", Nom = "Sender", Prenom = "Test", Solde = 500m },
-            new UserProfile { Id = 2, Email = "recipient@test.ma", Nom = "Recipient", Prenom = "Test", Solde = 200m }
+            new UserProfile { Id = 1, Email = "sender@test.ma",    Nom = "Sender",    Prenom = "Test", Solde = 50_000L  },  // 500 DH
+            new UserProfile { Id = 2, Email = "recipient@test.ma", Nom = "Recipient", Prenom = "Test", Solde = 20_000L  }   // 200 DH
         );
         _db.SaveChanges();
         _user.Profil = _db.UserProfiles.Find(1)!;
@@ -38,27 +39,27 @@ public class AccountServiceTests : IDisposable
     [Fact]
     public async Task EffectuerVirementAsync_DebiteEnvoyeur_CrediteDestinataire()
     {
-        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 100m, "Test");
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test"); // 100 DH
 
         Assert.True(result);
-        Assert.Equal(400m, _db.UserProfiles.Find(1)!.Solde);
-        Assert.Equal(300m, _db.UserProfiles.Find(2)!.Solde);
+        Assert.Equal(40_000L, _db.UserProfiles.Find(1)!.Solde); // 400 DH
+        Assert.Equal(30_000L, _db.UserProfiles.Find(2)!.Solde); // 300 DH
     }
 
     [Fact]
     public async Task EffectuerVirementAsync_SoldeInsuffisant_RetourneFalse()
     {
-        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 9999m, "Test");
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 999_900L, "Test"); // 9999 DH
 
         Assert.False(result);
-        Assert.Equal(500m, _db.UserProfiles.Find(1)!.Solde);
-        Assert.Equal(200m, _db.UserProfiles.Find(2)!.Solde);
+        Assert.Equal(50_000L, _db.UserProfiles.Find(1)!.Solde); // inchangé
+        Assert.Equal(20_000L, _db.UserProfiles.Find(2)!.Solde); // inchangé
     }
 
     [Fact]
     public async Task EffectuerVirementAsync_DestinataireInexistant_RetourneFalse()
     {
-        var result = await _service.EffectuerVirementAsync("nobody@test.ma", 100m, "Test");
+        var result = await _service.EffectuerVirementAsync("nobody@test.ma", 10_000L, "Test");
 
         Assert.False(result);
     }
@@ -67,10 +68,10 @@ public class AccountServiceTests : IDisposable
     public async Task ExecuterOperationAsync_Depot_AjouteSolde()
     {
         _user.Profil = _db.UserProfiles.Find(1)!;
-        var result = await _service.ExecuterOperationAsync(300m, "Test dépôt", "DÉPÔT");
+        var result = await _service.ExecuterOperationAsync(30_000L, "Test dépôt", "DÉPÔT"); // 300 DH
 
         Assert.True(result);
-        Assert.Equal(800m, _db.UserProfiles.Find(1)!.Solde);
+        Assert.Equal(80_000L, _db.UserProfiles.Find(1)!.Solde); // 800 DH
     }
 
     public void Dispose()

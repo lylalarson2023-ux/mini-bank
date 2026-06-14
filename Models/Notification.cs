@@ -1,4 +1,4 @@
-namespace MBANK_ETUDIANT.Models
+namespace ADN_pay.Models
 {
     public enum NotificationType { SUCCESS, ERROR, INFO }
     

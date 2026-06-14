@@ -1,4 +1,3 @@
-@using MBANK_ETUDIANT.Services
 @inject BankService Bank
 
 <div class="bank-card">
@@ -7,7 +6,11 @@
         <div class="card-chip"></div>
         <div class="card-status">
             <div class="card-status-label">STATUT</div>
-            <div class="card-status-value">@Bank.Profil.Statut.ToString()</div>
+            <div class="card-status-value">@Bank.Profil.GetRank()</div>
+            @if (Bank.Profil.Statut == UserStatus.STANDARD)
+            {
+                <a href="/profil" class="card-status-upgrade">Passer en Premium →</a>
+            }
         </div>
     </div>
     <div class="card-number">
@@ -20,7 +23,8 @@
         </div>
         <div style="text-align: right;">
             <div class="card-footer-label">SOLDE</div>
-            <div class="card-balance" style="font-size: 1rem;">@Bank.Profil.Solde.ToString("N2") DH</div>
+            <div class="card-balance" style="font-size: 1rem;">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</div>
         </div>
     </div>
+    <div class="card-disclaimer">Carte virtuelle · sans valeur bancaire réelle</div>
 </div>

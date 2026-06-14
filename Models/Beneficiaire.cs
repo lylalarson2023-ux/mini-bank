@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace MBANK_ETUDIANT.Models
+namespace ADN_pay.Models
 {
     public class Beneficiaire
     {

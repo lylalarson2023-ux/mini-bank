@@ -1,8 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Models;
 
-namespace MBANK_ETUDIANT.Services;
+namespace ADN_pay.Services;
 
 public class AdminApiClient
 {
@@ -87,7 +87,7 @@ public class AdminApiClient
 
     public async Task<List<UserProfile>?> GetPendingDossiersAsync()
     {
-        var users = await GetJsonAsync<List<MbankUserJson>>("/api/banking/dossiers/pending/");
+        var users = await GetJsonAsync<List<AdnUserJson>>("/api/banking/dossiers/pending/");
         return users?.Select(u => u.ToUserProfile()).ToList();
     }
 
@@ -153,7 +153,7 @@ public class AdminLogEntry
     };
 }
 
-public class MbankUserJson
+public class AdnUserJson
 {
     [JsonPropertyName("Id")] public int Id { get; set; }
     [JsonPropertyName("Nom")] public string? Nom { get; set; }
@@ -174,7 +174,7 @@ public class MbankUserJson
         Nom = Nom ?? "",
         Prenom = Prenom ?? "",
         Email = Email ?? "",
-        Solde = decimal.TryParse(Solde, out var s) ? s : 0,
+        Solde = long.TryParse(Solde, out var s) ? s : 0L,
         Statut = (UserStatus)Statut,
         NiveauEtude = NiveauEtude ?? "",
         CvUrl = CvUrl ?? "",
@@ -187,7 +187,7 @@ public class MbankUserJson
 
 public class AdminDashboardResponse
 {
-    [JsonPropertyName("dossiers")] public List<MbankUserJson>? Dossiers { get; set; }
+    [JsonPropertyName("dossiers")] public List<AdnUserJson>? Dossiers { get; set; }
     [JsonPropertyName("logs")] public List<AdminLogEntry>? Logs { get; set; }
     [JsonPropertyName("total_balance")] public decimal TotalBalance { get; set; }
 }

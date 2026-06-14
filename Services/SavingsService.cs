@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Data;
+using ADN_pay.Models;
+using ADN_pay.Shared.Infrastructure;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class TuteurPocketView
     {
@@ -32,32 +33,37 @@ namespace MBANK_ETUDIANT.Services
                 .Where(p => p.UserId == _user.Profil.Id)
                 .ToListAsync();
 
-        public async Task<bool> CreerPocheEpargne(string obj, decimal montantInitial, DateTime fin, decimal montantCible = 0)
+        // ADR-001 : montants en centimes (long)
+        public async Task<bool> CreerPocheEpargne(string obj, long montantInitialCentimes, DateTime fin,
+            long montantCibleCentimes = 0L, bool tuteurVisible = false)
         {
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
                 var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-                if (u == null || u.Solde < montantInitial) return false;
+                if (u == null || u.Solde < montantInitialCentimes) return false;
 
-                if (montantCible <= 0) montantCible = montantInitial * 2;
+                if (montantCibleCentimes <= 0L) montantCibleCentimes = montantInitialCentimes * 2;
 
-                u.Solde -= montantInitial;
+                u.Solde -= montantInitialCentimes;
                 _context.SavingsPockets.Add(new SavingsPocket
                 {
                     UserId = _user.Profil.Id,
                     Objectif = obj,
+                    TuteurVisible = tuteurVisible,
                     Cible = fin,
-                    MontantCible = montantCible,
-                    MontantActuel = montantInitial
+                    MontantCible = montantCibleCentimes,
+                    MontantActuel = montantInitialCentimes
                 });
                 var result = await _context.SaveChangesAsync() > 0;
                 await tx.CommitAsync();
                 if (result)
                 {
                     _user.Profil.Solde = u.Solde;
-                    await _notifHist.AddNotificationAsync($"Poche d'épargne créée : {obj} ({montantInitial:N2} DH)", "SUCCESS", "EPARGNE");
-                    _logger.LogInformation("Poche d'épargne créée : {Objectif} avec {Montant} DH pour {Email}", obj, montantInitial, _user.Profil.Email);
+                    await _notifHist.AddNotificationAsync(
+                        $"Poche d'épargne créée : {obj} ({montantInitialCentimes.ToDh()})", "SUCCESS", "EPARGNE");
+                    _logger.LogInformation("Poche d'épargne créée : {Objectif} avec {Montant} pour {Email}",
+                        obj, montantInitialCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
                 }
                 return result;
             }
@@ -76,12 +82,15 @@ namespace MBANK_ETUDIANT.Services
                 var p = await _context.SavingsPockets.FindAsync(id);
                 if (p == null || p.UserId != _user.Profil.Id) return false;
                 var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-                if (u != null) u.Solde += p.MontantActuel;
+                if (u == null) return false;
+                u.Solde += p.MontantActuel;
                 _context.SavingsPockets.Remove(p);
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
-                await _notifHist.AddNotificationAsync($"Poche d'épargne récupérée : {p.MontantActuel:N2} DH reversés", "INFO", "EPARGNE");
-                _logger.LogInformation("Poche d'épargne #{Id} cassée par {Email}", id, _user.Profil.Email);
+                await _notifHist.AddNotificationAsync(
+                    $"Poche d'épargne récupérée : {p.MontantActuel.ToDh()} reversés", "INFO", "EPARGNE");
+                _logger.LogInformation("Poche d'épargne #{Id} cassée par {Email}",
+                    id, PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
             }
             catch
@@ -91,7 +100,7 @@ namespace MBANK_ETUDIANT.Services
             }
         }
 
-        public async Task<bool> BoosterPocheAsync(int id, decimal mnt)
+        public async Task<bool> BoosterPocheAsync(int id, long montantCentimes)
         {
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
@@ -99,18 +108,21 @@ namespace MBANK_ETUDIANT.Services
                 var p = await _context.SavingsPockets.FindAsync(id);
                 if (p == null || p.UserId != _user.Profil.Id) return false;
                 var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-                if (u == null || u.Solde < mnt)
+                if (u == null || u.Solde < montantCentimes)
                 {
-                    _logger.LogWarning("Boost poche #{Id} refusé : solde insuffisant pour {Email}", id, _user.Profil.Email);
+                    _logger.LogWarning("Boost poche #{Id} refusé : solde insuffisant pour {Email}",
+                        id, PiiMasker.MaskEmail(_user.Profil.Email));
                     return false;
                 }
-                u.Solde -= mnt;
-                p.MontantActuel += mnt;
+                u.Solde -= montantCentimes;
+                p.MontantActuel += montantCentimes;
                 _user.Profil.Solde = u.Solde;
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
-                await _notifHist.AddNotificationAsync($"Poche boostée de {mnt:N2} DH", "SUCCESS", "EPARGNE");
-                _logger.LogInformation("Poche #{Id} boostée de {Montant} DH par {Email}", id, mnt, _user.Profil.Email);
+                await _notifHist.AddNotificationAsync(
+                    $"Poche boostée de {montantCentimes.ToDh()}", "SUCCESS", "EPARGNE");
+                _logger.LogInformation("Poche #{Id} boostée de {Montant} par {Email}",
+                    id, montantCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
             }
             catch
@@ -129,7 +141,7 @@ namespace MBANK_ETUDIANT.Services
             foreach (var s in students)
             {
                 var pockets = await _context.SavingsPockets
-                    .Where(p => p.UserId == s.Id && p.Objectif.Contains("TUTEUR"))
+                    .Where(p => p.UserId == s.Id && (p.TuteurVisible || p.Objectif.Contains("TUTEUR")))
                     .ToListAsync();
                 foreach (var p in pockets)
                 {
@@ -144,7 +156,7 @@ namespace MBANK_ETUDIANT.Services
             return result;
         }
 
-        public async Task<decimal> GetTotalInvestiThisMonthAsync()
+        public async Task<long> GetTotalInvestiThisMonthAsync()
         {
             var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
             var studentIds = await _context.UserProfiles
@@ -152,7 +164,7 @@ namespace MBANK_ETUDIANT.Services
                 .Select(u => u.Id)
                 .ToListAsync();
 
-            if (!studentIds.Any()) return 0;
+            if (!studentIds.Any()) return 0L;
 
             return await _context.SavingsPockets
                 .Where(p => studentIds.Contains(p.UserId) && p.DateCreation >= debutMois)

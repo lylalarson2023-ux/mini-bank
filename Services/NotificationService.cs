@@ -1,7 +1,7 @@
 using System;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Models;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class NotificationService
     {

@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="MBANK_ETUDIANT.Tests\**\*.cs" />
-    <Content Remove="MBANK_ETUDIANT.Tests\**\*" />
+    <Compile Remove="ADN_pay.Tests\**\*.cs" />
+    <Content Remove="ADN_pay.Tests\**\*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,8 +20,25 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="10.0.9" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Stripe.net" Version="51.1.0" />
   </ItemGroup>
+
+  <!-- Cachet de build : embarque le commit git dans l'assembly (lu par Services/BuildInfo.cs).
+       La date de build, elle, est déduite à l'exécution de la date du .dll. -->
+  <Target Name="StampBuildInfo" BeforeTargets="GetAssemblyAttributes">
+    <Exec Command="git describe --always --dirty --abbrev=7"
+          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low"
+          WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitDescribe" />
+    </Exec>
+    <PropertyGroup>
+      <GitCommitDescribe Condition="'$(GitCommitDescribe)' == ''">n/a</GitCommitDescribe>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyMetadata Include="GitCommit" Value="$(GitCommitDescribe)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

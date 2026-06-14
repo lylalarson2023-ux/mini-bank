@@ -1,7 +1,5 @@
 @page "/test"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Models
-@using MBANK_ETUDIANT.Services
 @inject BankService BankService
 @inject NotificationService NotifService
 
@@ -28,7 +26,7 @@
     {
         <div class="warning-box" style="border-color: var(--blue-500);">
             ACCES AUTORISE : Bienvenue, @BankService.Profil.Prenom !<br />
-            Solde actuel : @BankService.Profil.Solde DH
+            Solde actuel : @((BankService.Profil.Solde / 100m).ToString("N2")) DH
         </div>
     }
 </div>
@@ -44,7 +42,7 @@
             Prenom = "Etudiant",
             Nom = "Test",
             Email = testEmail,
-            Solde = 1000m
+            Solde = 100_000L
         };
 
         var (success, msg) = await BankService.CreerNouveauCompte(nouveau, testPass);

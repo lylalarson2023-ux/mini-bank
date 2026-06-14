@@ -1,7 +1,7 @@
 #r "nuget: Microsoft.Data.Sqlite, 10.0.5"
 using Microsoft.Data.Sqlite;
 
-var conn = new SqliteConnection("Data Source=MbankData.db");
+var conn = new SqliteConnection("Data Source=AdnPayData.db");
 conn.Open();
 var cmd = conn.CreateCommand();
 cmd.CommandText = "SELECT Id, Email, IsAdmin, Statut, Solde, PendingPremiumUpgrade, PendingCreditRequest, PendingCreditAmount, Dette FROM UserProfiles;";

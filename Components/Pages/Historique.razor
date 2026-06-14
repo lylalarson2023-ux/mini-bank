@@ -1,25 +1,87 @@
 @page "/historique"
 @attribute [Authorize]
-@using MBANK_ETUDIANT.Models
 @inject BankService Bank
 
 <div class="cyber-panel">
     <h3><i class="bi bi-list-ul"></i> HISTORIQUE DES TRANSACTIONS</h3>
 
-    @if (!transactions.Any())
+    @* ─── FILTRES ─── *@
+    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px;">
+
+        <input type="search" class="form-input" placeholder="&#x1F50D; Rechercher (libellé, motif, type...)"
+               @bind="recherche" @bind:event="oninput" style="font-size: 0.85rem;" />
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); align-self: center; letter-spacing: 1px;">PÉRIODE</span>
+            @foreach (var p in Enum.GetValues<Periode>())
+            {
+                <button class="filter-chip @(periode == p ? "active" : "")" @onclick="() => periode = p">
+                    @PeriodeLabel(p)
+                </button>
+            }
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); align-self: center; letter-spacing: 1px;">TYPE</span>
+            @foreach (var t in Enum.GetValues<FiltreType>())
+            {
+                <button class="filter-chip @(filtreType == t ? "active" : "")" @onclick="() => filtreType = t">
+                    @FiltreTypeLabel(t)
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ─── RÉSUMÉ ─── *@
+    @{
+        var filtre = TransactionsFiltrees;
+        var totalIn  = filtre.Where(t => t.IsEntree).Sum(t => t.Montant);
+        var totalOut = filtre.Where(t => t.IsSortie).Sum(t => t.Montant);
+    }
+    @if (transactions.Any())
+    {
+        <div class="form-row" style="margin-top: 14px; margin-bottom: 4px; gap: 8px;">
+            <div class="stat-card" style="flex: 1;">
+                <div class="stat-label">ENTRÉES</div>
+                <div class="stat-value green">+@((totalIn / 100m).ToString("N2")) DH</div>
+            </div>
+            <div class="stat-card" style="flex: 1;">
+                <div class="stat-label">SORTIES</div>
+                <div class="stat-value" style="color: var(--danger);">-@((totalOut / 100m).ToString("N2")) DH</div>
+            </div>
+            <div class="stat-card" style="flex: 1;">
+                <div class="stat-label">RÉSULTAT</div>
+                @{ var net = totalIn - totalOut; }
+                <div class="stat-value @(net >= 0 ? "green" : "")" style="@(net < 0 ? "color:var(--danger)" : "")">
+                    @(net >= 0 ? "+" : "")@((net / 100m).ToString("N2")) DH
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ─── LISTE ─── *@
+    @if (!filtre.Any())
     {
         <div class="empty-state" style="margin-top: 16px;">
-            <p><i class="bi bi-inbox"></i> Aucune transaction pour le moment</p>
+            <p><i class="bi bi-inbox"></i>
+                @(transactions.Any() ? "Aucune transaction ne correspond aux filtres" : "Aucune transaction pour le moment")
+            </p>
+            @if (transactions.Any())
+            {
+                <button class="filter-chip active" style="margin-top: 8px;" @onclick="ResetFiltres">
+                    Réinitialiser les filtres
+                </button>
+            }
         </div>
     }
     else
     {
-        <div style="margin-top: 16px;">
-            @foreach (var item in transactions)
+        <div style="margin-top: 12px;">
+            @foreach (var item in filtre)
             {
                 <div class="transaction-item">
                     <div style="display: flex; align-items: center; gap: 14px;">
-                        <div class="tx-icon @GetIconClass(item)">
+                        <div class="tx-icon @(item.IsEntree ? "tx-icon-in" : "tx-icon-out")">
                             <i class="@GetIcon(item)"></i>
                         </div>
                         <div class="transaction-info">
@@ -35,59 +97,133 @@
                             <div class="tx-date">
                                 <i class="bi bi-clock" style="margin-right: 4px;"></i>
                                 @item.Date.ToString("dd MMM yyyy à HH:mm")
-                                <span class="tx-badge @GetBadgeClass(item)">@item.Type</span>
+                                <span class="tx-badge @(item.IsEntree ? "badge-success" : "badge-danger")">@item.Type</span>
                             </div>
                         </div>
                     </div>
                     <div style="text-align: right;">
-                        <div class="@(IsCredit(item) ? "tx-positive" : "tx-negative")" style="font-weight: 700; font-size: 0.95rem;">
-                            @(IsCredit(item) ? "+" : "-") @item.Montant.ToString("N2") <span style="font-size: 0.65rem;">DH</span>
+                        <div class="@(item.IsEntree ? "tx-positive" : "tx-negative")" style="font-weight: 700; font-size: 0.95rem;">
+                            @(item.IsEntree ? "+" : "-") @((item.Montant / 100m).ToString("N2")) <span style="font-size: 0.65rem;">DH</span>
                         </div>
                         <div style="font-size: 0.6rem; color: var(--text-muted); margin-top: 2px;">
                             @if (item.Frais > 0)
                             {
-                                <span>Frais: @item.Frais.ToString("N2") DH</span>
+                                <span>Frais: @((item.Frais / 100m).ToString("N2")) DH &nbsp;</span>
                             }
-                            Solde: @item.SoldeApres.ToString("N2") DH
+                            Solde: @((item.SoldeApres / 100m).ToString("N2")) DH
                         </div>
                     </div>
                 </div>
             }
         </div>
 
-        <div style="margin-top: 16px; font-size: 0.65rem; color: var(--text-muted); text-align: center;">
-            @transactions.Count transaction(s) — Solde actuel : <strong style="color: var(--text-primary);">@Bank.Profil.Solde.ToString("N2") DH</strong>
+        <div style="margin-top: 14px; font-size: 0.65rem; color: var(--text-muted); text-align: center;">
+            @filtre.Count sur @transactions.Count transaction(s) affichée(s)
+            — Solde actuel : <strong style="color: var(--text-primary);">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</strong>
         </div>
     }
 </div>
 
+<style>
+    .filter-chip {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .filter-chip:hover { border-color: var(--primary); color: var(--text-primary); }
+    .filter-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+</style>
+
 @code {
+    private enum Periode  { Tout, J7, J30, M3 }
+    private enum FiltreType { Tout, Entrees, Sorties }
+
     private List<Transaction> transactions = new();
+    private string recherche = "";
+    private Periode    periode    = Periode.Tout;
+    private FiltreType filtreType = FiltreType.Tout;
 
     protected override async Task OnInitializedAsync()
     {
         transactions = await Bank.GetHistoriqueAsync();
     }
 
-    private bool IsCredit(Transaction t) => t.Type switch
+    private IReadOnlyList<Transaction> TransactionsFiltrees
     {
-        "DEPOT" or "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" => true,
-        var _ when t.Type?.Contains("RECU") == true || t.Type?.Contains("REÇU") == true => true,
-        _ => false
+        get
+        {
+            var q = transactions.AsEnumerable();
+
+            // Filtre période
+            var depuis = periode switch
+            {
+                Periode.J7  => DateTime.UtcNow.AddDays(-7),
+                Periode.J30 => DateTime.UtcNow.AddDays(-30),
+                Periode.M3  => DateTime.UtcNow.AddMonths(-3),
+                _           => DateTime.MinValue
+            };
+            if (depuis != DateTime.MinValue)
+                q = q.Where(t => t.Date >= depuis);
+
+            // Filtre type
+            q = filtreType switch
+            {
+                FiltreType.Entrees => q.Where(t => t.IsEntree),
+                FiltreType.Sorties => q.Where(t => t.IsSortie),
+                _                  => q
+            };
+
+            // Recherche texte
+            if (!string.IsNullOrWhiteSpace(recherche))
+            {
+                var term = recherche.Trim().ToLower();
+                q = q.Where(t =>
+                    t.Libelle.ToLower().Contains(term) ||
+                    t.Motif.ToLower().Contains(term)   ||
+                    t.Type.ToLower().Contains(term));
+            }
+
+            return q.ToList();
+        }
+    }
+
+    private void ResetFiltres()
+    {
+        recherche  = "";
+        periode    = Periode.Tout;
+        filtreType = FiltreType.Tout;
+    }
+
+    private static string PeriodeLabel(Periode p) => p switch
+    {
+        Periode.J7  => "7 jours",
+        Periode.J30 => "30 jours",
+        Periode.M3  => "3 mois",
+        _           => "Tout"
     };
 
-    private string GetIcon(Transaction t) => t.Type switch
+    private static string FiltreTypeLabel(FiltreType t) => t switch
+    {
+        FiltreType.Entrees => "Entrées",
+        FiltreType.Sorties => "Sorties",
+        _                  => "Tout"
+    };
+
+    private static string GetIcon(Transaction t) => t.Type switch
     {
         "DEPOT" or "DÉPÔT" => "bi bi-arrow-down-circle",
-        "RETRAIT" => "bi bi-arrow-up-circle",
-        "VIREMENT" => "bi bi-send",
-        "RÉCEPTION" => "bi bi-inbox",
-        "ÉPARGNE" => "bi bi-piggy-bank",
-        "CRÉDIT" => "bi bi-cash",
-        _ => "bi bi-circle"
+        "RETRAIT"           => "bi bi-arrow-up-circle",
+        "VIREMENT"          => "bi bi-send",
+        "RÉCEPTION"         => "bi bi-inbox",
+        "ÉPARGNE"           => "bi bi-piggy-bank",
+        "CRÉDIT"            => "bi bi-cash",
+        _                   => "bi bi-circle"
     };
-
-    private string GetIconClass(Transaction t) => IsCredit(t) ? "tx-icon-in" : "tx-icon-out";
-
-    private string GetBadgeClass(Transaction t) => IsCredit(t) ? "badge-success" : "badge-danger";
 }

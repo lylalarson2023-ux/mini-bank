@@ -1,0 +1,256 @@
+@page "/pawapay/deposit"
+@attribute [Authorize]
+@implements IDisposable
+@using ADN_pay.Services
+@inject IPawaPayService PawaPay
+@inject BankService Bank
+@inject NotificationService Notif
+@inject NavigationManager Nav
+
+<div class="cyber-panel" style="max-width: 480px;">
+    <h3>DÉPÔT MOBILE MONEY</h3>
+
+    <div class="warning-box">
+        SOLDE ACTUEL : <span class="highlight">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</span>
+    </div>
+
+    @if (showSuccess)
+    {
+        <div class="depot-success">
+            <div class="success-check">
+                <svg viewBox="0 0 52 52" class="checkmark-svg">
+                    <circle cx="26" cy="26" r="25" fill="none" class="checkmark-circle" />
+                    <path fill="none" d="M14 27l7 7 16-16" class="checkmark-check" />
+                </svg>
+            </div>
+            <div class="depot-success-text">DÉPÔT VALIDÉ</div>
+            <div class="depot-success-sub">@montantDepose.ToString("N2") @selectedCurrency</div>
+        </div>
+    }
+    else if (isPolling)
+    {
+        <div class="depot-loading">
+            <div class="depot-spinner"></div>
+            <div class="depot-loading-text">EN ATTENTE DE CONFIRMATION DU PAIEMENT...</div>
+            <div style="margin-top: 12px; font-size: 0.75rem; color: var(--text-muted);">
+                Veuillez confirmer le paiement sur votre téléphone
+            </div>
+        </div>
+    }
+    else if (isProcessing)
+    {
+        <div class="depot-loading">
+            <div class="depot-spinner"></div>
+            <div class="depot-loading-text">INITIALISATION...</div>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger">@errorMessage</div>
+        }
+
+        <div style="margin-top: 24px;">
+            <div class="form-group">
+                <label>OPÉRATEUR</label>
+                <select @bind="selectedCorrespondent" class="form-select">
+                    <option value="">-- Choisir --</option>
+                    @foreach (var c in correspondents)
+                    {
+                        <option value="@c.Key">@c.Value</option>
+                    }
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>NUMÉRO DE TÉLÉPHONE</label>
+                <input @bind="phoneNumber" class="form-input" placeholder="+243XXXXXXXXX" />
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>MONTANT</label>
+                    <input type="number" @bind="montant" class="form-input" placeholder="0.00" />
+                </div>
+                <div class="form-group">
+                    <label>DEVISE</label>
+                    <select @bind="selectedCurrency" class="form-select">
+                        <option value="EUR">EUR</option>
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-gold btn-block" @onclick="HandleDeposit" disabled="@isProcessing">
+                PAYER PAR MOBILE MONEY
+            </button>
+        </div>
+    }
+
+    <div style="margin-top: 24px; text-align: center;">
+        <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">
+            &larr; RETOUR DASHBOARD
+        </a>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "amount")]
+    public string? AmountParam { get; set; }
+
+    private decimal montant;
+    private decimal montantDepose;
+    private string selectedCorrespondent = "";
+    private string selectedCurrency = "EUR";
+    private string phoneNumber = "";
+    private string errorMessage = "";
+    private bool isProcessing;
+    private bool isPolling;
+    private bool showSuccess;
+    private string? currentDepositId;
+    private CancellationTokenSource? _pollCts;
+
+    private readonly Dictionary<string, string> correspondents = new()
+    {
+        ["MTN_MOMO_ZMB"] = "MTN Mobile Money (Zambie)",
+        ["AIRTEL_MONEY_ZMB"] = "Airtel Money (Zambie)",
+        ["M_PESA_KE"] = "M-Pesa (Kenya)",
+        ["MTN_MOMO_UG"] = "MTN Mobile Money (Ouganda)",
+        ["AIRTEL_MONEY_UG"] = "Airtel Money (Ouganda)",
+        ["MTN_MOMO_GH"] = "MTN Mobile Money (Ghana)",
+        ["VODAFONE_CASH_GH"] = "Vodafone Cash (Ghana)",
+        ["ORANGE_MONEY_CI"] = "Orange Money (Côte d'Ivoire)",
+        ["MTN_MOMO_CM"] = "MTN Mobile Money (Cameroun)",
+        ["ORANGE_MONEY_ML"] = "Orange Money (Mali)",
+        ["FREE_MONEY_SN"] = "Free Money (Sénégal)",
+        ["WAVE_SN"] = "Wave (Sénégal)",
+        ["ORANGE_MONEY_SN"] = "Orange Money (Sénégal)",
+    };
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Auto-detect currency from profile region if available
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(AmountParam) && decimal.TryParse(AmountParam, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            montant = parsed;
+        }
+    }
+
+    private async Task HandleDeposit()
+    {
+        errorMessage = "";
+        if (isProcessing || isPolling || showSuccess) return;
+
+        if (string.IsNullOrEmpty(selectedCorrespondent))
+        {
+            errorMessage = "Veuillez sélectionner un opérateur.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            errorMessage = "Veuillez saisir un numéro de téléphone.";
+            return;
+        }
+        if (montant <= 0)
+        {
+            errorMessage = "Veuillez saisir un montant valide.";
+            return;
+        }
+
+        isProcessing = true;
+
+        try
+        {
+            var result = await PawaPay.InitiateDepositAsync(
+                montant, selectedCurrency, selectedCorrespondent, phoneNumber, Bank.Profil.Id);
+
+            isProcessing = false;
+
+            if (result == null)
+            {
+                errorMessage = "Le service Mobile Money est temporairement indisponible. Veuillez réessayer.";
+                return;
+            }
+
+            if (result.Status == "REJECTED")
+            {
+                errorMessage = "La transaction a été rejetée. Vérifiez les informations saisies et réessayez.";
+                return;
+            }
+
+            // Accepted — start polling
+            currentDepositId = result.DepositId;
+            montantDepose = montant;
+            isPolling = true;
+            StateHasChanged();
+
+            _pollCts = new CancellationTokenSource();
+            await PollDepositStatus(currentDepositId, _pollCts.Token);
+        }
+        catch
+        {
+            isProcessing = false;
+            errorMessage = "Une erreur technique est survenue. Veuillez réessayer.";
+            Notif.Notify("ERREUR DE PAIEMENT", NotificationType.ERROR);
+        }
+    }
+
+    private async Task PollDepositStatus(string depositId, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(5000, ct);
+
+                var status = await PawaPay.CheckDepositStatusAsync(depositId);
+                if (status == null) continue;
+
+                if (status.Status == "COMPLETED")
+                {
+                    isPolling = false;
+                    showSuccess = true;
+                    Notif.Notify($"DÉPÔT DE {montantDepose:N2} {selectedCurrency} CONFIRMÉ", NotificationType.SUCCESS);
+                    StateHasChanged();
+                    await Task.Delay(3000);
+                    Nav.NavigateTo("/", forceLoad: true);
+                    return;
+                }
+
+                if (status.Status == "FAILED" || status.Status == "REJECTED")
+                {
+                    isPolling = false;
+                    errorMessage = "Le paiement a échoué. Veuillez réessayer.";
+                    StateHasChanged();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed
+        }
+        catch
+        {
+            _pollCts?.Cancel();
+            isPolling = false;
+            errorMessage = "Erreur lors de la vérification du statut.";
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+    }
+}

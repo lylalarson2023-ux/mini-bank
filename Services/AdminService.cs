@@ -1,21 +1,25 @@
 using Microsoft.EntityFrameworkCore;
-using MBANK_ETUDIANT.Data;
-using MBANK_ETUDIANT.Models;
+using ADN_pay.Data;
+using ADN_pay.Models;
+using ADN_pay.Shared.Infrastructure;
+using Microsoft.Extensions.Logging;
 using BCrypt.Net;
 
-namespace MBANK_ETUDIANT.Services
+namespace ADN_pay.Services
 {
     public class AdminService
     {
         private readonly BankDbContext _context;
         private readonly UserContext _user;
         private readonly ILogger<AdminService> _logger;
+        private readonly NotificationHistoryService _notifHist;
 
-        public AdminService(BankDbContext context, UserContext user, ILogger<AdminService> logger)
+        public AdminService(BankDbContext context, UserContext user, ILogger<AdminService> logger, NotificationHistoryService notifHist)
         {
             _context = context;
             _user = user;
             _logger = logger;
+            _notifHist = notifHist;
         }
 
         public async Task<List<UserProfile>> GetDossiersEnAttenteAsync()
@@ -26,9 +30,10 @@ namespace MBANK_ETUDIANT.Services
                 .ToListAsync();
         }
 
-        public async Task<decimal> GetTotalBankBalanceAsync()
+        // ADR-001 : retourne des centimes (long)
+        public async Task<long> GetTotalBankBalanceAsync()
         {
-            if (!_user.Profil.IsAdmin) return 0;
+            if (!_user.Profil.IsAdmin) return 0L;
             return await _context.UserProfiles.SumAsync(u => u.Solde);
         }
 
@@ -39,6 +44,39 @@ namespace MBANK_ETUDIANT.Services
                 .OrderByDescending(l => l.Timestamp)
                 .Take(15)
                 .ToListAsync();
+        }
+
+        public async Task<bool> RejeterCreditAsync(int userId, string motif)
+        {
+            if (!_user.Profil.IsAdmin) return false;
+
+            var demande = await _context.CreditRequests
+                .Where(c => c.UserId == userId && c.Statut == "EN_ATTENTE")
+                .OrderByDescending(c => c.DateDemande)
+                .FirstOrDefaultAsync();
+
+            if (demande == null) return false;
+
+            demande.Statut = "REJETE";
+            demande.MotifRejet = motif;
+
+            var u = await _context.UserProfiles.FindAsync(userId);
+            if (u != null)
+            {
+                u.PendingCreditRequest = false;
+                u.PendingCreditAmount = 0L;
+            }
+
+            _context.AdminLogs.Add(new AdminLog
+            {
+                Action = "CREDIT_REJETE",
+                Cible = u?.Email ?? $"UserId:{userId}",
+                Details = $"Motif: {motif}"
+            });
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Crédit rejeté pour UserId={UserId} par {AdminEmail}: {Motif}",
+                userId, PiiMasker.MaskEmail(_user.Profil.Email), motif);
+            return true;
         }
 
         public async Task<bool> ApprouverPremium(int id)
@@ -56,42 +94,59 @@ namespace MBANK_ETUDIANT.Services
                 Details = "Passage au statut Premium validé"
             });
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Premium approuvé pour {Email} par admin {AdminEmail}", u.Email, _user.Profil.Email);
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                "Félicitations ! Votre dossier KYC a été validé. Vous êtes désormais Premium.", "SUCCESS", "KYC");
+            _logger.LogInformation("Premium approuvé pour {Email} par admin {AdminEmail}",
+                PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
-        public async Task<bool> ApprouverCredit(int id, decimal montantForce = 0)
-        {
-            if (!_user.Profil.IsAdmin) return false;
-            var u = await _context.UserProfiles.FindAsync(id);
-            if (u == null) return false;
-            decimal montant = montantForce > 0 ? montantForce : u.PendingCreditAmount;
-            u.Solde += montant;
-            u.Dette += montant;
-            u.PendingCreditRequest = false;
-            u.PendingCreditAmount = 0;
-            _context.AdminLogs.Add(new AdminLog
-            {
-                Action = "CREDIT_APPROUVE",
-                Cible = u.Email,
-                Details = $"Montant: {montant} DH"
-            });
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Crédit de {Montant} DH approuvé pour {Email} par {AdminEmail}",
-                montant, u.Email, _user.Profil.Email);
-            return true;
-        }
-
-        public async Task<bool> AdminDepot(int userId, decimal montant)
+        // ADR-001 : montantForce en centimes (long)
+        public async Task<bool> ApprouverCredit(int userId, long montantForceCentimes = 0L)
         {
             if (!_user.Profil.IsAdmin) return false;
             var u = await _context.UserProfiles.FindAsync(userId);
             if (u == null) return false;
+
+            var demande = await _context.CreditRequests
+                .Where(c => c.UserId == userId && c.Statut == "EN_ATTENTE")
+                .OrderByDescending(c => c.DateDemande)
+                .FirstOrDefaultAsync();
+
+            long montant = montantForceCentimes > 0L ? montantForceCentimes
+                : demande?.Montant ?? u.PendingCreditAmount;
+
             u.Solde += montant;
+            u.Dette += montant;
+            u.PendingCreditRequest = false;
+            u.PendingCreditAmount = 0L;
+
+            if (demande != null)
+                demande.Statut = "APPROUVE";
+
+            _context.AdminLogs.Add(new AdminLog
+            {
+                Action = "CREDIT_APPROUVE",
+                Cible = u.Email,
+                Details = $"Montant: {montant.ToDh()}"
+            });
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Crédit de {Montant} approuvé pour {Email} par {AdminEmail}",
+                montant.ToDh(), PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email));
+            return true;
+        }
+
+        // ADR-001 : montant en centimes (long)
+        public async Task<bool> AdminDepot(int userId, long montantCentimes)
+        {
+            if (!_user.Profil.IsAdmin) return false;
+            var u = await _context.UserProfiles.FindAsync(userId);
+            if (u == null) return false;
+            u.Solde += montantCentimes;
             _context.Transactions.Add(new Transaction
             {
                 UserId = userId,
-                Montant = montant,
+                Montant = montantCentimes,
                 Type = "DÉPÔT",
                 Motif = "Dépôt administratif",
                 SoldeApres = u.Solde,
@@ -102,11 +157,11 @@ namespace MBANK_ETUDIANT.Services
             {
                 Action = "DEPOT_ADMIN",
                 Cible = u.Email,
-                Details = $"Montant: {montant} DH"
+                Details = $"Montant: {montantCentimes.ToDh()}"
             });
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Dépôt admin de {Montant} DH sur compte #{UserId} par {AdminEmail}",
-                montant, userId, _user.Profil.Email);
+            _logger.LogInformation("Dépôt admin de {Montant} sur compte #{UserId} par {AdminEmail}",
+                montantCentimes.ToDh(), userId, PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -125,7 +180,7 @@ namespace MBANK_ETUDIANT.Services
             var u = await _context.UserProfiles.FindAsync(userId);
             if (u == null) return false;
             u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
-            u.MotDePasse = ""; // clear plaintext legacy field
+            u.MotDePasse = "";
             _context.AdminLogs.Add(new AdminLog
             {
                 Action = "RESET_PASSWORD",
@@ -134,7 +189,7 @@ namespace MBANK_ETUDIANT.Services
             });
             await _context.SaveChangesAsync();
             _logger.LogInformation("Mot de passe réinitialisé pour {Email} par {AdminEmail}",
-                u.Email, _user.Profil.Email);
+                PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
         }
 
@@ -189,10 +244,9 @@ namespace MBANK_ETUDIANT.Services
             if (student == null) return (false, "Étudiant introuvable");
             if (string.IsNullOrWhiteSpace(tuteurEmail)) return (false, "Email tuteur requis");
             var tuteur = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == tuteurEmail.Trim().ToLower());
-            if (tuteur == null) return (false, "Aucun compte MBANK trouvé avec cet email");
+            if (tuteur == null) return (false, "Aucun compte ADN_pay trouvé avec cet email");
             student.TuteurEmail = tuteurEmail.Trim().ToLower();
             student.TuteurAutorise = true;
-            await _context.SaveChangesAsync();
             _context.AdminLogs.Add(new AdminLog
             {
                 Action = "ASSIGNER_TUTEUR",
@@ -200,7 +254,9 @@ namespace MBANK_ETUDIANT.Services
                 Details = $"Tuteur assigné: {tuteurEmail}"
             });
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Tuteur {Tuteur} assigné à {Student} par admin {Admin}", tuteurEmail, student.Email, _user.Profil.Email);
+            _logger.LogInformation("Tuteur {Tuteur} assigné à {Student} par admin {Admin}",
+                PiiMasker.MaskEmail(tuteurEmail), PiiMasker.MaskEmail(student.Email),
+                PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, $"Tuteur {tuteurEmail} assigné à {student.Email}");
         }
 
@@ -220,7 +276,8 @@ namespace MBANK_ETUDIANT.Services
                 .ToListAsync();
         }
 
-        public async Task<(bool Success, string Message)> RejeterDossierKycAsync(int userId)
+        // Remboursement KYC rejet : 100 DH = 10 000 centimes
+        public async Task<(bool Success, string Message)> RejeterDossierKycAsync(int userId, string? motif = null)
         {
             if (!_user.Profil.IsAdmin) return (false, "Accès refusé");
             var u = await _context.UserProfiles.FindAsync(userId);
@@ -229,15 +286,20 @@ namespace MBANK_ETUDIANT.Services
 
             u.PendingPremiumUpgrade = false;
             u.PremiumRejectedAt = DateTime.UtcNow;
-            u.Solde += 100m;
+            u.KycRejetMotif = motif;
+            u.Solde += 10_000L; // remboursement 100 DH
             _context.AdminLogs.Add(new AdminLog
             {
                 Action = "REJET_KYC",
                 Cible = u.Email,
-                Details = "Dossier KYC rejeté, 100 DH remboursés"
+                Details = motif != null ? $"Dossier KYC rejeté : {motif}" : "Dossier KYC rejeté, 100 DH remboursés"
             });
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Dossier KYC rejeté pour {Email} par admin {AdminEmail}", u.Email, _user.Profil.Email);
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                motif != null ? $"Votre dossier KYC a été rejeté : {motif}" : "Votre dossier KYC a été rejeté. 100 DH remboursés.",
+                "ERROR", "KYC");
+            _logger.LogInformation("Dossier KYC rejeté pour {Email} par admin {AdminEmail} : {Motif}",
+                PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email), motif);
             return (true, $"Dossier KYC rejeté pour {u.Email}, 100 DH remboursés");
         }
 
@@ -249,7 +311,6 @@ namespace MBANK_ETUDIANT.Services
             var oldTuteur = student.TuteurEmail;
             student.TuteurEmail = "";
             student.TuteurAutorise = false;
-            await _context.SaveChangesAsync();
             _context.AdminLogs.Add(new AdminLog
             {
                 Action = "REVOQUER_TUTEUR",
@@ -257,7 +318,8 @@ namespace MBANK_ETUDIANT.Services
                 Details = $"Tuteur {oldTuteur} révoqué"
             });
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Tuteur de {Student} révoqué par admin {Admin}", student.Email, _user.Profil.Email);
+            _logger.LogInformation("Tuteur de {Student} révoqué par admin {Admin}",
+                PiiMasker.MaskEmail(student.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, $"Tuteur révoqué pour {student.Email}");
         }
     }

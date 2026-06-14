@@ -1,10 +1,10 @@
-﻿@inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Components.Web
-@using Microsoft.AspNetCore.Components.Authorization
-@inject MBANK_ETUDIANT.Services.BankService Bank
+﻿@implements IDisposable
+@inherits LayoutComponentBase
+@inject ADN_pay.Services.BankService Bank
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
+@using ADN_pay.Models
 
 <div class="page">
     @if (isCheckingSession)
@@ -30,10 +30,9 @@
 
         <div class="sidebar @(sidebarOpen ? "sidebar-open" : "")">
             <div class="logo-area">
-                <div class="logo-text">
-                    <span class="gold">M</span>BANK<span class="suffix">ADN</span>
-                </div>
+                <img src="images/logo_adn_pay_blanc.png" alt="ADN_pay" class="sidebar-logo" />
                 <div class="logo-divider"></div>
+                <div class="adncorp-sidebar">ADN_corp</div>
             </div>
             <NavMenu />
         </div>
@@ -56,13 +55,49 @@
                     <button class="theme-toggle-btn" @onclick="ToggleTheme" title="Changer le thème">
                         <i id="theme-icon" class="bi bi-sun-fill"></i>
                     </button>
-                    <button class="notif-bell" @onclick="GoToNotifications" title="Notifications">
-                        <i class="bi bi-bell-fill"></i>
-                        @if (notifCount > 0)
+                    <div class="notif-wrapper">
+                        @if (showNotifDropdown)
                         {
-                            <span class="notif-badge">@notifCount</span>
+                            <div class="notif-overlay" @onclick="CloseNotifDropdown"></div>
                         }
-                    </button>
+                        <button class="notif-bell" @onclick="ToggleNotifDropdown" title="Notifications">
+                            <i class="bi bi-bell-fill"></i>
+                            @if (notifCount > 0)
+                            {
+                                <span class="notif-badge">@notifCount</span>
+                            }
+                        </button>
+                        @if (showNotifDropdown)
+                        {
+                            <div class="notif-dropdown">
+                                @if (recentNotifs.Any())
+                                {
+                                    @foreach (var n in recentNotifs)
+                                    {
+                                        <div class="notif-dropdown-item @(!n.Lu ? "notif-unread-bg" : "")" @onclick="() => NaviguerNotification(n)">
+                                            <div class="notif-dd-icon">
+                                                @if (n.Type == "SUCCESS") { <i class="bi bi-check-circle-fill" style="color: var(--success);"></i> }
+                                                else if (n.Type == "ERROR") { <i class="bi bi-exclamation-circle-fill" style="color: var(--danger);"></i> }
+                                                else { <i class="bi bi-info-circle-fill" style="color: var(--blue-500);"></i> }
+                                            </div>
+                                            <div class="notif-dd-body">
+                                                <div class="notif-dd-cat">@n.Categorie</div>
+                                                <div class="notif-dd-msg">@n.Message</div>
+                                                <div class="notif-dd-date">@n.Date.ToString("dd/MM HH:mm")</div>
+                                            </div>
+                                        </div>
+                                    }
+                                    <div class="notif-dropdown-footer" @onclick="GoToNotifPage">
+                                        VOIR TOUT
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="notif-dropdown-empty">Aucune notification</div>
+                                }
+                            </div>
+                        }
+                    </div>
                     <div class="user-badge">
                         <div class="rank">STUDENT</div>
                         <div class="name">@Bank.Profil.Prenom?.ToUpper() @Bank.Profil.Nom?.ToUpper()</div>
@@ -83,11 +118,35 @@
                     <a href="/confidentialite">Confidentialité</a>
                     <a href="/mentions-legales">Mentions Légales</a>
                 </div>
-                <span class="footer-copy">&copy; @DateTime.Now.Year MBANK CORPORATION. Tous droits réservés.</span>
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <span class="footer-copy" style="display: flex; align-items: center; gap: 8px;">
+                        <svg width="22" height="16" viewBox="0 0 40 30" fill="none" style="opacity: 0.5;">
+                            <defs>
+                                <linearGradient id="adncorpGradFooter" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#0099CC"/>
+                                    <stop offset="100%" stop-color="#30B880"/>
+                                </linearGradient>
+                            </defs>
+                            <ellipse cx="12" cy="8" rx="4" ry="7" stroke="url(#adncorpGradFooter)" stroke-width="1.2" fill="none" opacity="0.6"/>
+                            <ellipse cx="12" cy="22" rx="4" ry="7" stroke="url(#adncorpGradFooter)" stroke-width="1.2" fill="none" opacity="0.6"/>
+                            <ellipse cx="28" cy="8" rx="4" ry="7" stroke="url(#adncorpGradFooter)" stroke-width="1.2" fill="none" opacity="0.6"/>
+                            <ellipse cx="28" cy="22" rx="4" ry="7" stroke="url(#adncorpGradFooter)" stroke-width="1.2" fill="none" opacity="0.6"/>
+                            <line x1="8" y1="10" x2="16" y2="20" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
+                            <line x1="8" y1="20" x2="16" y2="10" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
+                            <line x1="24" y1="10" x2="32" y2="20" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
+                            <line x1="24" y1="20" x2="32" y2="10" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
+                        </svg>
+                        &copy; @DateTime.Now.Year ADN_PAY by <strong style="color: var(--blue-500); font-weight: 800;">ADNcorp</strong>
+                    </span>
+                    <span class="footer-build" title="Version actuellement déployée (date de build · commit git)"
+                          style="opacity: 0.45; font-size: 0.7rem; letter-spacing: 0.3px;">
+                        v@ADN_pay.Services.BuildInfo.Short
+                    </span>
+                </div>
             </footer>
         </div>
 
-        <MBANK_ETUDIANT.Components.Layout.NotificationOverlay />
+        <ADN_pay.Components.Layout.NotificationOverlay />
     }
 </div>
 
@@ -96,10 +155,13 @@
     private bool isCheckingSession = true;
     private bool sidebarOpen = false;
     private int notifCount;
+    private Action? _notifHandler;
+    private bool showNotifDropdown;
+    private List<NotificationHistory> recentNotifs = new();
 
     private async Task ToggleTheme()
     {
-        try { await JS.InvokeVoidAsync("mbankTheme.toggle"); }
+        try { await JS.InvokeVoidAsync("adnTheme.toggle"); }
         catch { }
     }
 
@@ -124,6 +186,19 @@
         {
             Nav.NavigateTo("/login");
         }
+
+        _notifHandler = () =>
+        {
+            notifCount = Bank.NotifCount;
+            StateHasChanged();
+        };
+        Bank.NotifCountChanged += _notifHandler;
+    }
+
+    public void Dispose()
+    {
+        if (_notifHandler != null)
+            Bank.NotifCountChanged -= _notifHandler;
     }
 
     private void ToggleSidebar()
@@ -137,8 +212,38 @@
         Nav.NavigateTo("/api/auth/logout", forceLoad: true);
     }
 
-    private void GoToNotifications()
+    private async Task ToggleNotifDropdown()
     {
+        showNotifDropdown = !showNotifDropdown;
+        if (showNotifDropdown)
+        {
+            recentNotifs = await Bank.GetNotificationsAsync(3);
+        }
+    }
+    private void CloseNotifDropdown()
+    {
+        showNotifDropdown = false;
+    }
+    private void GoToNotifPage()
+    {
+        showNotifDropdown = false;
         Nav.NavigateTo("/notifications");
+    }
+    private void NaviguerNotification(NotificationHistory n)
+    {
+        showNotifDropdown = false;
+        var cat = n.Categorie;
+        var route = cat switch
+        {
+            "CONNEXION" or "SECURITE" or "PARAMETRES" or "PLAFOND" or "TUTEUR" => "/parametres",
+            "PROFIL" or "COMPTE" or "KYC" => "/profil",
+            "EPARGNE" => "/epargne",
+            "VIREMENT" or "BENEFICIAIRE" => "/virement",
+            "DÉPÔT" or "DEPOT" => "/depot",
+            "RETRAIT" => "/courant",
+            "CRÉDIT" => "/credits",
+            _ => "/notifications"
+        };
+        Nav.NavigateTo(route);
     }
 }
