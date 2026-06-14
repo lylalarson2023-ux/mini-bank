@@ -116,6 +116,57 @@ h1, h2, h3, h4, h5, h6,
   margin-left: 1px;
 }
 
+/* ─── JAUGE DE FORCE MOT DE PASSE ─── */
+.pwd-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.pwd-meter-track {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pwd-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.pwd-meter-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  min-width: 38px;
+  text-align: right;
+}
+
+/* ─── KYC : champs manquants ─── */
+.kyc-missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
+  color: var(--warning);
+}
+.kyc-missing-chip {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--text-primary);
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 /* ─── LAYOUT ─── */
 .page {
   display: flex;

@@ -212,6 +212,18 @@
                 </label>
             </div>
 
+            @if (ChampsManquants.Count > 0)
+            {
+                <div class="kyc-missing">
+                    <i class="bi bi-info-circle"></i>
+                    <span>Encore requis :</span>
+                    @foreach (var champ in ChampsManquants)
+                    {
+                        <span class="kyc-missing-chip">@champ</span>
+                    }
+                </div>
+            }
+
             <button class="btn btn-primary btn-block @(!PeutSoumettre || isProcessing ? "disabled" : "")"
                     disabled="@(!PeutSoumettre || isProcessing)"
                     @onclick="SoumettreDossier"
@@ -250,29 +262,57 @@
         }
     }
 
-    private bool PeutSoumettre =>
-        kyc.CguAcceptees &&
-        !string.IsNullOrEmpty(kyc.DocIdentiteUrl) &&
-        !string.IsNullOrEmpty(kyc.DocDomicileUrl) &&
-        !string.IsNullOrEmpty(kyc.Nom) &&
-        !string.IsNullOrEmpty(kyc.PassportOuCIN) &&
-        !string.IsNullOrEmpty(kyc.AdresseCasablanca) &&
-        !string.IsNullOrEmpty(kyc.Telephone);
+    private bool PeutSoumettre => ChampsManquants.Count == 0;
+
+    private List<string> ChampsManquants
+    {
+        get
+        {
+            var m = new List<string>();
+            if (string.IsNullOrWhiteSpace(kyc.Nom)) m.Add("Nom");
+            if (string.IsNullOrWhiteSpace(kyc.Prenom)) m.Add("Prénom");
+            if (string.IsNullOrWhiteSpace(kyc.PassportOuCIN)) m.Add("N° Passeport / CIN");
+            if (string.IsNullOrWhiteSpace(kyc.AdresseCasablanca)) m.Add("Adresse");
+            if (string.IsNullOrWhiteSpace(kyc.Telephone)) m.Add("Téléphone");
+            if (string.IsNullOrEmpty(kyc.DocIdentiteUrl)) m.Add("Scan pièce d'identité");
+            if (string.IsNullOrEmpty(kyc.DocDomicileUrl)) m.Add("Justificatif de domicile");
+            if (!kyc.CguAcceptees) m.Add("Acceptation des conditions");
+            return m;
+        }
+    }
 
     private async Task SoumettreDossier()
     {
-        if (isProcessing || Bank.Profil.Solde < 10_000L)
+        if (isProcessing) return;
+
+        // Validation de l'âge (compte étudiant : 15 ans minimum)
+        if (kyc.DateNaissance.HasValue)
         {
-            if (Bank.Profil.Solde < 10_000L)
-                Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
+            var age = DateTime.Today.Year - kyc.DateNaissance.Value.Year;
+            if (kyc.DateNaissance.Value.Date > DateTime.Today.AddYears(-age)) age--;
+            if (kyc.DateNaissance.Value.Date >= DateTime.Today || age < 15 || age > 100)
+            {
+                Notif.Notify("DATE DE NAISSANCE INVALIDE (15 ANS MINIMUM)", NotificationType.ERROR);
+                return;
+            }
+        }
+
+        if (Bank.Profil.Solde < 10_000L)
+        {
+            Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
             return;
         }
+
         isProcessing = true;
         try
         {
             var success = await Bank.SoumettreDossierKYC(kyc);
             if (success)
-                Notif.Notify("DOSSIER TRANSMIS AVEC SUCCES (100 DH PRELEVES)", NotificationType.SUCCESS);
+            {
+                UserCtx.KycFormState = null;   // dossier transmis : on vide le brouillon
+                Notif.Notify("DOSSIER TRANSMIS AVEC SUCCÈS (100 DH PRÉLEVÉS)", NotificationType.SUCCESS);
+                // Bank.Profil.PendingPremiumUpgrade est désormais true → bascule sur la bannière d'attente
+            }
             else
                 Notif.Notify("ERREUR LORS DE LA TRANSMISSION", NotificationType.ERROR);
         }

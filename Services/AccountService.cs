@@ -406,6 +406,7 @@ namespace ADN_pay.Services
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
                 _user.Profil.Solde = u.Solde;
+                _user.Profil.PendingPremiumUpgrade = true;
                 await _notifHist.AddNotificationAsync("Dossier KYC soumis — en attente de validation", "INFO", "KYC");
                 _logger.LogInformation("Dossier KYC soumis pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
