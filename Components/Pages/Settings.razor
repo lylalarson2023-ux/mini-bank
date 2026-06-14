@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using Microsoft.AspNetCore.Components.Forms
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @inject BankService Bank
 @inject NotificationService Notif
 @inject NavigationManager Nav
@@ -76,23 +77,31 @@
                 <div class="form-grid">
                     <div class="form-group full-width">
                         <label>Mot de passe actuel</label>
-                        <InputText @bind-Value="passwordModel.CurrentPassword" class="form-input" type="password" placeholder="......" />
+                        <input @bind="passwordModel.CurrentPassword" class="form-input" type="password" placeholder="••••••••" />
                     </div>
                     <div class="form-group full-width">
                         <label>Nouveau mot de passe</label>
-                        <InputText @bind-Value="passwordModel.NewPassword" class="form-input" type="password" placeholder="......" />
-                        <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial (!@@#$%^&*)</small>
+                        <input @bind="passwordModel.NewPassword" @bind:event="oninput" class="form-input" type="password" placeholder="••••••••" />
                         @if (!string.IsNullOrEmpty(passwordModel.NewPassword))
                         {
-                            <div class="password-strength" style="margin-top: 6px;">
-                                <div class="strength-bar @GetStrengthClass(passwordModel.NewPassword)"></div>
-                                <span class="strength-label">@GetStrengthLabel(passwordModel.NewPassword)</span>
+                            <div class="pwd-meter">
+                                <div class="pwd-meter-track">
+                                    <div class="pwd-meter-fill" style="width:@(PwdScore * 20)%; background:@PwdColor;"></div>
+                                </div>
+                                <span class="pwd-meter-label" style="color:@PwdColor;">@PwdLabel</span>
                             </div>
                         }
+                        <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">8+ car., 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial (!@@#$%^&*)</small>
                     </div>
                     <div class="form-group full-width">
                         <label>Confirmer le nouveau mot de passe</label>
-                        <InputText @bind-Value="passwordModel.ConfirmPassword" class="form-input" type="password" placeholder="......" />
+                        <input @bind="passwordModel.ConfirmPassword" @bind:event="oninput" class="form-input" type="password" placeholder="••••••••" />
+                        @if (!string.IsNullOrEmpty(passwordModel.ConfirmPassword))
+                        {
+                            <small style="font-size:0.62rem; margin-top:6px; display:block; color:@(passwordModel.ConfirmPassword == passwordModel.NewPassword ? "var(--success)" : "var(--danger)");">
+                                @(passwordModel.ConfirmPassword == passwordModel.NewPassword ? "✓ Les mots de passe correspondent" : "✗ Les mots de passe diffèrent")
+                            </small>
+                        }
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary" disabled="@saving">
@@ -513,7 +522,25 @@
 
     private async Task SaveProfile()
     {
-        saving = true; profileMsg = ""; profileSuccess = false;
+        profileMsg = ""; profileSuccess = false;
+
+        var email = profileModel.Email?.Trim() ?? "";
+        var tel = profileModel.Telephone?.Trim().Replace(" ", "") ?? "";
+
+        if (string.IsNullOrWhiteSpace(profileModel.Nom) || string.IsNullOrWhiteSpace(profileModel.Prenom))
+        {
+            profileMsg = "Nom et prénom requis."; return;
+        }
+        if (!EmailRegex.IsMatch(email))
+        {
+            profileMsg = "Adresse e-mail invalide."; return;
+        }
+        if (!string.IsNullOrEmpty(tel) && !PhoneRegex.IsMatch(tel))
+        {
+            profileMsg = "Numéro de téléphone invalide (ex : 0612345678 ou +212612345678)."; return;
+        }
+
+        saving = true;
         try
         {
             var (success, msg) = await Bank.UpdateProfileAsync(
@@ -721,33 +748,26 @@ document.body.removeChild(a);";
 
     private string Truncate(string s, int max) => s?.Length > max ? s[..max] + "..." : s ?? "";
 
-    private string GetStrengthClass(string pwd)
+    // Jauge de force du mot de passe (identique à l'inscription)
+    private int PwdScore
     {
-        int score = 0;
-        if (pwd.Length >= 8) score++;
-        if (pwd.Length >= 12) score++;
-        if (pwd.Any(char.IsUpper)) score++;
-        if (pwd.Any(char.IsLower)) score++;
-        if (pwd.Any(char.IsDigit)) score++;
-        if (pwd.Any(c => !char.IsLetterOrDigit(c))) score++;
-        return score switch
+        get
         {
-            <= 2 => "weak",
-            <= 4 => "medium",
-            _ => "strong"
-        };
+            var p = passwordModel.NewPassword ?? "";
+            int s = 0;
+            if (p.Length >= 8) s++;
+            if (p.Any(char.IsUpper)) s++;
+            if (p.Any(char.IsLower)) s++;
+            if (p.Any(char.IsDigit)) s++;
+            if (p.Any(c => !char.IsLetterOrDigit(c))) s++;
+            return s;
+        }
     }
+    private string PwdColor => PwdScore switch { <= 2 => "var(--danger)", 3 => "var(--warning)", 4 => "var(--blue-500)", _ => "var(--success)" };
+    private string PwdLabel => PwdScore switch { <= 2 => "Faible", 3 => "Moyen", 4 => "Bon", _ => "Fort" };
 
-    private string GetStrengthLabel(string pwd)
-    {
-        return GetStrengthClass(pwd) switch
-        {
-            "weak" => "Faible",
-            "medium" => "Moyen",
-            "strong" => "Fort",
-            _ => ""
-        };
-    }
+    private static readonly Regex EmailRegex = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
+    private static readonly Regex PhoneRegex = new(@"^(?:\+212|0)[5-7][0-9]{8}$", RegexOptions.Compiled);
 
     private class ProfileModel
     {
