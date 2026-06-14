@@ -2341,6 +2341,17 @@ h1, h2, h3, h4, h5, h6,
     font-size: 0.8rem;
   }
 
+  /* Menu notifications : ancré au viewport, plein largeur (évite le débordement gauche) */
+  .notif-dropdown {
+    position: fixed;
+    top: 56px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100vh - 80px);
+    margin-top: 0;
+  }
+
   /* Content */
   .content-area {
     padding: 16px;
