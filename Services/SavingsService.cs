@@ -162,6 +162,18 @@ namespace ADN_pay.Services
                 p.MontantActuel += montantCentimes;
                 _user.Profil.Solde = tuteur.Solde;
 
+                // Trace le boost dans l'historique de l'étudiant (visible côté étudiant ET tuteur).
+                _context.Transactions.Add(new Transaction
+                {
+                    UserId = student.Id,
+                    Type = "ÉPARGNE",
+                    Montant = montantCentimes,
+                    Frais = 0L,
+                    SoldeApres = student.Solde,
+                    Libelle = $"Boost tuteur — {p.Objectif}",
+                    Motif = $"Versement de votre tuteur ({_user.Profil.Email})"
+                });
+
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
 
@@ -214,9 +226,12 @@ namespace ADN_pay.Services
 
             if (!studentIds.Any()) return 0L;
 
-            return await _context.SavingsPockets
-                .Where(p => studentIds.Contains(p.UserId) && p.DateCreation >= debutMois)
-                .SumAsync(p => p.MontantActuel);
+            // Somme des boosts réellement versés par ce tuteur ce mois-ci (tracés en Transaction).
+            return await _context.Transactions
+                .Where(t => studentIds.Contains(t.UserId)
+                    && t.Date >= debutMois
+                    && t.Libelle.StartsWith("Boost tuteur"))
+                .SumAsync(t => t.Montant);
         }
 
         public async Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20)
