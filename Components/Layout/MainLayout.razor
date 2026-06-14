@@ -10,8 +10,11 @@
     @if (isCheckingSession)
     {
         <div class="auth-loading">
+            <span class="adn-wordmark" style="font-size: 2.2rem; margin-bottom: 22px;">
+                <span class="wm-adn">ADN</span><span class="wm-pay">_pay</span>
+            </span>
             <div class="scanner"></div>
-            <p>VERIFICATION ADN_ID...</p>
+            <p>VÉRIFICATION ADN_ID...</p>
         </div>
     }
     else if (!Bank.EstConnecte)
@@ -136,11 +139,11 @@
                             <line x1="24" y1="10" x2="32" y2="20" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
                             <line x1="24" y1="20" x2="32" y2="10" stroke="url(#adncorpGradFooter)" stroke-width="1" opacity="0.4"/>
                         </svg>
-                        &copy; @DateTime.Now.Year ADN_PAY by <strong style="color: var(--blue-500); font-weight: 800;">ADNcorp</strong>
+                        &copy; @DateTime.Now.Year <span class="adn-wordmark" style="font-size: 0.85rem;"><span class="wm-adn">ADN</span><span class="wm-pay">_pay</span></span> by <strong style="color: var(--blue-500); font-weight: 800;">ADNcorp</strong>
                     </span>
                     <span class="footer-build" title="Version actuellement déployée (date de build · commit git)"
                           style="opacity: 0.45; font-size: 0.7rem; letter-spacing: 0.3px;">
-                        v@ADN_pay.Services.BuildInfo.Short
+                        v@(ADN_pay.Services.BuildInfo.Short)
                     </span>
                 </div>
             </footer>

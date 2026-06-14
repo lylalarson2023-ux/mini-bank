@@ -59,7 +59,9 @@
   --shadow-gold: 0 0 25px rgba(245, 158, 11, 0.1);
 
   --font-mono: 'Courier New', Courier, monospace;
-  --font-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Typographie de marque : sans-serif géométrique (charte ADN_pay) */
+  --font-display: 'Sora', 'Inter', 'Segoe UI', system-ui, sans-serif;
 }
 
 /* ─── RESET / BASE ─── */
@@ -77,6 +79,42 @@ a { color: var(--blue-500); text-decoration: none; transition: 0.2s; }
 a:hover { color: var(--blue-400); text-decoration: underline; }
 
 ::selection { background: var(--blue-600); color: white; }
+
+/* ─── TYPOGRAPHIE DE MARQUE ─── */
+/* Titres et éléments forts en sans-serif géométrique (Sora) */
+h1, h2, h3, h4, h5, h6,
+.section-title,
+.cyber-panel h3,
+.page-header h3,
+.balance-value,
+.auth-title,
+.btn-adn,
+.adncorp-sidebar {
+  font-family: var(--font-display);
+}
+
+/* Wordmark texte ADN_pay (charte : "ADN" majuscules + "_pay" minuscules) */
+.adn-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 1px;
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+}
+.adn-wordmark .wm-adn {
+  text-transform: uppercase;
+  background: var(--adn-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.adn-wordmark .wm-pay {
+  text-transform: lowercase;
+  font-weight: 600;
+  color: var(--green-teal);
+  margin-left: 1px;
+}
 
 /* ─── LAYOUT ─── */
 .page {
@@ -793,12 +831,13 @@ a:hover { color: var(--blue-400); text-decoration: underline; }
 .btn:hover { text-decoration: none; }
 
 .btn-primary {
-  background: var(--blue-600);
+  background: var(--adn-gradient);
   color: white;
+  font-weight: 700;
 }
 .btn-primary:hover {
-  background: var(--blue-700);
-  box-shadow: 0 0 16px var(--blue-glow);
+  background: var(--adn-gradient-hover);
+  box-shadow: 0 0 18px var(--blue-glow), 0 0 32px var(--green-glow);
   transform: translateY(-1px);
 }
 

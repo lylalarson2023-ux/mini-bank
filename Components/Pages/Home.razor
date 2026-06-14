@@ -187,47 +187,73 @@
     private void BuildSvgData()
     {
         if (balanceCurve.Count < 2) return;
-        const double W = 560; const double H = 80; const double padTop = 10;
+
+        // Géométrie : gouttière gauche pour l'axe Y, zone de tracé à droite
+        const double gutterL = 58;   // espace réservé aux étiquettes de montant
+        const double padTop  = 12;
+        const double H       = 74;   // hauteur de la zone de tracé
+        const double plotW   = 530;  // largeur de la zone de tracé
+        const double x0      = gutterL;
+        const double x1      = gutterL + plotW;
+        const double baseY   = padTop + H;
 
         long minS = balanceCurve.Min(p => p.Solde);
         long maxS = balanceCurve.Max(p => p.Solde);
         double range = Math.Max(maxS - minS, 1);
         int n = balanceCurve.Count - 1;
 
-        (double px, double py) Pt(int i) => (
-            (i / (double)n) * W,
-            padTop + (1.0 - (balanceCurve[i].Solde - minS) / range) * H
-        );
+        (double px, double py) Pt(int i)
+        {
+            double frac = (maxS == minS) ? 0.5 : (balanceCurve[i].Solde - minS) / range;
+            return (x0 + (i / (double)n) * plotW, padTop + (1.0 - frac) * H);
+        }
+
+        // Coordonnées SVG TOUJOURS en culture invariante (séparateur '.'),
+        // sinon la culture FR produit des virgules qui cassent le path/les attributs.
+        static string Inv(FormattableString fs) => FormattableString.Invariant(fs);
 
         var pts = Enumerable.Range(0, balanceCurve.Count).Select(Pt).ToList();
-        string stroke = "M" + string.Join(" L", pts.Select(p => $"{p.px:F1},{p.py:F1}"));
-        string bot    = (padTop + H).ToString("F1");
-        string fill   = $"M0,{bot} L" + string.Join(" L", pts.Select(p => $"{p.px:F1},{p.py:F1}")) + $" L{W:F1},{bot} Z";
+        string stroke = "M" + string.Join(" L", pts.Select(p => Inv($"{p.px:F1},{p.py:F1}")));
+        string fill   = Inv($"M{x0:F1},{baseY:F1} L") + string.Join(" L", pts.Select(p => Inv($"{p.px:F1},{p.py:F1}"))) + Inv($" L{x1:F1},{baseY:F1} Z");
         var    last   = pts[^1];
-        string maxLY  = (padTop + 4).ToString("F1");
-        string minLY  = (padTop + H - 4).ToString("F1");
-        string maxLbl = (maxS / 100m).ToString("N0") + " DH";
-        string minLbl = (minS / 100m).ToString("N0") + " DH";
-        string d0     = System.Net.WebUtility.HtmlEncode(balanceCurve[0].Jour.ToString("dd/MM"));
-        string d14    = System.Net.WebUtility.HtmlEncode(balanceCurve[14].Jour.ToString("dd/MM"));
-        string d29    = System.Net.WebUtility.HtmlEncode(balanceCurve[^1].Jour.ToString("dd/MM"));
 
-        svgContent = $@"<svg viewBox=""0 0 560 110"" style=""width:100%;display:block;overflow:visible;"">
+        // Format compact des montants (1,1M / 12k / 540)
+        static string Compact(long centimes)
+        {
+            decimal dh = centimes / 100m;
+            if (Math.Abs(dh) >= 1_000_000m) return (dh / 1_000_000m).ToString("0.#") + "M";
+            if (Math.Abs(dh) >= 1_000m)     return (dh / 1_000m).ToString("0.#") + "k";
+            return dh.ToString("0");
+        }
+        string maxLbl = Compact(maxS) + " DH";
+        string minLbl = Compact(minS) + " DH";
+        string d0  = System.Net.WebUtility.HtmlEncode(balanceCurve[0].Jour.ToString("dd/MM"));
+        string d14 = System.Net.WebUtility.HtmlEncode(balanceCurve[14].Jour.ToString("dd/MM"));
+        string d29 = System.Net.WebUtility.HtmlEncode(balanceCurve[^1].Jour.ToString("dd/MM"));
+        double xMid = x0 + plotW / 2;
+
+        string yMaxLabels = maxS != minS
+            ? Inv($@"<text x=""{x0 - 8:F1}"" y=""{padTop + 3:F1}"" fill=""#6b7280"" font-size=""9"" text-anchor=""end"">{maxLbl}</text>")
+              + Inv($@"<text x=""{x0 - 8:F1}"" y=""{baseY:F1}"" fill=""#6b7280"" font-size=""9"" text-anchor=""end"">{minLbl}</text>")
+            : "";
+
+        svgContent = Inv($@"<svg viewBox=""0 0 600 120"" style=""width:100%;display:block;"">
   <defs>
     <linearGradient id=""balGrad"" x1=""0"" y1=""0"" x2=""0"" y2=""1"">
       <stop offset=""0%"" stop-color=""#30B880"" stop-opacity=""0.28""/>
       <stop offset=""100%"" stop-color=""#30B880"" stop-opacity=""0""/>
     </linearGradient>
   </defs>
+  <line x1=""{x0:F1}"" y1=""{padTop:F1}"" x2=""{x1:F1}"" y2=""{padTop:F1}"" stroke=""#ffffff"" stroke-opacity=""0.05""/>
+  <line x1=""{x0:F1}"" y1=""{baseY:F1}"" x2=""{x1:F1}"" y2=""{baseY:F1}"" stroke=""#ffffff"" stroke-opacity=""0.05""/>
   <path d=""{fill}"" fill=""url(#balGrad)""/>
   <path d=""{stroke}"" fill=""none"" stroke=""#30B880"" stroke-width=""2"" stroke-linejoin=""round"" stroke-linecap=""round""/>
-  <circle cx=""{last.px:F1}"" cy=""{last.py:F1}"" r=""4"" fill=""#30B880""/>
-  <text x=""0""   y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""start"">{d0}</text>
-  <text x=""280"" y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""middle"">{d14}</text>
-  <text x=""560"" y=""105"" fill=""#6b7280"" font-size=""9"" text-anchor=""end"">{d29}</text>
-  {(maxS != minS ? $@"<text x=""2"" y=""{maxLY}"" fill=""#6b7280"" font-size=""8"" dominant-baseline=""middle"">{maxLbl}</text>
-  <text x=""2"" y=""{minLY}"" fill=""#6b7280"" font-size=""8"" dominant-baseline=""middle"">{minLbl}</text>" : "")}
-</svg>";
+  <circle cx=""{last.px:F1}"" cy=""{last.py:F1}"" r=""3.5"" fill=""#30B880""/>
+  {yMaxLabels}
+  <text x=""{x0:F1}"" y=""114"" fill=""#6b7280"" font-size=""9"" text-anchor=""start"">{d0}</text>
+  <text x=""{xMid:F1}"" y=""114"" fill=""#6b7280"" font-size=""9"" text-anchor=""middle"">{d14}</text>
+  <text x=""{x1:F1}"" y=""114"" fill=""#6b7280"" font-size=""9"" text-anchor=""end"">{d29}</text>
+</svg>");
     }
 
     private void HandleAddMoney() => NavManager.NavigateTo("/depot");
