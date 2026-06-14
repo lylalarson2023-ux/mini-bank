@@ -74,6 +74,8 @@ namespace ADN_pay.Services
             => _savings.CreerPocheEpargne(obj, montantInitialCentimes, fin, montantCibleCentimes, tuteurVisible);
         public Task<bool> CasserPocheEpargne(int id) => _savings.CasserPocheEpargne(id);
         public Task<bool> BoosterPocheAsync(int id, long montantCentimes) => _savings.BoosterPocheAsync(id, montantCentimes);
+        public Task<(bool Success, string Message)> BoosterPocheCommeTuteurAsync(int pocketId, long montantCentimes)
+            => _savings.BoosterPocheCommeTuteurAsync(pocketId, montantCentimes);
         public Task<List<TuteurPocketView>> GetPocketsForTuteurAsync() => _savings.GetPocketsForTuteurAsync();
         public Task<long> GetTotalInvestiThisMonthAsync() => _savings.GetTotalInvestiThisMonthAsync();
         public Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20) => _savings.GetRecentActivityForTuteurAsync(count);

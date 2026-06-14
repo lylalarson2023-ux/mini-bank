@@ -134,14 +134,10 @@
         isProcessing = true;
         try
         {
-            bool success = await Bank.BoosterPocheAsync(p.Id, (long)(montant * 100));
+            var (success, message) = await Bank.BoosterPocheCommeTuteurAsync(p.Id, (long)(montant * 100));
+            Notif.Notify(message, success ? NotificationType.SUCCESS : NotificationType.ERROR);
             if (success)
-            {
-                Notif.Notify($"Poche boostée de {montant:N2} DH", NotificationType.SUCCESS);
                 await ChargerDonnees();
-            }
-            else
-                Notif.Notify("FONDS INSUFFISANTS", NotificationType.ERROR);
         }
         finally { isProcessing = false; }
     }

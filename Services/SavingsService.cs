@@ -132,6 +132,54 @@ namespace ADN_pay.Services
             }
         }
 
+        // Boost effectué PAR LE TUTEUR sur la poche d'un étudiant : débite le tuteur, crédite la poche.
+        public async Task<(bool Success, string Message)> BoosterPocheCommeTuteurAsync(int pocketId, long montantCentimes)
+        {
+            if (montantCentimes <= 0) return (false, "Montant invalide");
+
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var p = await _context.SavingsPockets.FindAsync(pocketId);
+                if (p == null) return (false, "Poche introuvable");
+
+                // L'étudiant propriétaire doit avoir autorisé ce tuteur…
+                var student = await _context.UserProfiles.FindAsync(p.UserId);
+                if (student == null
+                    || !student.TuteurAutorise
+                    || !string.Equals(student.TuteurEmail, _user.Profil.Email, StringComparison.OrdinalIgnoreCase))
+                    return (false, "Vous n'êtes pas le tuteur autorisé de cet étudiant");
+
+                // …et la poche doit être visible par le tuteur.
+                if (!(p.TuteurVisible || p.Objectif.Contains("TUTEUR", StringComparison.OrdinalIgnoreCase)))
+                    return (false, "Cette poche n'est pas partagée avec vous");
+
+                var tuteur = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                if (tuteur == null || tuteur.Solde < montantCentimes)
+                    return (false, "Solde insuffisant sur votre compte");
+
+                tuteur.Solde -= montantCentimes;
+                p.MontantActuel += montantCentimes;
+                _user.Profil.Solde = tuteur.Solde;
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                await _notifHist.AddNotificationForUserAsync(student.Id,
+                    $"Votre tuteur a boosté « {p.Objectif} » de {montantCentimes.ToDh()}", "SUCCESS", "EPARGNE");
+
+                _logger.LogInformation("Tuteur {Tuteur} a boosté la poche #{Id} de {Montant} (étudiant {Student})",
+                    PiiMasker.MaskEmail(_user.Profil.Email), pocketId, montantCentimes.ToDh(), PiiMasker.MaskEmail(student.Email));
+
+                return (true, $"Poche boostée de {montantCentimes.ToDh()}");
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
         public async Task<List<TuteurPocketView>> GetPocketsForTuteurAsync()
         {
             var students = await _context.UserProfiles
