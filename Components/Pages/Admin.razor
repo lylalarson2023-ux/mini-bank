@@ -40,6 +40,9 @@
             <i class="bi bi-currency-exchange"></i> CRÉDITS
             @if (pendingCreditCount > 0) { <span class="tab-badge">@pendingCreditCount</span> }
         </button>
+        <button class="admin-tab @(activeTab == "depot" ? "active" : "")" @onclick='() => activeTab = "depot"'>
+            <i class="bi bi-cash-stack"></i> DÉPÔT
+        </button>
         <button class="admin-tab @(activeTab == "utilisateurs" ? "active" : "")" @onclick='() => activeTab = "utilisateurs"'>
             <i class="bi bi-people"></i> UTILISATEURS
         </button>
@@ -67,6 +70,9 @@
                 break;
             case "credits":
                 @RenderCredits
+                break;
+            case "depot":
+                @RenderDepot
                 break;
             case "utilisateurs":
                 @RenderUtilisateurs
@@ -313,6 +319,23 @@
             }
             else
                 Notif.Notify("Échec : compte introuvable", NotificationType.ERROR);
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task ApprouverDemandeCredit(int userId)
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            if (await AdminSvc.ApprouverCredit(userId))
+            {
+                Notif.Notify("Crédit approuvé et versé au compte", NotificationType.SUCCESS);
+                await ChargerDonnees();
+            }
+            else
+                Notif.Notify("Échec de l'approbation : utilisateur introuvable", NotificationType.ERROR);
         }
         finally { isProcessing = false; }
     }
@@ -1023,11 +1046,19 @@
                 builder.AddAttribute(99, "class", "transaction-amount tx-negative");
                 builder.AddContent(100, $"+{u.PendingCreditAmount / 100m:N2} MAD");
                 builder.CloseElement();
+                builder.OpenElement(106, "button");
+                builder.AddAttribute(107, "class", "btn btn-sm btn-success");
+                builder.AddAttribute(108, "style", "margin-left: 8px;");
+                builder.AddAttribute(109, "disabled", isProcessing);
+                builder.AddAttribute(110, "onclick", EventCallback.Factory.Create(this, () => ApprouverDemandeCredit(u.Id)));
+                builder.AddContent(111, "APPROUVER");
+                builder.CloseElement();
                 builder.OpenElement(101, "button");
                 builder.AddAttribute(102, "class", "btn btn-sm btn-danger");
                 builder.AddAttribute(103, "style", "margin-left: 8px;");
-                builder.AddAttribute(104, "onclick", EventCallback.Factory.Create(this, () => { rejectCreditUserId = u.Id; rejectCreditMotif = ""; showRejectCreditModal = true; }));
-                builder.AddContent(105, "REJETER");
+                builder.AddAttribute(104, "disabled", isProcessing);
+                builder.AddAttribute(105, "onclick", EventCallback.Factory.Create(this, () => { rejectCreditUserId = u.Id; rejectCreditMotif = ""; showRejectCreditModal = true; }));
+                builder.AddContent(112, "REJETER");
                 builder.CloseElement();
                 builder.CloseElement();
             }
