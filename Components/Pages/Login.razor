@@ -56,19 +56,36 @@
             <div style="text-align: center; margin-bottom: 20px;">
                 <i class="bi bi-shield-lock-fill" style="font-size: 2rem; color: var(--blue-500);"></i>
                 <p style="margin: 8px 0 4px; font-size: 0.85rem; font-weight: 600;">AUTHENTIFICATION À DEUX FACTEURS</p>
-                <p style="font-size: 0.7rem; color: var(--text-muted);">Saisissez le code généré par votre application</p>
+                <p style="font-size: 0.7rem; color: var(--text-muted);">
+                    @(useRecoveryCode ? "Saisissez un de vos codes de secours" : "Saisissez le code généré par votre application")
+                </p>
             </div>
 
-            <div class="form-group">
-                <label>CODE 2FA</label>
-                <input @bind="twoFactorCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="form-input" style="text-align: center; font-size: 1.4rem; letter-spacing: 8px; font-family: var(--font-mono);" />
-            </div>
+            @if (!useRecoveryCode)
+            {
+                <div class="form-group">
+                    <label>CODE 2FA</label>
+                    <input @bind="twoFactorCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="form-input" style="text-align: center; font-size: 1.4rem; letter-spacing: 8px; font-family: var(--font-mono);" />
+                </div>
+                <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="ValidateTwoFactor" disabled="@isLoading">
+                    @(isLoading ? "VÉRIFICATION..." : "VALIDER LE CODE")
+                </button>
+            }
+            else
+            {
+                <div class="form-group">
+                    <label>CODE DE SECOURS</label>
+                    <input @bind="recoveryCode" type="text" maxlength="11" placeholder="xxxxx-xxxxx" class="form-input" style="text-align: center; letter-spacing: 3px; font-family: var(--font-mono);" />
+                </div>
+                <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="ValidateRecoveryCode" disabled="@isLoading">
+                    @(isLoading ? "VÉRIFICATION..." : "UTILISER CE CODE")
+                </button>
+            }
 
-            <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="ValidateTwoFactor" disabled="@isLoading">
-                @(isLoading ? "VÉRIFICATION..." : "VALIDER LE CODE")
-            </button>
-
-            <div class="auth-footer">
+            <div class="auth-footer" style="display: flex; gap: 16px; justify-content: center;">
+                <a href="javascript:void(0)" @onclick="ToggleRecoveryMode">
+                    @(useRecoveryCode ? "(utiliser l'application)" : "(code de secours)")
+                </a>
                 <a href="javascript:void(0)" @onclick="CancelTwoFactor">(annuler)</a>
             </div>
         }
@@ -83,6 +100,8 @@
     private bool isLoading = false;
     private bool showTwoFactor;
     private string twoFactorCode = "";
+    private bool useRecoveryCode;
+    private string recoveryCode = "";
 
     private static string SignToken(string payload, string secret) =>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
@@ -169,10 +188,50 @@
         }
     }
 
+    private async Task ValidateRecoveryCode()
+    {
+        errorMessage = "";
+        isLoading = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(recoveryCode))
+            {
+                errorMessage = "Saisissez un code de secours.";
+                return;
+            }
+            if (await Bank.VerifyAndConsumeRecoveryCodeAsync(Bank.Profil.Id, recoveryCode))
+            {
+                await CompleteLogin(Bank.Profil.Id);
+            }
+            else
+            {
+                errorMessage = "Code de secours invalide ou déjà utilisé.";
+            }
+        }
+        catch
+        {
+            errorMessage = "Erreur technique lors de la vérification du code de secours.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ToggleRecoveryMode()
+    {
+        useRecoveryCode = !useRecoveryCode;
+        errorMessage = "";
+        twoFactorCode = "";
+        recoveryCode = "";
+    }
+
     private void CancelTwoFactor()
     {
         showTwoFactor = false;
+        useRecoveryCode = false;
         twoFactorCode = "";
+        recoveryCode = "";
         Bank.Deconnexion();
     }
 

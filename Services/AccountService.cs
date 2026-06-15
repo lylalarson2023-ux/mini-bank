@@ -221,14 +221,22 @@ namespace ADN_pay.Services
         }
 
         // --- PARAMÈTRES COMPTE ---
-        public async Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email)
+        public async Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email, string? currentPasswordForEmail = null)
         {
             var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
 
             var emailLower = email.Trim().ToLower();
-            if (emailLower != _user.Profil.Email && await _context.UserProfiles.AnyAsync(x => x.Email == emailLower))
-                return (false, "Cet email est déjà utilisé");
+            var emailChange = emailLower != _user.Profil.Email;
+            if (emailChange)
+            {
+                // L'email est un identifiant de connexion : sa modification exige une ré-authentification.
+                if (string.IsNullOrEmpty(currentPasswordForEmail)
+                    || !BCrypt.Net.BCrypt.Verify(currentPasswordForEmail, u.MotDePasseHash))
+                    return (false, "Mot de passe actuel requis et valide pour changer l'adresse e-mail.");
+                if (await _context.UserProfiles.AnyAsync(x => x.Email == emailLower))
+                    return (false, "Cet email est déjà utilisé");
+            }
 
             u.Nom = nom?.Trim() ?? "";
             u.Prenom = prenom?.Trim() ?? "";

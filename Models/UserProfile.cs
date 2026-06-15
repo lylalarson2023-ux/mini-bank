@@ -82,6 +82,8 @@ namespace ADN_pay.Models
         // --- 2FA ---
         public bool TwoFactorEnabled { get; set; } = false;
         public string? TwoFactorSecret { get; set; }
+        // Codes de secours à usage unique : hachés (BCrypt), séparés par ';'
+        public string? TwoFactorRecoveryCodes { get; set; }
 
         // --- WORKFLOW ADMINISTRATIF ---
         public bool PendingPremiumUpgrade { get; set; } = false;

@@ -29,7 +29,7 @@
             <i class="bi bi-sliders"></i> PLAFONDS
         </button>
         <button class='admin-tab @(activeTab == "notifs" ? "active" : "")' @onclick="GoNotifs">
-            <i class="bi bi-bell"></i> NOTIFICATIONS
+            <i class="bi bi-sliders2"></i> PRÉFÉRENCES
         </button>
     </div>
 
@@ -56,6 +56,16 @@
                         <InputText @bind-Value="profileModel.Telephone" class="form-input" placeholder="+212..." />
                     </div>
                 </div>
+                @if (EmailModifie)
+                {
+                    <div class="form-group full-width" style="margin-top: 4px;">
+                        <label><i class="bi bi-shield-lock"></i> Mot de passe actuel (requis pour changer l'e-mail)</label>
+                        <input @bind="emailChangePassword" type="password" class="form-input" placeholder="••••••••" />
+                        <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">
+                            L'e-mail sert d'identifiant de connexion : sa modification nécessite votre mot de passe.
+                        </small>
+                    </div>
+                }
                 <button type="submit" class="btn btn-primary" disabled="@saving">
                     @(saving ? "ENREGISTREMENT..." : "ENREGISTRER")
                 </button>
@@ -125,6 +135,28 @@
                 Ajoutez une couche de sécurité supplémentaire avec Google Authenticator, Microsoft Authenticator ou Authy.
             </p>
 
+            @if (recoveryCodes.Any())
+            {
+                <div style="background: rgba(48,184,128,0.06); border: 1px solid var(--success); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 16px;">
+                    <p style="font-size: 0.8rem; font-weight: 600; color: var(--success); margin: 0 0 8px;">
+                        <i class="bi bi-key-fill"></i> VOS CODES DE SECOURS
+                    </p>
+                    <p style="font-size: 0.72rem; color: var(--text-muted); margin: 0 0 12px;">
+                        Conservez-les en lieu sûr. Chaque code n'est utilisable <strong>qu'une seule fois</strong> pour vous connecter
+                        si vous perdez l'accès à votre application. Ils ne seront <strong>plus jamais affichés</strong>.
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 1px; margin-bottom: 12px;">
+                        @foreach (var c in recoveryCodes)
+                        {
+                            <div style="background: var(--bg-secondary); padding: 6px 10px; border-radius: 4px; text-align: center;">@c</div>
+                        }
+                    </div>
+                    <button class="btn btn-primary btn-sm" @onclick="DismissRecoveryCodes">
+                        <i class="bi bi-check2"></i> J'AI NOTÉ MES CODES
+                    </button>
+                </div>
+            }
+
             @if (!Bank.Profil.TwoFactorEnabled)
             {
                 @if (!showTwoFactorSetup)
@@ -179,6 +211,17 @@
                         @(saving ? "..." : "DÉSACTIVER")
                     </button>
                 </div>
+                <div class="setting-row">
+                    <div>
+                        <strong style="color: var(--text-primary);">Codes de secours</strong>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                            @Bank.CountRemainingRecoveryCodes() code(s) restant(s). Régénérer invalide les anciens.
+                        </p>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" @onclick="RegenerateRecoveryCodes" disabled="@saving">
+                        @(saving ? "..." : "RÉGÉNÉRER")
+                    </button>
+                </div>
             }
 
             @if (!string.IsNullOrEmpty(twoFactorMsg))
@@ -192,22 +235,6 @@
 
     @if (activeTab == "legal")
     {
-        <div class="form-section">
-            <h6><i class="bi bi-palette"></i> APPARENCE</h6>
-            <div class="setting-row">
-                <div>
-                    <strong style="color: var(--text-primary);">Thème</strong>
-                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
-                        Passer entre le thème sombre et clair
-                    </p>
-                </div>
-                <button class="btn btn-ghost btn-sm" @onclick="ToggleTheme">
-                    <i class="bi @(currentTheme == "light" ? "bi-moon-stars" : "bi-sun")"></i>
-                    @(currentTheme == "light" ? "SOMBRE" : "CLAIR")
-                </button>
-            </div>
-        </div>
-
         <div class="form-section">
             <h6><i class="bi bi-incognito"></i> CONFIDENTIALITE</h6>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
@@ -257,16 +284,6 @@
                     @exportMsg
                 </div>
             }
-        </div>
-
-        <div class="form-section" style="border-color: var(--danger);">
-            <h6 style="color: var(--danger);"><i class="bi bi-box-arrow-right"></i> DÉCONNEXION</h6>
-            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
-                Mettez fin à votre session sécurisée sur cet appareil.
-            </p>
-            <button class="btn btn-danger" @onclick="HandleLogout">
-                <i class="bi bi-power"></i> SE DÉCONNECTER
-            </button>
         </div>
 
         <div class="form-section" style="border-color: var(--danger);">
@@ -433,6 +450,22 @@
     @if (activeTab == "notifs")
     {
         <div class="form-section">
+            <h6><i class="bi bi-palette"></i> APPARENCE</h6>
+            <div class="setting-row">
+                <div>
+                    <strong style="color: var(--text-primary);">Thème</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        Passer entre le thème sombre et clair
+                    </p>
+                </div>
+                <button class="btn btn-ghost btn-sm" @onclick="ToggleTheme">
+                    <i class="bi @(currentTheme == "light" ? "bi-moon-stars" : "bi-sun")"></i>
+                    @(currentTheme == "light" ? "SOMBRE" : "CLAIR")
+                </button>
+            </div>
+        </div>
+
+        <div class="form-section">
             <h6><i class="bi bi-bell"></i> PREFERENCES DE NOTIFICATIONS</h6>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
                 Activez ou désactivez les notifications par email pour chaque type d'opération.
@@ -474,6 +507,8 @@
     private string tuteurEmail = "";
     private ProfileModel profileModel = new();
     private PasswordModel passwordModel = new();
+    private string emailChangePassword = "";
+    private bool EmailModifie => (profileModel.Email?.Trim().ToLowerInvariant() ?? "") != Bank.Profil.Email;
     private string exportMsg = "";
     private bool exportSuccess;
     private string deleteMsg = "";
@@ -490,6 +525,7 @@
     private string twoFactorSetupCode = "";
     private string twoFactorMsg = "";
     private bool twoFactorSuccess;
+    private List<string> recoveryCodes = new();
 
     // Connexions
     private List<UserLogin> loginHistory = new();
@@ -568,14 +604,20 @@
         {
             profileMsg = "Numéro de téléphone invalide (ex : 0612345678 ou +212612345678)."; return;
         }
+        if (EmailModifie && string.IsNullOrEmpty(emailChangePassword))
+        {
+            profileMsg = "Saisissez votre mot de passe actuel pour changer l'e-mail."; return;
+        }
 
         saving = true;
         try
         {
             var (success, msg) = await Bank.UpdateProfileAsync(
-                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, profileModel.Email);
+                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, profileModel.Email,
+                EmailModifie ? emailChangePassword : null);
             profileMsg = msg;
             profileSuccess = success;
+            if (success) emailChangePassword = "";
         }
         catch { profileMsg = "Erreur lors de la sauvegarde"; }
         finally { saving = false; }
@@ -722,10 +764,14 @@ document.body.removeChild(a);";
         try
         {
             Bank.Profil.TwoFactorSecret = twoFactorSecret;
-            var (success, msg) = await Bank.EnableTwoFactorAsync(twoFactorSetupCode);
+            var (success, msg, codes) = await Bank.EnableTwoFactorAsync(twoFactorSetupCode);
             twoFactorMsg = msg;
             twoFactorSuccess = success;
-            if (success) showTwoFactorSetup = false;
+            if (success)
+            {
+                showTwoFactorSetup = false;
+                recoveryCodes = codes;
+            }
         }
         catch { twoFactorMsg = "Erreur technique"; }
         finally { saving = false; }
@@ -738,12 +784,28 @@ document.body.removeChild(a);";
         try
         {
             await Bank.DisableTwoFactorAsync();
+            recoveryCodes = new();
             twoFactorMsg = "2FA désactivée.";
             twoFactorSuccess = true;
         }
         catch { twoFactorMsg = "Erreur technique"; }
         finally { saving = false; }
     }
+
+    private async Task RegenerateRecoveryCodes()
+    {
+        saving = true; twoFactorMsg = "";
+        try
+        {
+            recoveryCodes = await Bank.RegenerateRecoveryCodesAsync();
+            twoFactorSuccess = true;
+            twoFactorMsg = "Nouveaux codes générés. Les anciens ne sont plus valides.";
+        }
+        catch { twoFactorMsg = "Erreur technique"; }
+        finally { saving = false; }
+    }
+
+    private void DismissRecoveryCodes() => recoveryCodes = new();
 
     private async Task SavePlafonds()
     {

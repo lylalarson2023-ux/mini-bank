@@ -60,8 +60,8 @@ namespace ADN_pay.Services
         public Task<bool> SoumettreDossierKYC(UserProfile kyc) => _account.SoumettreDossierKYC(kyc);
 
         // --- PARAMÈTRES COMPTE ---
-        public Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email)
-            => _account.UpdateProfileAsync(nom, prenom, telephone, email);
+        public Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email, string? currentPasswordForEmail = null)
+            => _account.UpdateProfileAsync(nom, prenom, telephone, email, currentPasswordForEmail);
         public Task<(bool Success, string Message)> ChangerMotDePasseAsync(string currentPassword, string newPassword)
             => _account.ChangerMotDePasseAsync(currentPassword, newPassword);
         public Task<string> ExportPersonalDataAsync() => _account.ExportPersonalDataAsync();
@@ -165,10 +165,13 @@ namespace ADN_pay.Services
         // --- 2FA ---
         public string GenerateTwoFactorSecret() => _twoFactor.GenerateSecret();
         public string GenerateTwoFactorQrUri(string secret, string email) => _twoFactor.GenerateQrUri(secret, email);
-        public Task<(bool, string)> EnableTwoFactorAsync(string code) => _twoFactor.EnableAsync(code);
+        public Task<(bool Success, string Message, List<string> RecoveryCodes)> EnableTwoFactorAsync(string code) => _twoFactor.EnableAsync(code);
         public Task DisableTwoFactorAsync() => _twoFactor.DisableAsync();
         public bool VerifyTwoFactorCode(string secret, string code) => _twoFactor.VerifyCodeWithWindow(secret, code);
         public bool IsTwoFactorRequired => _twoFactor.IsTwoFactorRequired;
         public Task<bool> UserHasTwoFactorAsync(int userId) => _twoFactor.UserHasTwoFactorAsync(userId);
+        public Task<List<string>> RegenerateRecoveryCodesAsync() => _twoFactor.RegenerateRecoveryCodesAsync();
+        public int CountRemainingRecoveryCodes() => _twoFactor.CountRemainingRecoveryCodes();
+        public Task<bool> VerifyAndConsumeRecoveryCodeAsync(int userId, string code) => _twoFactor.VerifyAndConsumeRecoveryCodeAsync(userId, code);
     }
 }

@@ -72,24 +72,27 @@ namespace ADN_pay.Services
             return otp.ToString("D6");
         }
 
-        public async Task<(bool Success, string Message)> EnableAsync(string code)
+        public async Task<(bool Success, string Message, List<string> RecoveryCodes)> EnableAsync(string code)
         {
             var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
-            if (u == null) return (false, "Utilisateur introuvable");
+            if (u == null) return (false, "Utilisateur introuvable", new());
             var secret = _user.Profil.TwoFactorSecret ?? u.TwoFactorSecret;
             if (string.IsNullOrEmpty(secret))
-                return (false, "Aucun secret configuré. Générez d'abord un secret.");
+                return (false, "Aucun secret configuré. Générez d'abord un secret.", new());
 
             if (!VerifyCodeWithWindow(secret, code))
-                return (false, "Code invalide. Vérifiez votre application d'authentification.");
+                return (false, "Code invalide. Vérifiez votre application d'authentification.", new());
 
+            var plainCodes = NewPlainCodes();
             u.TwoFactorSecret = secret;
             u.TwoFactorEnabled = true;
+            u.TwoFactorRecoveryCodes = HashCodes(plainCodes);
             _context.UserProfiles.Update(u);
             await _context.SaveChangesAsync();
             _user.Profil.TwoFactorEnabled = true;
+            _user.Profil.TwoFactorRecoveryCodes = u.TwoFactorRecoveryCodes;
             _logger.LogInformation("2FA activée pour {Email}", _user.Profil.Email);
-            return (true, "Authentification à deux facteurs activée.");
+            return (true, "Authentification à deux facteurs activée.", plainCodes);
         }
 
         public async Task DisableAsync()
@@ -98,12 +101,70 @@ namespace ADN_pay.Services
             if (u == null) return;
             u.TwoFactorEnabled = false;
             u.TwoFactorSecret = null;
+            u.TwoFactorRecoveryCodes = null;
             _context.UserProfiles.Update(u);
             await _context.SaveChangesAsync();
             _user.Profil.TwoFactorEnabled = false;
             _user.Profil.TwoFactorSecret = null;
+            _user.Profil.TwoFactorRecoveryCodes = null;
             _logger.LogInformation("2FA désactivée pour {Email}", _user.Profil.Email);
         }
+
+        // Régénère un nouveau jeu de codes (invalide les anciens). 2FA doit être active.
+        public async Task<List<string>> RegenerateRecoveryCodesAsync()
+        {
+            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            if (u == null || !u.TwoFactorEnabled) return new();
+            var plainCodes = NewPlainCodes();
+            u.TwoFactorRecoveryCodes = HashCodes(plainCodes);
+            await _context.SaveChangesAsync();
+            _user.Profil.TwoFactorRecoveryCodes = u.TwoFactorRecoveryCodes;
+            _logger.LogInformation("Codes de secours 2FA régénérés pour {Email}", _user.Profil.Email);
+            return plainCodes;
+        }
+
+        public int CountRemainingRecoveryCodes()
+        {
+            var raw = _user.Profil.TwoFactorRecoveryCodes;
+            return string.IsNullOrEmpty(raw) ? 0 : raw.Split(';', StringSplitOptions.RemoveEmptyEntries).Length;
+        }
+
+        // Vérifie un code de secours et le consomme (usage unique). Utilisé à la connexion.
+        public async Task<bool> VerifyAndConsumeRecoveryCodeAsync(int userId, string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return false;
+            var u = await _context.UserProfiles.FindAsync(userId);
+            if (u == null || string.IsNullOrEmpty(u.TwoFactorRecoveryCodes)) return false;
+
+            var normalized = code.Trim().Replace(" ", "").Replace("-", "").ToLowerInvariant();
+            var hashes = u.TwoFactorRecoveryCodes.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+            var match = hashes.FirstOrDefault(h => BCrypt.Net.BCrypt.Verify(normalized, h));
+            if (match == null) return false;
+
+            hashes.Remove(match); // consomme le code
+            u.TwoFactorRecoveryCodes = string.Join(';', hashes);
+            await _context.SaveChangesAsync();
+            _logger.LogWarning("Connexion via code de secours 2FA pour UserId={UserId} ({Remaining} restants)", userId, hashes.Count);
+            return true;
+        }
+
+        private static List<string> NewPlainCodes(int n = 8)
+        {
+            const string chars = "abcdefghijkmnpqrstuvwxyz23456789"; // sans caractères ambigus
+            var codes = new List<string>();
+            for (int i = 0; i < n; i++)
+            {
+                var bytes = RandomNumberGenerator.GetBytes(10);
+                var raw = new char[10];
+                for (int j = 0; j < 10; j++) raw[j] = chars[bytes[j] % chars.Length];
+                codes.Add(new string(raw, 0, 5) + "-" + new string(raw, 5, 5));
+            }
+            return codes;
+        }
+
+        private static string HashCodes(List<string> codes)
+            => string.Join(';', codes.Select(c =>
+                BCrypt.Net.BCrypt.HashPassword(c.Replace("-", "").ToLowerInvariant())));
 
         public async Task<bool> UserHasTwoFactorAsync(int userId)
         {
