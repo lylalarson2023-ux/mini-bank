@@ -193,6 +193,16 @@
     private List<UserProfile> historiqueDossiers = new();
     private string dossierSubTab = "en_attente";
     private List<AdminLog> logs = new();
+    private string logSearch = "";
+    private List<(DateTime Jour, int Count)> registrations = new();
+
+    private IEnumerable<AdminLog> LogsFiltres =>
+        string.IsNullOrWhiteSpace(logSearch)
+            ? logs
+            : logs.Where(l =>
+                (l.Action?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (l.Details?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (l.Cible?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false));
 
     private int targetId;
     private decimal creditAmount;
@@ -265,7 +275,8 @@
         pendingCreditCount = await AdminSvc.GetPendingCreditCountAsync();
         dossiersEnAttente = await AdminSvc.GetDossiersEnAttenteAsync();
         historiqueDossiers = await AdminSvc.GetHistoriqueDossiersAsync();
-        logs = await AdminSvc.GetAdminLogsAsync();
+        logs = await AdminSvc.GetAdminLogsAsync(200);
+        registrations = await AdminSvc.GetRegistrationsPerDayAsync(14);
     }
 
     private async Task ApprouverDossier(int id)
@@ -492,6 +503,45 @@
         finally { isProcessing = false; }
     }
 
+    private string BuildRegistrationsSvg()
+    {
+        if (registrations.Count == 0) return "<p style=\"color:var(--text-muted);font-size:0.8rem;\">Aucune donnée</p>";
+
+        int n = registrations.Count;
+        int max = Math.Max(1, registrations.Max(r => r.Count));
+        double w = 600, h = 180, padL = 24, padR = 10, padT = 16, padB = 28;
+        double plotW = w - padL - padR, plotH = h - padT - padB;
+        double slot = plotW / n;
+        double barW = slot * 0.6;
+        double baseY = padT + plotH;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(FormattableString.Invariant(
+            $"<svg viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;height:auto;display:block;\">"));
+        sb.Append("<defs><linearGradient id=\"gradReg\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">");
+        sb.Append("<stop offset=\"0%\" stop-color=\"#0099CC\"/><stop offset=\"100%\" stop-color=\"#30B880\"/></linearGradient></defs>");
+        sb.Append(FormattableString.Invariant(
+            $"<line x1=\"{padL}\" y1=\"{baseY}\" x2=\"{padL + plotW}\" y2=\"{baseY}\" stroke=\"var(--border)\" stroke-width=\"1\"/>"));
+
+        for (int i = 0; i < n; i++)
+        {
+            var (jour, count) = registrations[i];
+            double bh = plotH * count / max;
+            double x = padL + slot * i + (slot - barW) / 2;
+            double y = baseY - bh;
+            sb.Append(FormattableString.Invariant(
+                $"<rect x=\"{x:F1}\" y=\"{y:F1}\" width=\"{barW:F1}\" height=\"{bh:F1}\" rx=\"2\" fill=\"url(#gradReg)\"/>"));
+            if (count > 0)
+                sb.Append(FormattableString.Invariant(
+                    $"<text x=\"{x + barW / 2:F1}\" y=\"{y - 3:F1}\" text-anchor=\"middle\" font-size=\"9\" fill=\"var(--text-secondary)\">{count}</text>"));
+            if (i % 2 == 0 || i == n - 1)
+                sb.Append(FormattableString.Invariant(
+                    $"<text x=\"{x + barW / 2:F1}\" y=\"{baseY + 14:F1}\" text-anchor=\"middle\" font-size=\"8\" fill=\"var(--text-muted)\">{jour:dd/MM}</text>"));
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
     private RenderFragment RenderDashboard => builder =>
     {
         builder.OpenElement(0, "div");
@@ -595,6 +645,15 @@
         builder.AddContent(71, "Utilisateurs");
         builder.CloseElement();
         builder.CloseElement();
+        builder.CloseElement();
+
+        // Graphique inscriptions
+        builder.OpenElement(200, "div");
+        builder.AddAttribute(201, "class", "cyber-panel full-col");
+        builder.OpenElement(202, "h3");
+        builder.AddContent(203, "INSCRIPTIONS (14 DERNIERS JOURS)");
+        builder.CloseElement();
+        builder.AddMarkupContent(204, BuildRegistrationsSvg());
         builder.CloseElement();
 
         // Derniers logs
@@ -1215,6 +1274,12 @@
         builder.AddAttribute(23, "disabled", isSearching);
         builder.AddContent(24, isSearching ? "..." : "CHERCHER");
         builder.CloseElement();
+        builder.OpenElement(70, "a");
+        builder.AddAttribute(71, "class", "btn btn-ghost");
+        builder.AddAttribute(72, "href", "/api/admin/users.csv");
+        builder.AddAttribute(73, "target", "_blank");
+        builder.AddMarkupContent(74, "<i class=\"bi bi-download\"></i> EXPORT CSV");
+        builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
 
@@ -1572,19 +1637,30 @@
         builder.CloseElement();
         builder.OpenElement(8, "div");
         builder.AddAttribute(9, "class", "card-body");
+
+        // Barre de recherche
+        builder.OpenElement(30, "input");
+        builder.AddAttribute(31, "type", "text");
+        builder.AddAttribute(32, "class", "form-input");
+        builder.AddAttribute(33, "style", "margin-bottom: 12px;");
+        builder.AddAttribute(34, "placeholder", "Filtrer les logs (action, détail, cible)...");
+        builder.AddAttribute(35, "value", logSearch);
+        builder.AddAttribute(36, "oninput", EventCallback.Factory.Create(this, (ChangeEventArgs e) => logSearch = e.Value?.ToString() ?? ""));
+        builder.CloseElement();
+
         builder.OpenElement(10, "div");
         builder.AddAttribute(11, "class", "terminal-view");
         builder.AddAttribute(12, "style", "max-height: 400px;");
-        if (!logs.Any())
+        if (!LogsFiltres.Any())
         {
             builder.OpenElement(13, "div");
             builder.AddAttribute(14, "class", "empty-notif");
-            builder.AddContent(15, "Aucune action enregistrée");
+            builder.AddContent(15, string.IsNullOrWhiteSpace(logSearch) ? "Aucune action enregistrée" : "Aucun log ne correspond");
             builder.CloseElement();
         }
         else
         {
-            foreach (var log in logs)
+            foreach (var log in LogsFiltres)
             {
                 builder.OpenElement(16, "div");
                 builder.AddAttribute(17, "class", "log-line");

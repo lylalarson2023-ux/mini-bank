@@ -37,13 +37,30 @@ namespace ADN_pay.Services
             return await _context.UserProfiles.SumAsync(u => u.Solde);
         }
 
-        public async Task<List<AdminLog>> GetAdminLogsAsync()
+        public async Task<List<AdminLog>> GetAdminLogsAsync(int count = 15)
         {
             if (!_user.Profil.IsAdmin) return new();
             return await _context.AdminLogs
                 .OrderByDescending(l => l.Timestamp)
-                .Take(15)
+                .Take(count)
                 .ToListAsync();
+        }
+
+        // Inscriptions par jour sur les N derniers jours (pour le graphique d'activité)
+        public async Task<List<(DateTime Jour, int Count)>> GetRegistrationsPerDayAsync(int days = 14)
+        {
+            if (!_user.Profil.IsAdmin) return new();
+            var today = DateTime.UtcNow.Date;
+            var from = today.AddDays(-(days - 1));
+            var rows = await _context.UserProfiles
+                .Where(u => u.DateInscription >= from)
+                .Select(u => u.DateInscription)
+                .ToListAsync();
+            var counts = rows.GroupBy(d => d.Date).ToDictionary(g => g.Key, g => g.Count());
+            return Enumerable.Range(0, days)
+                .Select(i => from.AddDays(i))
+                .Select(jour => (jour, counts.GetValueOrDefault(jour, 0)))
+                .ToList();
         }
 
         public async Task<bool> RejeterCreditAsync(int userId, string motif)

@@ -233,6 +233,40 @@ app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
     return Results.Redirect("/login");
 });
 
+// --- EXPORT CSV DES UTILISATEURS (admin uniquement) ---
+app.MapGet("/api/admin/users.csv", async (BankDbContext db) =>
+{
+    static string Esc(string? v)
+    {
+        v ??= "";
+        return (v.Contains(',') || v.Contains('"') || v.Contains('\n'))
+            ? "\"" + v.Replace("\"", "\"\"") + "\""
+            : v;
+    }
+
+    var users = await db.UserProfiles.OrderBy(u => u.Id).ToListAsync();
+    var sb = new StringBuilder();
+    sb.Append('﻿'); // BOM UTF-8 pour Excel (accents)
+    sb.AppendLine("Id,Nom,Prenom,Email,Telephone,Statut,Solde_DH,Role,DateInscription,TuteurEmail");
+    foreach (var u in users)
+    {
+        sb.AppendLine(string.Join(",",
+            u.Id,
+            Esc(u.Nom),
+            Esc(u.Prenom),
+            Esc(u.Email),
+            Esc(u.Telephone),
+            Esc(u.Statut.ToString()),
+            (u.Solde / 100m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+            Esc(u.IsAdmin ? "Admin" : "User"),
+            u.DateInscription.ToString("yyyy-MM-dd"),
+            Esc(u.TuteurEmail)));
+    }
+
+    var fileName = $"utilisateurs_adnpay_{DateTime.UtcNow:yyyyMMdd}.csv";
+    return Results.File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8", fileName);
+}).RequireAuthorization("AdminOnly");
+
 // --- STRIPE SUCCESS (retour après paiement réussi) ---
 app.MapGet("/api/stripe/success", async (HttpContext ctx, StripeService stripe, string session_id) =>
 {
