@@ -1,10 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>d6335aac-ae91-4dfb-8e77-932bf7aba025</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,9 +29,7 @@
   <!-- Cachet de build : embarque le commit git dans l'assembly (lu par Services/BuildInfo.cs).
        La date de build, elle, est déduite à l'exécution de la date du .dll. -->
   <Target Name="StampBuildInfo" BeforeTargets="GetAssemblyAttributes">
-    <Exec Command="git describe --always --dirty --abbrev=7"
-          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low"
-          WorkingDirectory="$(MSBuildProjectDirectory)">
+    <Exec Command="git describe --always --dirty --abbrev=7" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitDescribe" />
     </Exec>
     <PropertyGroup>

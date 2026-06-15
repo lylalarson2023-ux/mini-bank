@@ -76,6 +76,27 @@
                     @profileMsg
                 </div>
             }
+
+            @if (emailChangeStep)
+            {
+                <div style="background: rgba(0,153,204,0.06); border: 1px solid var(--blue-border); border-radius: var(--radius-sm); padding: 16px; margin-top: 16px;">
+                    <p style="font-size: 0.8rem; margin: 0 0 12px; color: var(--text-secondary);">
+                        <i class="bi bi-envelope-check"></i> Un code à 6 chiffres a été envoyé à <strong>@pendingEmailDisplay</strong>.
+                        Saisissez-le pour confirmer le changement (valable 15 min).
+                    </p>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <input @bind="emailChangeCode" maxlength="6" inputmode="numeric" class="form-input"
+                               placeholder="000000" style="text-align: center; font-size: 1.2rem; letter-spacing: 6px; font-family: var(--font-mono);" />
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary btn-sm" @onclick="ConfirmEmailChange"
+                                disabled="@(saving || emailChangeCode.Length != 6)">
+                            @(saving ? "VÉRIFICATION..." : "CONFIRMER L'E-MAIL")
+                        </button>
+                        <button class="btn btn-ghost btn-sm" @onclick="CancelEmailChange">ANNULER</button>
+                    </div>
+                </div>
+            }
         </div>
     }
 
@@ -509,6 +530,9 @@
     private PasswordModel passwordModel = new();
     private string emailChangePassword = "";
     private bool EmailModifie => (profileModel.Email?.Trim().ToLowerInvariant() ?? "") != Bank.Profil.Email;
+    private bool emailChangeStep;
+    private string emailChangeCode = "";
+    private string pendingEmailDisplay = "";
     private string exportMsg = "";
     private bool exportSuccess;
     private string deleteMsg = "";
@@ -612,15 +636,55 @@
         saving = true;
         try
         {
+            // 1. Nom / prénom / téléphone (l'e-mail ne change pas ici)
             var (success, msg) = await Bank.UpdateProfileAsync(
-                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, profileModel.Email,
-                EmailModifie ? emailChangePassword : null);
+                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, Bank.Profil.Email);
             profileMsg = msg;
             profileSuccess = success;
-            if (success) emailChangePassword = "";
+
+            // 2. E-mail : déclenche l'envoi d'un code de confirmation à la nouvelle adresse
+            if (success && EmailModifie)
+            {
+                var (ok, m) = await Bank.RequestEmailChangeAsync(profileModel.Email, emailChangePassword);
+                profileMsg = m;
+                profileSuccess = ok;
+                if (ok)
+                {
+                    emailChangeStep = true;
+                    pendingEmailDisplay = profileModel.Email.Trim().ToLowerInvariant();
+                    emailChangePassword = "";
+                }
+            }
         }
         catch { profileMsg = "Erreur lors de la sauvegarde"; }
         finally { saving = false; }
+    }
+
+    private async Task ConfirmEmailChange()
+    {
+        saving = true; profileMsg = "";
+        try
+        {
+            var (ok, m) = await Bank.ConfirmEmailChangeAsync(emailChangeCode);
+            profileMsg = m;
+            profileSuccess = ok;
+            if (ok)
+            {
+                emailChangeStep = false;
+                emailChangeCode = "";
+                profileModel.Email = Bank.Profil.Email;
+            }
+        }
+        catch { profileMsg = "Erreur lors de la confirmation"; }
+        finally { saving = false; }
+    }
+
+    private void CancelEmailChange()
+    {
+        emailChangeStep = false;
+        emailChangeCode = "";
+        profileModel.Email = Bank.Profil.Email;
+        profileMsg = "";
     }
 
     private async Task ChangePassword()

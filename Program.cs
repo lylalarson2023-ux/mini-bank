@@ -78,6 +78,20 @@ builder.Services.AddScoped<IPawaPayService, PawaPayService>();
 // --- ALERTING (ADR-007) ---
 builder.Services.AddHttpClient<IAlertingService, AlertingService>();
 
+// --- E-MAIL (Resend en prod, log en dev) ---
+var resendKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
+if (!string.IsNullOrEmpty(resendKey)) builder.Configuration["Resend:ApiKey"] = resendKey;
+var resendFrom = Environment.GetEnvironmentVariable("RESEND_FROM_EMAIL");
+if (!string.IsNullOrEmpty(resendFrom)) builder.Configuration["Resend:FromEmail"] = resendFrom;
+
+// Resend uniquement si une clé est dispo ET (hors dev OU forçage explicite). Sinon : log dev.
+var useResend = !string.IsNullOrEmpty(builder.Configuration["Resend:ApiKey"])
+    && (!builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Email:ForceRealInDev"));
+if (useResend)
+    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender, LogEmailSender>();
+
 // --- SERVICES MÉTIER SPÉCIALISÉS ---
 builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<AuthService>();
@@ -146,6 +160,9 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN CompteCloture INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN DateCloture datetime"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN TwoFactorRecoveryCodes TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PendingEmail TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailChangeCodeHash TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailChangeCodeExpiry datetime"); } catch { }
     try { db.Database.ExecuteSqlRaw("UPDATE UserProfiles SET Role = '' WHERE Role IS NULL"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN TuteurVisible INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }

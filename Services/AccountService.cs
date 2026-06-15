@@ -11,14 +11,16 @@ namespace ADN_pay.Services
         private readonly UserContext _user;
         private readonly ILogger<AccountService> _logger;
         private readonly NotificationHistoryService _notifHist;
+        private readonly IEmailSender _email;
 
         public AccountService(BankDbContext context, UserContext user, ILogger<AccountService> logger,
-            NotificationHistoryService notifHist)
+            NotificationHistoryService notifHist, IEmailSender email)
         {
             _context = context;
             _user = user;
             _logger = logger;
             _notifHist = notifHist;
+            _email = email;
         }
 
         // ADR-001 : montantCentimes en long
@@ -221,38 +223,95 @@ namespace ADN_pay.Services
         }
 
         // --- PARAMÈTRES COMPTE ---
+        // L'e-mail n'est PAS modifié ici : il passe par le flux vérifié (RequestEmailChange/ConfirmEmailChange).
         public async Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email, string? currentPasswordForEmail = null)
         {
             var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
 
-            var emailLower = email.Trim().ToLower();
-            var emailChange = emailLower != _user.Profil.Email;
-            if (emailChange)
-            {
-                // L'email est un identifiant de connexion : sa modification exige une ré-authentification.
-                if (string.IsNullOrEmpty(currentPasswordForEmail)
-                    || !BCrypt.Net.BCrypt.Verify(currentPasswordForEmail, u.MotDePasseHash))
-                    return (false, "Mot de passe actuel requis et valide pour changer l'adresse e-mail.");
-                if (await _context.UserProfiles.AnyAsync(x => x.Email == emailLower))
-                    return (false, "Cet email est déjà utilisé");
-            }
-
             u.Nom = nom?.Trim() ?? "";
             u.Prenom = prenom?.Trim() ?? "";
             u.Telephone = telephone?.Trim() ?? "";
-            u.Email = emailLower;
 
             await _context.SaveChangesAsync();
 
             _user.Profil.Nom = u.Nom;
             _user.Profil.Prenom = u.Prenom;
             _user.Profil.Telephone = u.Telephone;
-            _user.Profil.Email = u.Email;
 
             await _notifHist.AddNotificationAsync("Profil mis à jour", "SUCCESS", "PROFIL");
             _logger.LogInformation("Profil mis à jour pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Profil mis à jour avec succès");
+        }
+
+        // Étape 1 : demande de changement d'e-mail. Vérifie le mot de passe, envoie un code à la NOUVELLE adresse.
+        public async Task<(bool Success, string Message)> RequestEmailChangeAsync(string newEmail, string currentPassword)
+        {
+            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            if (u == null) return (false, "Utilisateur introuvable");
+
+            var emailLower = (newEmail ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(emailLower) || !emailLower.Contains('@'))
+                return (false, "Adresse e-mail invalide.");
+            if (emailLower == u.Email)
+                return (false, "Cette adresse est déjà la vôtre.");
+            if (string.IsNullOrEmpty(currentPassword) || !BCrypt.Net.BCrypt.Verify(currentPassword, u.MotDePasseHash))
+                return (false, "Mot de passe actuel incorrect.");
+            if (await _context.UserProfiles.AnyAsync(x => x.Email == emailLower))
+                return (false, "Cet e-mail est déjà utilisé.");
+
+            var code = Random.Shared.Next(100000, 1000000).ToString();
+            u.PendingEmail = emailLower;
+            u.EmailChangeCodeHash = BCrypt.Net.BCrypt.HashPassword(code);
+            u.EmailChangeCodeExpiry = DateTime.UtcNow.AddMinutes(15);
+            await _context.SaveChangesAsync();
+
+            var html = $@"<p>Bonjour,</p>
+<p>Vous avez demandé à associer cette adresse à votre compte <strong>ADN_pay</strong>.</p>
+<p>Votre code de confirmation est : <strong style=""font-size:1.4rem;letter-spacing:3px;"">{code}</strong></p>
+<p>Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
+<p>— L'équipe ADN_pay</p>";
+            await _email.SendAsync(emailLower, "ADN_pay — Confirmez votre nouvelle adresse e-mail", html,
+                $"Votre code de confirmation ADN_pay : {code} (valable 15 minutes).");
+
+            _logger.LogInformation("Code de changement d'e-mail envoyé pour {Email} → {New}",
+                PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(emailLower));
+            return (true, $"Un code de confirmation a été envoyé à {emailLower}.");
+        }
+
+        // Étape 2 : confirmation du code → applique le changement d'e-mail.
+        public async Task<(bool Success, string Message)> ConfirmEmailChangeAsync(string code)
+        {
+            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            if (u == null) return (false, "Utilisateur introuvable");
+            if (string.IsNullOrEmpty(u.PendingEmail) || string.IsNullOrEmpty(u.EmailChangeCodeHash))
+                return (false, "Aucune demande de changement d'e-mail en cours.");
+            if (u.EmailChangeCodeExpiry < DateTime.UtcNow)
+            {
+                u.PendingEmail = null; u.EmailChangeCodeHash = null; u.EmailChangeCodeExpiry = null;
+                await _context.SaveChangesAsync();
+                return (false, "Le code a expiré. Recommencez la demande.");
+            }
+            if (string.IsNullOrWhiteSpace(code) || !BCrypt.Net.BCrypt.Verify(code.Trim(), u.EmailChangeCodeHash))
+                return (false, "Code incorrect.");
+            // Double-vérification d'unicité (au cas où l'e-mail aurait été pris entre-temps)
+            if (await _context.UserProfiles.AnyAsync(x => x.Email == u.PendingEmail))
+                return (false, "Cet e-mail vient d'être utilisé par un autre compte.");
+
+            var ancienEmail = u.Email;
+            u.Email = u.PendingEmail!;
+            u.PendingEmail = null; u.EmailChangeCodeHash = null; u.EmailChangeCodeExpiry = null;
+            await _context.SaveChangesAsync();
+            _user.Profil.Email = u.Email;
+
+            // Avertit l'ancienne adresse (bonne pratique de sécurité)
+            await _email.SendAsync(ancienEmail, "ADN_pay — Votre adresse e-mail a été modifiée",
+                $@"<p>L'adresse e-mail de votre compte ADN_pay a été remplacée par <strong>{u.Email}</strong>.</p>
+<p>Si vous n'êtes pas à l'origine de ce changement, contactez-nous immédiatement.</p>");
+
+            await _notifHist.AddNotificationAsync("Adresse e-mail mise à jour", "SUCCESS", "PROFIL");
+            _logger.LogInformation("E-mail changé : {Old} → {New}", PiiMasker.MaskEmail(ancienEmail), PiiMasker.MaskEmail(u.Email));
+            return (true, "Votre adresse e-mail a été mise à jour.");
         }
 
         public async Task<(bool Success, string Message)> ChangerMotDePasseAsync(string currentPassword, string newPassword)

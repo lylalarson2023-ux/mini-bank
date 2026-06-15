@@ -24,7 +24,8 @@ public class AccountServiceTests : IDisposable
 
         _user = new UserContext();
         var notifHist = new NotificationHistoryService(_db, _user);
-        _service = new AccountService(_db, _user, NullLogger<AccountService>.Instance, notifHist);
+        var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
+        _service = new AccountService(_db, _user, NullLogger<AccountService>.Instance, notifHist, email);
 
         // Seed : 2 users — montants en centimes (ADR-001)
         _db.UserProfiles.AddRange(

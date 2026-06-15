@@ -62,6 +62,10 @@ namespace ADN_pay.Services
         // --- PARAMÈTRES COMPTE ---
         public Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email, string? currentPasswordForEmail = null)
             => _account.UpdateProfileAsync(nom, prenom, telephone, email, currentPasswordForEmail);
+        public Task<(bool Success, string Message)> RequestEmailChangeAsync(string newEmail, string currentPassword)
+            => _account.RequestEmailChangeAsync(newEmail, currentPassword);
+        public Task<(bool Success, string Message)> ConfirmEmailChangeAsync(string code)
+            => _account.ConfirmEmailChangeAsync(code);
         public Task<(bool Success, string Message)> ChangerMotDePasseAsync(string currentPassword, string newPassword)
             => _account.ChangerMotDePasseAsync(currentPassword, newPassword);
         public Task<string> ExportPersonalDataAsync() => _account.ExportPersonalDataAsync();

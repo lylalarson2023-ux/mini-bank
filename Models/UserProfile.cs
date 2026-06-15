@@ -101,6 +101,11 @@ namespace ADN_pay.Models
         public bool CompteCloture { get; set; } = false;
         public DateTime? DateCloture { get; set; }
 
+        // --- VÉRIFICATION CHANGEMENT D'E-MAIL (code envoyé à la nouvelle adresse) ---
+        public string? PendingEmail { get; set; }
+        public string? EmailChangeCodeHash { get; set; }
+        public DateTime? EmailChangeCodeExpiry { get; set; }
+
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();
         public List<SavingsPocket> SavingsPockets { get; set; } = new();
