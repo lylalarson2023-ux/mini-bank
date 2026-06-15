@@ -95,6 +95,10 @@ namespace ADN_pay.Models
 
         public string Role { get; set; } = "";
 
+        // --- CLÔTURE DE COMPTE (droit à l'effacement RGPD/Loi 09-08 + rétention AML loi 43-05) ---
+        public bool CompteCloture { get; set; } = false;
+        public DateTime? DateCloture { get; set; }
+
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();
         public List<SavingsPocket> SavingsPockets { get; set; } = new();

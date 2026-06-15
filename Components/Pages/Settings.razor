@@ -270,21 +270,46 @@
         </div>
 
         <div class="form-section" style="border-color: var(--danger);">
-            <h6 style="color: var(--danger);"><i class="bi bi-trash"></i> SUPPRESSION DE COMPTE</h6>
+            <h6 style="color: var(--danger);"><i class="bi bi-trash"></i> CLÔTURE DE COMPTE</h6>
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
-                Supprimez définitivement votre compte et toutes vos données personnelles (droit à l'effacement - Loi 09-08, art. 4-5).
+                La clôture anonymise définitivement vos données personnelles (droit à l'effacement — Loi 09-08, art. 4-5).
+                Conformément à la réglementation anti-blanchiment (loi 43-05), l'historique de vos transactions est
+                <strong>conservé sous forme anonymisée</strong> pendant la durée légale de rétention.
                 Cette action est <strong style="color: var(--danger);">irréversible</strong>.
             </p>
-            @if (showDeleteConfirm)
+
+            @if (!PeutCloturer)
+            {
+                <div class="status-banner error">
+                    <i class="bi bi-exclamation-triangle"></i> Clôture impossible tant que :
+                    <ul style="margin: 8px 0 0; padding-left: 18px;">
+                        @if (Bank.Profil.Solde > 0)
+                        {
+                            <li>votre solde n'est pas nul (@((Bank.Profil.Solde / 100m).ToString("N2")) DH à retirer)</li>
+                        }
+                        @if (epargneTotale > 0)
+                        {
+                            <li>vos poches d'épargne ne sont pas vidées (@((epargneTotale / 100m).ToString("N2")) DH)</li>
+                        }
+                        @if (Bank.Profil.Dette > 0)
+                        {
+                            <li>votre crédit n'est pas remboursé (@((Bank.Profil.Dette / 100m).ToString("N2")) DH)</li>
+                        }
+                    </ul>
+                </div>
+            }
+            else if (showDeleteConfirm)
             {
                 <div style="background: var(--danger-bg); border: 1px solid var(--danger); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 12px;">
                     <p style="color: var(--text-primary); font-size: 0.8rem; margin-bottom: 12px;">
                         <i class="bi bi-exclamation-triangle"></i>
-                        Êtes-vous sûr de vouloir supprimer votre compte ? Toutes vos données seront définitivement effacées.
+                        Pour confirmer, tapez <strong>SUPPRIMER</strong> ci-dessous. Vous serez déconnecté immédiatement.
                     </p>
+                    <input @bind="deleteConfirmText" @bind:event="oninput" class="form-input" placeholder="SUPPRIMER" style="margin-bottom: 12px;" />
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-danger btn-sm" @onclick="ConfirmDelete" disabled="@saving">
-                            @(saving ? "SUPPRESSION..." : "CONFIRMER LA SUPPRESSION")
+                        <button class="btn btn-danger btn-sm" @onclick="ConfirmDelete"
+                                disabled="@(saving || deleteConfirmText.Trim().ToUpperInvariant() != "SUPPRIMER")">
+                            @(saving ? "CLÔTURE..." : "CONFIRMER LA CLÔTURE")
                         </button>
                         <button class="btn btn-ghost btn-sm" @onclick="CancelDelete">ANNULER</button>
                     </div>
@@ -299,7 +324,7 @@
             else
             {
                 <button class="btn btn-danger" @onclick="() => showDeleteConfirm = true">
-                    <i class="bi bi-trash"></i> SUPPRIMER MON COMPTE
+                    <i class="bi bi-trash"></i> CLÔTURER MON COMPTE
                 </button>
             }
         </div>
@@ -454,6 +479,9 @@
     private string deleteMsg = "";
     private bool deleteSuccess;
     private bool showDeleteConfirm;
+    private string deleteConfirmText = "";
+    private long epargneTotale;
+    private bool PeutCloturer => Bank.Profil.Solde <= 0 && Bank.Profil.Dette <= 0 && epargneTotale <= 0;
 
     // 2FA
     private bool showTwoFactorSetup;
@@ -512,6 +540,7 @@
         notifPrefs["credit"] = Bank.Profil.NotifCredit;
         notifPrefs["promo"] = Bank.Profil.NotifPromo;
         try { loginHistory = await Bank.GetLoginHistoryAsync(20); } catch { }
+        try { epargneTotale = (await Bank.GetPocketsAsync()).Sum(p => p.MontantActuel); } catch { }
     }
 
     private async Task ToggleTheme()
@@ -623,6 +652,7 @@ document.body.removeChild(a);";
     {
         showDeleteConfirm = false;
         deleteMsg = "";
+        deleteConfirmText = "";
     }
 
     private async Task ConfirmDelete()

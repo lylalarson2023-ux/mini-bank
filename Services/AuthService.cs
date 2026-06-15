@@ -71,6 +71,12 @@ namespace ADN_pay.Services
                 _logger.LogWarning("Échec connexion : mot de passe incorrect pour {Email}", email);
                 return false;
             }
+            if (user.CompteCloture)
+            {
+                await LogLoginAsync(user.Id, email, false, "Compte clôturé");
+                _logger.LogWarning("Connexion refusée : compte clôturé (Id={UserId})", user.Id);
+                return false;
+            }
             await LogLoginAsync(user.Id, email, true);
             _user.Profil = user;
             _user.EstConnecte = true;
@@ -92,6 +98,7 @@ namespace ADN_pay.Services
 
             var user = await _context.UserProfiles.FindAsync(userId);
             if (user == null) return false;
+            if (user.CompteCloture) return false;
 
             var cookieStamp = httpUser.FindFirst("SecurityStamp")?.Value;
             if (!string.IsNullOrEmpty(cookieStamp) && cookieStamp != user.SecurityStamp)

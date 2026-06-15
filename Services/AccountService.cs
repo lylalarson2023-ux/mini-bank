@@ -352,30 +352,53 @@ namespace ADN_pay.Services
         }
 
         // --- SUPPRESSION DE COMPTE (droit à l'effacement) ---
+        // Clôture conforme : droit à l'effacement (RGPD/Loi 09-08) avec conservation des
+        // écritures financières imposée par la lutte anti-blanchiment (loi 43-05).
         public async Task<(bool Success, string Message)> SupprimerCompteAsync()
         {
             var u = await _context.UserProfiles
-                .Include(x => x.Transactions)
                 .Include(x => x.SavingsPockets)
                 .FirstOrDefaultAsync(x => x.Id == _user.Profil.Id);
 
             if (u == null) return (false, "Utilisateur introuvable");
-
+            if (u.CompteCloture) return (false, "Ce compte est déjà clôturé.");
             if (u.Solde > 0)
-                return (false, "Veuillez transférer ou retirer votre solde avant de supprimer votre compte");
+                return (false, "Veuillez retirer ou transférer la totalité de votre solde avant la clôture.");
+            if (u.Dette > 0)
+                return (false, "Vous avez un crédit en cours. Remboursez votre dette avant de clôturer le compte.");
+            var epargne = u.SavingsPockets.Sum(p => p.MontantActuel);
+            if (epargne > 0)
+                return (false, "Récupérez d'abord les fonds de vos poches d'épargne avant la clôture.");
 
-            _logger.LogWarning("SUPPRESSION COMPTE : {Email} (Id={Id})", PiiMasker.MaskEmail(u.Email), u.Id);
+            _logger.LogWarning("CLÔTURE COMPTE : {Email} (Id={Id})", PiiMasker.MaskEmail(u.Email), u.Id);
 
-            _context.Transactions.RemoveRange(u.Transactions);
-            _context.SavingsPockets.RemoveRange(u.SavingsPockets);
-            _context.UserProfiles.Remove(u);
+            // Anonymisation des données personnelles
+            u.Nom = "Compte"; u.Prenom = "Clôturé";
+            u.Email = $"cloture-{u.Id}@adnpay.invalid";
+            u.Telephone = ""; u.AdresseCasablanca = ""; u.Ville = ""; u.CodePostal = "";
+            u.DateNaissance = null; u.LieuNaissance = ""; u.Nationalite = ""; u.Genre = "";
+            u.PassportOuCIN = ""; u.SituationMatrimoniale = "";
+            u.Etablissement = ""; u.Filiere = ""; u.NiveauEtude = ""; u.AnneeEtude = ""; u.MatriculeEtudiant = "";
+            u.StatutEtudiant = ""; u.ReseauPrincipal = "";
+            u.DocIdentiteUrl = ""; u.DocDomicileUrl = ""; u.DocScolariteUrl = ""; u.PhotoUrl = ""; u.CvUrl = "";
+            u.TuteurEmail = ""; u.TuteurAutorise = false;
+            u.TwoFactorEnabled = false; u.TwoFactorSecret = null;
+            foreach (var p in u.SavingsPockets) p.Objectif = "Clôturé";
+
+            // Rend le compte définitivement inaccessible et invalide les sessions ouvertes
+            u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N"));
+            u.SecurityStamp = Guid.NewGuid().ToString("N");
+            u.CompteCloture = true;
+            u.DateCloture = DateTime.UtcNow;
+
+            // Les Transactions sont CONSERVÉES (obligation de rétention AML, loi 43-05).
             await _context.SaveChangesAsync();
 
             _user.Profil = new();
             _user.EstConnecte = false;
 
-            _logger.LogInformation("Compte supprimé : {Email}", PiiMasker.MaskEmail(u.Email));
-            return (true, "Votre compte a été supprimé avec succès. Vous allez être redirigé.");
+            _logger.LogInformation("Compte clôturé et anonymisé : Id={Id}", u.Id);
+            return (true, "Votre compte a été clôturé et vos données personnelles anonymisées. Vous allez être déconnecté.");
         }
 
         // --- KYC --- frais = 100 DH = 10 000 centimes
