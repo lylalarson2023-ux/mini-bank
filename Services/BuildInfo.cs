@@ -26,6 +26,21 @@ public static class BuildInfo
     /// <summary>Forme compacte pour l'UI, ex. "2026-06-13 17:21 · eab5a00-dirty".</summary>
     public static string Short => $"{Timestamp} · {Commit}";
 
+    /// <summary>Jeton URL-safe changeant à chaque build (cache-buster des assets statiques).</summary>
+    public static string CacheTag { get; } = ResolveCacheTag();
+
+    private static string ResolveCacheTag()
+    {
+        try
+        {
+            var location = Assembly.Location;
+            if (!string.IsNullOrEmpty(location) && File.Exists(location))
+                return File.GetLastWriteTime(location).Ticks.ToString("x");
+        }
+        catch { /* ignoré */ }
+        return "1";
+    }
+
     private static string ResolveBuildTime()
     {
         try
