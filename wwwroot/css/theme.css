@@ -178,16 +178,16 @@ h1, h2, h3, h4, h5, h6,
   content: '';
   position: fixed;
   inset: 0;
-  background: url('/images/adn-corp-bg.png') no-repeat center;
-  background-size: 80% auto;
-  opacity: 0.15;
-  filter: brightness(5) contrast(0.5);
+  background:
+    radial-gradient(ellipse 80% 55% at 12% -5%, rgba(0, 153, 204, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 88% 105%, rgba(48, 184, 128, 0.08) 0%, transparent 55%);
   pointer-events: none;
   z-index: 0;
 }
 [data-theme="light"] .page::before {
-  opacity: 0.2;
-  filter: none;
+  background:
+    radial-gradient(ellipse 80% 55% at 12% -5%, rgba(0, 153, 204, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 88% 105%, rgba(48, 184, 128, 0.06) 0%, transparent 55%);
 }
 
 .sidebar {
@@ -204,10 +204,7 @@ h1, h2, h3, h4, h5, h6,
   content: '';
   position: absolute;
   inset: 0;
-  background: url('/images/adn-corp-bg.png') no-repeat center;
-  background-size: 200% auto;
-  opacity: 0.04;
-  filter: brightness(6) contrast(0.3);
+  background: radial-gradient(ellipse 120% 40% at 50% 0%, rgba(0, 153, 204, 0.06) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
@@ -569,10 +566,7 @@ h1, h2, h3, h4, h5, h6,
   content: '';
   position: absolute;
   inset: 0;
-  background: url('/images/adn-corp-bg.png') no-repeat center;
-  background-size: 80% auto;
-  opacity: 0.12;
-  filter: brightness(5) contrast(0.5);
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -765,11 +759,15 @@ h1, h2, h3, h4, h5, h6,
 
 /* Shared auth card (register / access-denied) */
 .auth-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.90) 0%, rgba(18, 26, 42, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
   padding: 40px;
-  box-shadow: var(--shadow-lg), 0 0 30px rgba(0, 212, 255, 0.06);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .auth-header {
   text-align: center;
