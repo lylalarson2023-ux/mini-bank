@@ -16,10 +16,12 @@ using Stripe;
 using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options => options.ServiceName = "ADN_pay");
 
+var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-    .WriteTo.File("logs/adnpay-.log", rollingInterval: RollingInterval.Day,
+    .WriteTo.File(Path.Combine(logDir, "adnpay-.log"), rollingInterval: RollingInterval.Day,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .Enrich.FromLogContext()
     .MinimumLevel.Information()
@@ -55,8 +57,10 @@ builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions
     options.MaxBufferedUnacknowledgedRenderBatches = 20;
 });
 
+var appDir = AppContext.BaseDirectory;
+var dbPath = Path.Combine(appDir, "AdnPayData.db");
 builder.Services.AddDbContext<BankDbContext>(options =>
-    options.UseSqlite("Data Source=AdnPayData.db"));
+    options.UseSqlite($"Data Source={dbPath}"));
 
 // --- RATE LIMITING ---
 builder.Services.AddRateLimiter(options =>
