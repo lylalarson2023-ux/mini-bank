@@ -201,18 +201,44 @@ using (var scope = app.Services.CreateScope())
 
     if (!db.UserProfiles.Any(u => u.IsAdmin))
     {
+        var adminEmail = Environment.GetEnvironmentVariable("ADMIN_EMAIL")
+            ?? app.Configuration["Admin:Email"]
+            ?? "admin@adnpay.ma";
+        var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+            ?? app.Configuration["Admin:Password"];
+        if (string.IsNullOrEmpty(adminPassword))
+        {
+            adminPassword = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace("+", "!").Replace("/", "@").Replace("=", "#");
+            Log.Warning("=== ADMIN PASSWORD GENERE (configurer ADMIN_PASSWORD) : {Pwd} ===", adminPassword);
+        }
         db.UserProfiles.Add(new UserProfile
         {
             Nom = "Admin",
             Prenom = "System",
-            Email = "admin@adnpay.ma",
-            MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
+            Email = adminEmail,
+            MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
             IsAdmin = true,
             Solde = 100_000_000L,
             Statut = UserStatus.VIP,
             CguAcceptees = true
         });
         db.SaveChanges();
+        Log.Information("Compte admin créé : {Email}", adminEmail);
+    }
+    else
+    {
+        var configuredPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
+            ?? app.Configuration["Admin:Password"];
+        if (!string.IsNullOrEmpty(configuredPassword))
+        {
+            var admin = db.UserProfiles.First(u => u.IsAdmin);
+            if (!BCrypt.Net.BCrypt.Verify(configuredPassword, admin.MotDePasseHash))
+            {
+                admin.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(configuredPassword);
+                db.SaveChanges();
+                Log.Information("Mot de passe admin mis à jour depuis la configuration.");
+            }
+        }
     }
 
     // Migration des mots de passe existants vers BCrypt
