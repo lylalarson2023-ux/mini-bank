@@ -14,10 +14,16 @@
     <!-- Projets de couche séparés : compilés à part, pas par le projet web -->
     <Compile Remove="ADN.Domain\**\*.cs" />
     <Content Remove="ADN.Domain\**\*" />
+    <Compile Remove="ADN.Infrastructure\**\*.cs" />
+    <Content Remove="ADN.Infrastructure\**\*" />
+    <Compile Remove="ADN.Application\**\*.cs" />
+    <Content Remove="ADN.Application\**\*" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="ADN.Domain\ADN.Domain.csproj" />
+    <ProjectReference Include="ADN.Infrastructure\ADN.Infrastructure.csproj" />
+    <ProjectReference Include="ADN.Application\ADN.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ADN_pay</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Cas d'usage / logique applicative : services métier partagés par le
+       web ET (à terme) l'API. Dépend du Domaine et de l'Infrastructure.
+       Aucune dépendance ASP.NET (ce qui est web-spécifique reste dans le
+       projet web : AuthService, FileService, Stripe/PawaPay, notifications UI). -->
+
+  <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
+  </ItemGroup>
+
+  <!-- Le SDK web importe ce namespace automatiquement ; pas le SDK librairie. -->
+  <ItemGroup>
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ADN.Domain\ADN.Domain.csproj" />
+    <ProjectReference Include="..\ADN.Infrastructure\ADN.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
