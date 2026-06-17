@@ -11,6 +11,13 @@
   <ItemGroup>
     <Compile Remove="ADN_pay.Tests\**\*.cs" />
     <Content Remove="ADN_pay.Tests\**\*" />
+    <!-- Projets de couche séparés : compilés à part, pas par le projet web -->
+    <Compile Remove="ADN.Domain\**\*.cs" />
+    <Content Remove="ADN.Domain\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="ADN.Domain\ADN.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>

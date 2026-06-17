@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ADN_pay</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Cœur métier pur : entités, règles, types valeur.
+       Aucune dépendance externe (ni EF, ni ASP.NET) — c'est ce qui rend
+       cette couche testable et réutilisable par l'API et le web. -->
+
+</Project>
