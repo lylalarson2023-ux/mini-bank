@@ -50,6 +50,12 @@ namespace ADN_pay.Services
             }
         }
 
+        public async Task<bool> EmailExisteAsync(string email)
+        {
+            var e = (email ?? "").Trim().ToLower();
+            return !string.IsNullOrEmpty(e) && await _context.UserProfiles.AnyAsync(u => u.Email == e);
+        }
+
         public async Task<bool> SeConnecter(string email, string password)
         {
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))

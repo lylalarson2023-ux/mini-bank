@@ -22,7 +22,37 @@
     <CascadingAuthenticationState>
         <Routes @rendermode="InteractiveServer" />
     </CascadingAuthenticationState>
-    <script src="_framework/blazor.web.js"></script>
+    <div id="components-reconnect-modal">
+        <div class="reconnect-content">
+            <div class="reconnect-spinner"></div>
+            <p>Reconnexion en cours...</p>
+        </div>
+    </div>
+    <script src="_framework/blazor.web.js" autostart="false"></script>
+    <script>
+        Blazor.start({
+            circuit: {
+                reconnectionOptions: {
+                    maxRetries: 12,
+                    retryIntervalMilliseconds: function (previousAttempts) {
+                        if (previousAttempts >= 12) return null;
+                        return Math.min(500 * Math.pow(1.8, previousAttempts), 20000);
+                    }
+                },
+                reconnectionDisplay: {
+                    show: function (ctx) {
+                        document.getElementById('components-reconnect-modal').style.display = 'flex';
+                    },
+                    hide: function () {
+                        document.getElementById('components-reconnect-modal').style.display = 'none';
+                    },
+                    failed: function () {
+                        document.getElementById('components-reconnect-modal').innerHTML = '<div class="reconnect-content"><p style="color:var(--danger)">Connexion perdue.<br/><a href="/" style="color:var(--adn-blue)">Actualiser</a></p></div>';
+                    }
+                }
+            }
+        });
+    </script>
     <script src="js/theme.js"></script>
     <script src="js/upload.js"></script>
 </body>
