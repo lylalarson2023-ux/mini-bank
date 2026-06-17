@@ -3559,3 +3559,22 @@ h1, h2, h3, h4, h5, h6,
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+/* Blazor bascule ces classes sur #components-reconnect-modal selon l'état du
+   circuit. La règle id+classe (spécificité > l'id seul) rend le modal visible. */
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-rejected {
+  display: flex;
+}
+.reconnect-lost { display: none; }
+/* En échec/rejet : on masque le spinner + "reconnexion", on montre "connexion perdue". */
+#components-reconnect-modal.components-reconnect-failed .reconnect-retrying,
+#components-reconnect-modal.components-reconnect-rejected .reconnect-retrying,
+#components-reconnect-modal.components-reconnect-failed .reconnect-spinner,
+#components-reconnect-modal.components-reconnect-rejected .reconnect-spinner {
+  display: none;
+}
+#components-reconnect-modal.components-reconnect-failed .reconnect-lost,
+#components-reconnect-modal.components-reconnect-rejected .reconnect-lost {
+  display: block;
+}

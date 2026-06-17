@@ -18,7 +18,14 @@ using Polly;
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "ADN_pay");
 
-var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+// En service Windows, le répertoire courant est System32 → on ancre sur le dossier
+// de l'exe (publish/). En dev, on garde le dossier de travail (racine du projet),
+// pour ne pas déplacer la base/les logs vers bin/.
+var baseDir = Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()
+    ? AppContext.BaseDirectory
+    : Directory.GetCurrentDirectory();
+
+var logDir = Path.Combine(baseDir, "logs");
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(Path.Combine(logDir, "adnpay-.log"), rollingInterval: RollingInterval.Day,
@@ -57,8 +64,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions
     options.MaxBufferedUnacknowledgedRenderBatches = 20;
 });
 
-var appDir = AppContext.BaseDirectory;
-var dbPath = Path.Combine(appDir, "AdnPayData.db");
+var dbPath = Path.Combine(baseDir, "AdnPayData.db");
 builder.Services.AddDbContext<BankDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 
@@ -229,19 +235,19 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
         Log.Information("Compte admin créé : {Email}", adminEmail);
     }
-    else
+    else if (string.Equals(Environment.GetEnvironmentVariable("ADMIN_PASSWORD_RESET"), "true", StringComparison.OrdinalIgnoreCase))
     {
+        // Réinitialisation VOLONTAIRE et ponctuelle (ADMIN_PASSWORD_RESET=true).
+        // Sans ce drapeau, on ne touche jamais au mot de passe admin au démarrage,
+        // pour ne pas écraser un changement fait par l'admin via l'UI.
         var configuredPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD")
             ?? app.Configuration["Admin:Password"];
         if (!string.IsNullOrEmpty(configuredPassword))
         {
             var admin = db.UserProfiles.First(u => u.IsAdmin);
-            if (!BCrypt.Net.BCrypt.Verify(configuredPassword, admin.MotDePasseHash))
-            {
-                admin.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(configuredPassword);
-                db.SaveChanges();
-                Log.Information("Mot de passe admin mis à jour depuis la configuration.");
-            }
+            admin.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(configuredPassword);
+            db.SaveChanges();
+            Log.Warning("Mot de passe admin réinitialisé depuis la configuration (ADMIN_PASSWORD_RESET).");
         }
     }
 

@@ -22,10 +22,13 @@
     <CascadingAuthenticationState>
         <Routes @rendermode="InteractiveServer" />
     </CascadingAuthenticationState>
+    @* Overlay piloté par Blazor via les classes components-reconnect-show / -failed
+       / -rejected (cf. theme.css). Les états sont gérés en CSS, pas en JS. *@
     <div id="components-reconnect-modal">
         <div class="reconnect-content">
             <div class="reconnect-spinner"></div>
-            <p>Reconnexion en cours...</p>
+            <p class="reconnect-retrying">Reconnexion en cours...</p>
+            <p class="reconnect-lost">Connexion perdue. <a href="" onclick="location.reload();return false;">Actualiser</a></p>
         </div>
     </div>
     <script src="_framework/blazor.web.js" autostart="false"></script>
@@ -37,17 +40,6 @@
                     retryIntervalMilliseconds: function (previousAttempts) {
                         if (previousAttempts >= 12) return null;
                         return Math.min(500 * Math.pow(1.8, previousAttempts), 20000);
-                    }
-                },
-                reconnectionDisplay: {
-                    show: function (ctx) {
-                        document.getElementById('components-reconnect-modal').style.display = 'flex';
-                    },
-                    hide: function () {
-                        document.getElementById('components-reconnect-modal').style.display = 'none';
-                    },
-                    failed: function () {
-                        document.getElementById('components-reconnect-modal').innerHTML = '<div class="reconnect-content"><p style="color:var(--danger)">Connexion perdue.<br/><a href="/" style="color:var(--adn-blue)">Actualiser</a></p></div>';
                     }
                 }
             }
