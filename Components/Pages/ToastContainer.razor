@@ -47,18 +47,26 @@
 
     private async void HandleNewNotif(Notification n)
     {
-        await InvokeAsync(() => {
-            activeAlerts.Add(n);
-            StateHasChanged();
-        });
+        // async void (signature d'event) : on protège tout le corps — une exception
+        // non observée ici ferait tomber le circuit Blazor. Toast = non critique.
+        try
+        {
+            await InvokeAsync(() => {
+                activeAlerts.Add(n);
+                StateHasChanged();
+            });
 
+            await Task.Delay(4000); // Éphémère : 4 secondes
 
-        await Task.Delay(4000); // Éphémère : 4 secondes
-
-        await InvokeAsync(() => {
-            activeAlerts.Remove(n);
-            StateHasChanged();
-        });
+            await InvokeAsync(() => {
+                activeAlerts.Remove(n);
+                StateHasChanged();
+            });
+        }
+        catch
+        {
+            // Échec d'affichage d'un toast : sans gravité, on ne propage pas.
+        }
     }
 
     private string GetIcon(NotificationType t) => t switch {

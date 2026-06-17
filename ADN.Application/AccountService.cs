@@ -44,6 +44,16 @@ namespace ADN_pay.Services
             var user = await _context.UserProfiles.FindAsync(_user.Profil.Id);
             if (user == null) return false;
 
+            // Re-vérification sur la valeur DB autoritaire : le garde-fou initial
+            // s'appuie sur le solde en cache (_user.Profil.Solde), qui peut être
+            // périmé → sans ce contrôle, un débit pourrait passer le solde négatif.
+            if ((type == "RETRAIT" || type == "VIREMENT") && user.Solde < montantCentimes)
+            {
+                _logger.LogWarning("{Type} refusé : solde DB insuffisant (solde={Solde}, montant={Montant})",
+                    type, user.Solde.ToDh(), montantCentimes.ToDh());
+                return false;
+            }
+
             if (type == "RETRAIT" || type == "VIREMENT")
             {
                 user.Solde -= montantCentimes;
@@ -523,7 +533,11 @@ namespace ADN_pay.Services
             foreach (var tx in txs)
             {
                 var day = tx.Date.Date;
-                dailyNet[day] = dailyNet.GetValueOrDefault(day) + (tx.IsEntree ? tx.Montant : -tx.Montant);
+                // Seules les vraies entrées/sorties affectent le solde courant ; les
+                // écritures internes (ÉPARGNE / boost tuteur) ne le touchent pas et
+                // ne doivent donc pas être soustraites de la reconstitution.
+                var delta = tx.IsEntree ? tx.Montant : tx.IsSortie ? -tx.Montant : 0L;
+                dailyNet[day] = dailyNet.GetValueOrDefault(day) + delta;
             }
 
             // Reconstitution vers le passé depuis le solde actuel

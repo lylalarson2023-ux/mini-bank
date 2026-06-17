@@ -638,20 +638,20 @@
         {
             // 1. Nom / prénom / téléphone (l'e-mail ne change pas ici)
             var (success, msg) = await Bank.UpdateProfileAsync(
-                profileModel.Nom, profileModel.Prenom, profileModel.Telephone, Bank.Profil.Email);
+                profileModel.Nom, profileModel.Prenom, profileModel.Telephone ?? "", Bank.Profil.Email);
             profileMsg = msg;
             profileSuccess = success;
 
             // 2. E-mail : déclenche l'envoi d'un code de confirmation à la nouvelle adresse
             if (success && EmailModifie)
             {
-                var (ok, m) = await Bank.RequestEmailChangeAsync(profileModel.Email, emailChangePassword);
+                var (ok, m) = await Bank.RequestEmailChangeAsync(profileModel.Email ?? "", emailChangePassword);
                 profileMsg = m;
                 profileSuccess = ok;
                 if (ok)
                 {
                     emailChangeStep = true;
-                    pendingEmailDisplay = profileModel.Email.Trim().ToLowerInvariant();
+                    pendingEmailDisplay = (profileModel.Email ?? "").Trim().ToLowerInvariant();
                     emailChangePassword = "";
                 }
             }
