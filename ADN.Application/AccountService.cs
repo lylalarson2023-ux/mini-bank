@@ -7,16 +7,16 @@ namespace ADN_pay.Services
 {
     public class AccountService
     {
-        private readonly BankDbContext _context;
+        private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
         private readonly ILogger<AccountService> _logger;
         private readonly NotificationHistoryService _notifHist;
         private readonly IEmailSender _email;
 
-        public AccountService(BankDbContext context, UserContext user, ILogger<AccountService> logger,
+        public AccountService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AccountService> logger,
             NotificationHistoryService notifHist, IEmailSender email)
         {
-            _context = context;
+            _factory = factory;
             _user = user;
             _logger = logger;
             _notifHist = notifHist;
@@ -41,17 +41,28 @@ namespace ADN_pay.Services
                     return false;
                 }
             }
-            var user = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var user = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (user == null) return false;
 
-            // Re-vérification sur la valeur DB autoritaire : le garde-fou initial
-            // s'appuie sur le solde en cache (_user.Profil.Solde), qui peut être
-            // périmé → sans ce contrôle, un débit pourrait passer le solde négatif.
-            if ((type == "RETRAIT" || type == "VIREMENT") && user.Solde < montantCentimes)
+            if (type == "RETRAIT" || type == "VIREMENT")
             {
-                _logger.LogWarning("{Type} refusé : solde DB insuffisant (solde={Solde}, montant={Montant})",
-                    type, user.Solde.ToDh(), montantCentimes.ToDh());
-                return false;
+                // Reporter l'état des plafonds (déjà réinitialisés sur _user.Profil par
+                // VerifierPlafond) sur l'entité DB, qui porterait sinon les compteurs de
+                // la veille → la réinitialisation journalière/mensuelle ne serait pas persistée.
+                user.MontantJournalierUtilise = _user.Profil.MontantJournalierUtilise;
+                user.MontantMensuelUtilise = _user.Profil.MontantMensuelUtilise;
+                user.DerniereReinitPlafond = _user.Profil.DerniereReinitPlafond;
+
+                // Re-vérification sur la valeur DB autoritaire : le garde-fou initial
+                // s'appuie sur le solde en cache (_user.Profil.Solde), qui peut être
+                // périmé → sans ce contrôle, un débit pourrait passer le solde négatif.
+                if (user.Solde < montantCentimes)
+                {
+                    _logger.LogWarning("{Type} refusé : solde DB insuffisant (solde={Solde}, montant={Montant})",
+                        type, user.Solde.ToDh(), montantCentimes.ToDh());
+                    return false;
+                }
             }
 
             if (type == "RETRAIT" || type == "VIREMENT")
@@ -63,7 +74,7 @@ namespace ADN_pay.Services
             else user.Solde += montantCentimes;
 
             user.NombreTransactions++;
-            _context.Transactions.Add(new Transaction
+            ctx.Transactions.Add(new Transaction
             {
                 UserId = user.Id,
                 Montant = montantCentimes,
@@ -73,10 +84,11 @@ namespace ADN_pay.Services
                 Libelle = $"{type}: {motif}",
                 Date = DateTime.UtcNow
             });
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.Solde = user.Solde;
             _user.Profil.MontantJournalierUtilise = user.MontantJournalierUtilise;
             _user.Profil.MontantMensuelUtilise = user.MontantMensuelUtilise;
+            _user.Profil.NombreTransactions = user.NombreTransactions;
 
             var label = type switch { "DÉPÔT" => "Dépôt", "RETRAIT" => "Retrait", "VIREMENT" => "Virement", _ => type };
             await _notifHist.AddNotificationAsync(
@@ -88,37 +100,45 @@ namespace ADN_pay.Services
         }
 
         public async Task<List<Transaction>> GetHistoriqueAsync()
-            => await _context.Transactions
+        {
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.Transactions
                 .Where(t => t.UserId == _user.Profil.Id)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
+        }
 
         public async Task<long> GetBalanceAsync()
         {
-            var account = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var account = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             return account?.Solde ?? 0L;
         }
 
         public async Task<List<Transaction>> GetRecentTransactionsAsync(int count)
-            => await _context.Transactions
+        {
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.Transactions
                 .Where(t => t.UserId == _user.Profil.Id)
                 .OrderByDescending(t => t.Date)
                 .Take(count)
                 .ToListAsync();
+        }
 
         // ADR-001 : tous les montants retournés en centimes (long)
         public async Task<(long RevenusMois, long DepensesMois, long TotalEpargne,
             List<(DateTime Jour, long Entrees, long Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
         {
+            await using var ctx = await _factory.CreateDbContextAsync();
             var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var transactionsMois = await _context.Transactions
+            var transactionsMois = await ctx.Transactions
                 .Where(t => t.UserId == _user.Profil.Id && t.Date >= debutMois)
                 .ToListAsync();
 
             var revenus  = transactionsMois.Where(t => t.IsEntree).Sum(t => t.Montant);
             var depenses = transactionsMois.Where(t => t.IsSortie).Sum(t => t.Montant);
 
-            var totalEpargne = await _context.SavingsPockets
+            var totalEpargne = await ctx.SavingsPockets
                 .Where(p => p.UserId == _user.Profil.Id)
                 .SumAsync(p => p.MontantActuel);
 
@@ -143,17 +163,24 @@ namespace ADN_pay.Services
             var (allow, msg) = VerifierPlafond(montantCentimes);
             if (!allow) return false;
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var sender = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var sender = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (sender == null || sender.Solde < montantCentimes) return false;
 
                 var targetEmail = emailDestinataire.Trim().ToLower();
                 if (sender.Email.ToLower() == targetEmail) return false;
 
-                var recipient = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == targetEmail);
+                var recipient = await ctx.UserProfiles.FirstOrDefaultAsync(u => u.Email == targetEmail);
                 if (recipient == null) return false;
+
+                // Reporter l'état des plafonds réinitialisés (VerifierPlafond ci-dessus a
+                // mis à jour _user.Profil) sur l'entité DB avant d'incrémenter les compteurs.
+                sender.MontantJournalierUtilise = _user.Profil.MontantJournalierUtilise;
+                sender.MontantMensuelUtilise = _user.Profil.MontantMensuelUtilise;
+                sender.DerniereReinitPlafond = _user.Profil.DerniereReinitPlafond;
 
                 sender.Solde -= montantCentimes;
                 sender.MontantJournalierUtilise += montantCentimes;
@@ -162,7 +189,7 @@ namespace ADN_pay.Services
                 sender.NombreTransactions++;
                 recipient.NombreTransactions++;
 
-                _context.Transactions.Add(new Transaction
+                ctx.Transactions.Add(new Transaction
                 {
                     UserId = sender.Id,
                     Montant = montantCentimes,
@@ -172,7 +199,7 @@ namespace ADN_pay.Services
                     Libelle = $"Virement vers {recipient.Email}",
                     Date = DateTime.UtcNow
                 });
-                _context.Transactions.Add(new Transaction
+                ctx.Transactions.Add(new Transaction
                 {
                     UserId = recipient.Id,
                     Montant = montantCentimes,
@@ -183,11 +210,12 @@ namespace ADN_pay.Services
                     Date = DateTime.UtcNow
                 });
 
-                await _context.SaveChangesAsync();
+                await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 _user.Profil.Solde = sender.Solde;
                 _user.Profil.MontantJournalierUtilise = sender.MontantJournalierUtilise;
                 _user.Profil.MontantMensuelUtilise = sender.MontantMensuelUtilise;
+                _user.Profil.NombreTransactions = sender.NombreTransactions;
                 _logger.LogInformation("Virement de {Montant} de {Sender} vers {Recipient}",
                     montantCentimes.ToDh(), PiiMasker.MaskEmail(sender.Email), PiiMasker.MaskEmail(recipient.Email));
 
@@ -205,13 +233,14 @@ namespace ADN_pay.Services
 
         public async Task<bool> DefinirTuteur(string email)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return false;
             u.TuteurEmail = email;
             u.TuteurAutorise = true;
             _user.Profil.TuteurEmail = email;
             _user.Profil.TuteurAutorise = true;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Tuteur autorisé : {email}", "SUCCESS", "TUTEUR");
             _logger.LogInformation("Tuteur {TuteurEmail} autorisé pour {Email}",
                 PiiMasker.MaskEmail(email), PiiMasker.MaskEmail(_user.Profil.Email));
@@ -220,13 +249,14 @@ namespace ADN_pay.Services
 
         public async Task<bool> RevoquerTuteur()
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return false;
             u.TuteurEmail = "";
             u.TuteurAutorise = false;
             _user.Profil.TuteurEmail = "";
             _user.Profil.TuteurAutorise = false;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationAsync("Tuteur révoqué", "INFO", "TUTEUR");
             _logger.LogInformation("Tuteur révoqué pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
@@ -236,14 +266,15 @@ namespace ADN_pay.Services
         // L'e-mail n'est PAS modifié ici : il passe par le flux vérifié (RequestEmailChange/ConfirmEmailChange).
         public async Task<(bool Success, string Message)> UpdateProfileAsync(string nom, string prenom, string telephone, string email, string? currentPasswordForEmail = null)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
 
             u.Nom = nom?.Trim() ?? "";
             u.Prenom = prenom?.Trim() ?? "";
             u.Telephone = telephone?.Trim() ?? "";
 
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
 
             _user.Profil.Nom = u.Nom;
             _user.Profil.Prenom = u.Prenom;
@@ -257,7 +288,8 @@ namespace ADN_pay.Services
         // Étape 1 : demande de changement d'e-mail. Vérifie le mot de passe, envoie un code à la NOUVELLE adresse.
         public async Task<(bool Success, string Message)> RequestEmailChangeAsync(string newEmail, string currentPassword)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
 
             var emailLower = (newEmail ?? "").Trim().ToLowerInvariant();
@@ -267,14 +299,17 @@ namespace ADN_pay.Services
                 return (false, "Cette adresse est déjà la vôtre.");
             if (string.IsNullOrEmpty(currentPassword) || !BCrypt.Net.BCrypt.Verify(currentPassword, u.MotDePasseHash))
                 return (false, "Mot de passe actuel incorrect.");
-            if (await _context.UserProfiles.AnyAsync(x => x.Email == emailLower))
+            if (await ctx.UserProfiles.AnyAsync(x => x.Email == emailLower))
                 return (false, "Cet e-mail est déjà utilisé.");
 
             var code = Random.Shared.Next(100000, 1000000).ToString();
             u.PendingEmail = emailLower;
             u.EmailChangeCodeHash = BCrypt.Net.BCrypt.HashPassword(code);
             u.EmailChangeCodeExpiry = DateTime.UtcNow.AddMinutes(15);
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
+            _user.Profil.PendingEmail = u.PendingEmail;
+            _user.Profil.EmailChangeCodeHash = u.EmailChangeCodeHash;
+            _user.Profil.EmailChangeCodeExpiry = u.EmailChangeCodeExpiry;
 
             var html = $@"<p>Bonjour,</p>
 <p>Vous avez demandé à associer cette adresse à votre compte <strong>ADN_pay</strong>.</p>
@@ -292,27 +327,34 @@ namespace ADN_pay.Services
         // Étape 2 : confirmation du code → applique le changement d'e-mail.
         public async Task<(bool Success, string Message)> ConfirmEmailChangeAsync(string code)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
             if (string.IsNullOrEmpty(u.PendingEmail) || string.IsNullOrEmpty(u.EmailChangeCodeHash))
                 return (false, "Aucune demande de changement d'e-mail en cours.");
             if (u.EmailChangeCodeExpiry < DateTime.UtcNow)
             {
                 u.PendingEmail = null; u.EmailChangeCodeHash = null; u.EmailChangeCodeExpiry = null;
-                await _context.SaveChangesAsync();
+                await ctx.SaveChangesAsync();
+                _user.Profil.PendingEmail = null;
+                _user.Profil.EmailChangeCodeHash = null;
+                _user.Profil.EmailChangeCodeExpiry = null;
                 return (false, "Le code a expiré. Recommencez la demande.");
             }
             if (string.IsNullOrWhiteSpace(code) || !BCrypt.Net.BCrypt.Verify(code.Trim(), u.EmailChangeCodeHash))
                 return (false, "Code incorrect.");
             // Double-vérification d'unicité (au cas où l'e-mail aurait été pris entre-temps)
-            if (await _context.UserProfiles.AnyAsync(x => x.Email == u.PendingEmail))
+            if (await ctx.UserProfiles.AnyAsync(x => x.Email == u.PendingEmail))
                 return (false, "Cet e-mail vient d'être utilisé par un autre compte.");
 
             var ancienEmail = u.Email;
             u.Email = u.PendingEmail!;
             u.PendingEmail = null; u.EmailChangeCodeHash = null; u.EmailChangeCodeExpiry = null;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.Email = u.Email;
+            _user.Profil.PendingEmail = null;
+            _user.Profil.EmailChangeCodeHash = null;
+            _user.Profil.EmailChangeCodeExpiry = null;
 
             // Avertit l'ancienne adresse (bonne pratique de sécurité)
             await _email.SendAsync(ancienEmail, "ADN_pay — Votre adresse e-mail a été modifiée",
@@ -356,14 +398,16 @@ namespace ADN_pay.Services
             if (commonPasswords.Contains(newPassword))
                 return (false, "Ce mot de passe est trop commun. Veuillez en choisir un plus sécurisé.");
 
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
 
             if (!BCrypt.Net.BCrypt.Verify(currentPassword, u.MotDePasseHash))
                 return (false, "Mot de passe actuel incorrect");
 
             u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
+            _user.Profil.MotDePasseHash = u.MotDePasseHash;
 
             await _notifHist.AddNotificationAsync("Mot de passe changé", "SUCCESS", "PROFIL");
             _logger.LogInformation("Mot de passe changé pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
@@ -373,7 +417,8 @@ namespace ADN_pay.Services
         // --- EXPORT DES DONNÉES (RGPD / Loi 09-08) ---
         public async Task<string> ExportPersonalDataAsync()
         {
-            var u = await _context.UserProfiles
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles
                 .Include(x => x.Transactions)
                 .Include(x => x.SavingsPockets)
                 .FirstOrDefaultAsync(x => x.Id == _user.Profil.Id);
@@ -433,7 +478,8 @@ namespace ADN_pay.Services
         // écritures financières imposée par la lutte anti-blanchiment (loi 43-05).
         public async Task<(bool Success, string Message)> SupprimerCompteAsync()
         {
-            var u = await _context.UserProfiles
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles
                 .Include(x => x.SavingsPockets)
                 .FirstOrDefaultAsync(x => x.Id == _user.Profil.Id);
 
@@ -469,7 +515,7 @@ namespace ADN_pay.Services
             u.DateCloture = DateTime.UtcNow;
 
             // Les Transactions sont CONSERVÉES (obligation de rétention AML, loi 43-05).
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
 
             _user.Profil = new();
             _user.EstConnecte = false;
@@ -482,10 +528,11 @@ namespace ADN_pay.Services
         public async Task<bool> SoumettreDossierKYC(UserProfile kyc)
         {
             if (_user.Profil.Solde < 10_000L) return false;
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null) return false;
                 u.Nom = kyc.Nom;
                 u.Prenom = kyc.Prenom;
@@ -503,10 +550,26 @@ namespace ADN_pay.Services
                 u.CguAcceptees = kyc.CguAcceptees;
                 u.PendingPremiumUpgrade = true;
                 u.Solde -= 10_000L; // 100 DH en centimes
-                await _context.SaveChangesAsync();
+                await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 _user.Profil.Solde = u.Solde;
                 _user.Profil.PendingPremiumUpgrade = true;
+                // Reporter les champs KYC sur le profil en cache (auparavant propagés
+                // implicitement par le change-tracking du contexte partagé).
+                _user.Profil.Nom = u.Nom;
+                _user.Profil.Prenom = u.Prenom;
+                _user.Profil.DateNaissance = u.DateNaissance;
+                _user.Profil.LieuNaissance = u.LieuNaissance;
+                _user.Profil.Nationalite = u.Nationalite;
+                _user.Profil.PassportOuCIN = u.PassportOuCIN;
+                _user.Profil.SituationMatrimoniale = u.SituationMatrimoniale;
+                _user.Profil.AdresseCasablanca = u.AdresseCasablanca;
+                _user.Profil.NiveauEtude = u.NiveauEtude;
+                _user.Profil.Telephone = u.Telephone;
+                _user.Profil.ReseauPrincipal = u.ReseauPrincipal;
+                _user.Profil.DocIdentiteUrl = u.DocIdentiteUrl;
+                _user.Profil.DocDomicileUrl = u.DocDomicileUrl;
+                _user.Profil.CguAcceptees = u.CguAcceptees;
                 await _notifHist.AddNotificationAsync("Dossier KYC soumis — en attente de validation", "INFO", "KYC");
                 _logger.LogInformation("Dossier KYC soumis pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
@@ -524,7 +587,8 @@ namespace ADN_pay.Services
             var today = DateTime.UtcNow.Date;
             var from  = today.AddDays(-29);
 
-            var txs = await _context.Transactions
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var txs = await ctx.Transactions
                 .Where(t => t.UserId == _user.Profil.Id && t.Date >= from)
                 .ToListAsync();
 
@@ -554,7 +618,8 @@ namespace ADN_pay.Services
         // --- HISTORIQUE CONNEXIONS ---
         public async Task<List<UserLogin>> GetLoginHistoryAsync(int count = 20)
         {
-            return await _context.UserLogins
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.UserLogins
                 .Where(l => l.UserId == _user.Profil.Id)
                 .OrderByDescending(l => l.Date)
                 .Take(count)
@@ -590,13 +655,14 @@ namespace ADN_pay.Services
 
         public async Task<(bool Success, string Message)> UpdatePlafondsAsync(long journalierCentimes, long mensuelCentimes)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
             if (journalierCentimes <= 0 || mensuelCentimes <= 0) return (false, "Les plafonds doivent être positifs");
             if (journalierCentimes > mensuelCentimes) return (false, "Le plafond journalier ne peut pas dépasser le plafond mensuel");
             u.PlafondJournalier = journalierCentimes;
             u.PlafondMensuel = mensuelCentimes;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.PlafondJournalier = journalierCentimes;
             _user.Profil.PlafondMensuel = mensuelCentimes;
             await _notifHist.AddNotificationAsync(
@@ -609,7 +675,8 @@ namespace ADN_pay.Services
         // --- BÉNÉFICIAIRES ---
         public async Task<List<Beneficiaire>> GetBeneficiairesAsync()
         {
-            return await _context.Beneficiaires
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.Beneficiaires
                 .Where(b => b.UserId == _user.Profil.Id)
                 .OrderByDescending(b => b.DateAjout)
                 .ToListAsync();
@@ -620,9 +687,10 @@ namespace ADN_pay.Services
             if (string.IsNullOrWhiteSpace(nom) || string.IsNullOrWhiteSpace(email))
                 return (false, "Nom et email requis");
             var emailLower = email.Trim().ToLower();
-            if (await _context.Beneficiaires.AnyAsync(b => b.UserId == _user.Profil.Id && b.Email == emailLower))
+            await using var ctx = await _factory.CreateDbContextAsync();
+            if (await ctx.Beneficiaires.AnyAsync(b => b.UserId == _user.Profil.Id && b.Email == emailLower))
                 return (false, "Ce bénéficiaire existe déjà");
-            _context.Beneficiaires.Add(new Beneficiaire
+            ctx.Beneficiaires.Add(new Beneficiaire
             {
                 UserId = _user.Profil.Id,
                 Nom = nom.Trim(),
@@ -630,7 +698,7 @@ namespace ADN_pay.Services
                 Banque = banque?.Trim(),
                 RIB = rib?.Trim()
             });
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Bénéficiaire ajouté : {nom} ({emailLower})", "SUCCESS", "BENEFICIAIRE");
             _logger.LogInformation("Bénéficiaire {Nom} ({Email}) ajouté par {User}",
                 nom, PiiMasker.MaskEmail(emailLower), PiiMasker.MaskEmail(_user.Profil.Email));
@@ -639,10 +707,11 @@ namespace ADN_pay.Services
 
         public async Task<bool> SupprimerBeneficiaireAsync(int id)
         {
-            var b = await _context.Beneficiaires.FirstOrDefaultAsync(x => x.Id == id && x.UserId == _user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var b = await ctx.Beneficiaires.FirstOrDefaultAsync(x => x.Id == id && x.UserId == _user.Profil.Id);
             if (b == null) return false;
-            _context.Beneficiaires.Remove(b);
-            await _context.SaveChangesAsync();
+            ctx.Beneficiaires.Remove(b);
+            await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationAsync($"Bénéficiaire #{id} supprimé", "INFO", "BENEFICIAIRE");
             _logger.LogInformation("Bénéficiaire #{Id} supprimé par {User}", id, PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
@@ -652,7 +721,8 @@ namespace ADN_pay.Services
         public async Task<(bool Success, string Message)> UpdateNotificationPrefsAsync(
             bool connexion, bool virement, bool depot, bool retrait, bool epargne, bool credit, bool promo)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
             u.NotifConnexion = connexion;
             u.NotifVirement = virement;
@@ -661,7 +731,7 @@ namespace ADN_pay.Services
             u.NotifEpargne = epargne;
             u.NotifCredit = credit;
             u.NotifPromo = promo;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.NotifConnexion = connexion;
             _user.Profil.NotifVirement = virement;
             _user.Profil.NotifDepot = depot;
@@ -678,10 +748,11 @@ namespace ADN_pay.Services
         // --- RÉVOCATION SESSIONS ---
         public async Task<bool> RevokeAllSessionsAsync()
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return false;
             u.SecurityStamp = Guid.NewGuid().ToString();
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.SecurityStamp = u.SecurityStamp;
             await _notifHist.AddNotificationAsync("Toutes les sessions ont été révoquées", "INFO", "SECURITE");
             _logger.LogWarning("Toutes les sessions révoquées pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
@@ -691,7 +762,8 @@ namespace ADN_pay.Services
         // --- ADMIN : tout l'historique des connexions ---
         public async Task<List<UserLogin>> GetAllLoginHistoryAsync(int count = 50)
         {
-            return await _context.UserLogins
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.UserLogins
                 .OrderByDescending(l => l.Date)
                 .Take(count)
                 .ToListAsync();

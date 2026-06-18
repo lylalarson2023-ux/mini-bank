@@ -6,42 +6,45 @@ namespace ADN_pay.Services
 {
     public class NotificationHistoryService
     {
-        private readonly BankDbContext _context;
+        private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
 
-        public NotificationHistoryService(BankDbContext context, UserContext user)
+        public NotificationHistoryService(IDbContextFactory<BankDbContext> factory, UserContext user)
         {
-            _context = context;
+            _factory = factory;
             _user = user;
         }
 
         public async Task AddNotificationAsync(string message, string type = "INFO", string categorie = "GENERAL")
         {
-            _context.NotificationHistories.Add(new NotificationHistory
+            await using var ctx = await _factory.CreateDbContextAsync();
+            ctx.NotificationHistories.Add(new NotificationHistory
             {
                 UserId = _user.Profil.Id,
                 Message = message,
                 Type = type,
                 Categorie = categorie
             });
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
         }
 
         public async Task AddNotificationForUserAsync(int userId, string message, string type = "INFO", string categorie = "GENERAL")
         {
-            _context.NotificationHistories.Add(new NotificationHistory
+            await using var ctx = await _factory.CreateDbContextAsync();
+            ctx.NotificationHistories.Add(new NotificationHistory
             {
                 UserId = userId,
                 Message = message,
                 Type = type,
                 Categorie = categorie
             });
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
         }
 
         public async Task<List<NotificationHistory>> GetNotificationsAsync(int count = 20)
         {
-            return await _context.NotificationHistories
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.NotificationHistories
                 .Where(n => n.UserId == _user.Profil.Id)
                 .OrderByDescending(n => n.Date)
                 .Take(count)
@@ -50,33 +53,37 @@ namespace ADN_pay.Services
 
         public async Task<int> GetUnreadCountAsync()
         {
-            return await _context.NotificationHistories
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.NotificationHistories
                 .CountAsync(n => n.UserId == _user.Profil.Id && !n.Lu);
         }
 
         public async Task MarkAsReadAsync(int id)
         {
-            var n = await _context.NotificationHistories.FindAsync(id);
-            if (n != null) { n.Lu = true; await _context.SaveChangesAsync(); }
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var n = await ctx.NotificationHistories.FindAsync(id);
+            if (n != null) { n.Lu = true; await ctx.SaveChangesAsync(); }
         }
 
         public async Task MarkAllAsReadAsync()
         {
-            var unread = await _context.NotificationHistories
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var unread = await ctx.NotificationHistories
                 .Where(n => n.UserId == _user.Profil.Id && !n.Lu)
                 .ToListAsync();
             foreach (var n in unread) n.Lu = true;
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
         }
 
         public async Task<int> DeleteOldNotificationsAsync(int keepDays = 30)
         {
+            await using var ctx = await _factory.CreateDbContextAsync();
             var cutoff = DateTime.UtcNow.AddDays(-keepDays);
-            var old = await _context.NotificationHistories
+            var old = await ctx.NotificationHistories
                 .Where(n => n.UserId == _user.Profil.Id && n.Date < cutoff)
                 .ToListAsync();
-            _context.NotificationHistories.RemoveRange(old);
-            await _context.SaveChangesAsync();
+            ctx.NotificationHistories.RemoveRange(old);
+            await ctx.SaveChangesAsync();
             return old.Count;
         }
     }

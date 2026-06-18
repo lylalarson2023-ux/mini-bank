@@ -65,7 +65,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions
 });
 
 var dbPath = Path.Combine(baseDir, "AdnPayData.db");
-builder.Services.AddDbContext<BankDbContext>(options =>
+// Factory (et non AddDbContext scoped) : en Blazor Server le scope DI vit toute la
+// durée du circuit, donc un DbContext scoped est partagé par tous les composants →
+// « A second operation was started on this context instance… » au moindre double-clic.
+// Chaque service crée/dispose son propre contexte par opération via IDbContextFactory.
+builder.Services.AddDbContextFactory<BankDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 
 // --- RATE LIMITING ---
@@ -159,7 +163,8 @@ var app = builder.Build();
 // --- MIGRATIONS AUTO + SEED ADMIN ---
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<BankDbContext>();
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankDbContext>>();
+    using var db = dbFactory.CreateDbContext();
     db.Database.EnsureCreated();
 
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PremiumValidatedAt datetime"); } catch { }
@@ -274,11 +279,12 @@ static string SignToken(string payload, string secret)
     return Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 }
 
-app.MapGet("/api/auth/login-handler", async (HttpContext ctx, BankDbContext db, int userId, string sig) =>
+app.MapGet("/api/auth/login-handler", async (HttpContext ctx, IDbContextFactory<BankDbContext> dbFactory, int userId, string sig) =>
 {
     if (sig != SignToken(userId.ToString(), loginSecret))
         return Results.Redirect("/login?error=invalid");
 
+    await using var db = await dbFactory.CreateDbContextAsync();
     var user = await db.UserProfiles.FindAsync(userId);
     if (user == null) return Results.Redirect("/login?error=invalid");
 
@@ -304,8 +310,9 @@ app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
 });
 
 // --- EXPORT CSV DES UTILISATEURS (admin uniquement) ---
-app.MapGet("/api/admin/users.csv", async (BankDbContext db) =>
+app.MapGet("/api/admin/users.csv", async (IDbContextFactory<BankDbContext> dbFactory) =>
 {
+    await using var db = await dbFactory.CreateDbContextAsync();
     static string Esc(string? v)
     {
         v ??= "";

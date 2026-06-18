@@ -19,6 +19,7 @@ namespace ADN_pay.Data
         public DbSet<AdminLog> AdminLogs { get; set; }
         public DbSet<NotificationHistory> NotificationHistories { get; set; }
         public DbSet<PawaPayDeposit> PawaPayDeposits { get; set; }
+        public DbSet<RefreshToken> RefreshTokens { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
