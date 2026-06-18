@@ -1,0 +1,27 @@
+@implements IDisposable
+@inject ADN_pay.Admin.Services.ToastService Toasts
+
+<div class="toast-host">
+    @foreach (var m in Toasts.Messages)
+    {
+        <div class="toast toast-@m.Level.ToString().ToLower()" @key="m.Id" @onclick="() => Toasts.Remove(m.Id)">
+            <i class="bi @Icon(m.Level)"></i>
+            <span>@m.Text</span>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.OnChange += Handle;
+
+    private async void Handle() => await InvokeAsync(StateHasChanged);
+
+    private static string Icon(ADN_pay.Admin.Services.ToastLevel level) => level switch
+    {
+        ADN_pay.Admin.Services.ToastLevel.Success => "bi-check-circle-fill",
+        ADN_pay.Admin.Services.ToastLevel.Error => "bi-exclamation-triangle-fill",
+        _ => "bi-info-circle-fill"
+    };
+
+    public void Dispose() => Toasts.OnChange -= Handle;
+}

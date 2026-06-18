@@ -1,0 +1,130 @@
+@page "/utilisateurs"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+@inject ADN_pay.Admin.Services.ToastService Toasts
+@inject NavigationManager Nav
+
+<PageTitle>Utilisateurs — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Utilisateurs</h1>
+    <div class="page-sub">Recherche, consultation et gestion des comptes</div>
+
+    <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><i class="bi bi-search"></i> Rechercher un utilisateur</div>
+        <div class="panel-body">
+            <div class="search-bar">
+                <input class="input" placeholder="Email, nom ou prénom…" @bind="query" @bind:event="oninput" @onkeydown="OnKey" disabled="@busy" />
+                <button class="btn btn-primary btn-sm" @onclick="Search" disabled="@busy">@(busy ? "…" : "Chercher")</button>
+                <a class="btn btn-ghost btn-sm" href="/api/admin/users.csv" target="_blank"><i class="bi bi-download"></i> Export CSV</a>
+            </div>
+            @if (error is not null)
+            {
+                <p class="muted" style="margin-top:8px">@error</p>
+            }
+
+            @if (results.Count > 0)
+            {
+                <div style="overflow-x:auto;margin-top:14px">
+                    <table class="table">
+                        <thead><tr><th>ID</th><th>Nom</th><th>Email</th><th>Téléphone</th><th>Solde</th><th>Statut</th><th>Tuteur</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var u in results)
+                            {
+                                <tr @key="u.Id">
+                                    <td>@u.Id</td>
+                                    <td><strong>@u.Prenom @u.Nom</strong></td>
+                                    <td class="muted">@u.Email</td>
+                                    <td class="muted">@(string.IsNullOrEmpty(u.Telephone) ? "—" : u.Telephone)</td>
+                                    <td>@Money(u.Solde)</td>
+                                    <td><span class="badge @(u.Statut == UserStatus.PREMIUM || u.Statut == UserStatus.VIP ? "ok" : "info")">@u.Statut</span></td>
+                                    <td class="muted">@(string.IsNullOrEmpty(u.TuteurEmail) ? "—" : u.TuteurEmail)</td>
+                                    <td>
+                                        <div class="actions">
+                                            <button class="btn btn-ghost btn-sm" @onclick='() => Nav.NavigateTo($"/utilisateurs/{u.Id}")'>Profil</button>
+                                            <button class="btn btn-primary btn-sm" @onclick="() => OpenReset(u.Id)">MDP</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (resetId > 0)
+{
+    <div class="modal-overlay" @onclick="() => resetId = 0">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head"><i class="bi bi-key-fill"></i> Réinitialiser le mot de passe</div>
+            <div class="modal-body">
+                <p class="muted">Utilisateur #@resetId</p>
+                <div class="field">
+                    <label>Nouveau mot de passe</label>
+                    <input class="input" type="password" @bind="pwd" placeholder="Min. 8 caractères" />
+                </div>
+                <div class="field">
+                    <label>Confirmer</label>
+                    <input class="input" type="password" @bind="pwd2" placeholder="Confirmer" />
+                </div>
+                <div class="actions" style="margin-top:14px">
+                    <button class="btn btn-primary btn-block" disabled="@busy" @onclick="ConfirmReset">@(busy ? "…" : "Confirmer")</button>
+                    <button class="btn btn-ghost btn-block" @onclick="() => resetId = 0">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string query = "";
+    private List<UserProfile> results = new();
+    private bool busy;
+    private string? error;
+    private int resetId;
+    private string pwd = "";
+    private string pwd2 = "";
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(query)) { error = "Entrez un terme de recherche."; return; }
+        error = null; busy = true;
+        try
+        {
+            results = await Admin.SearchUsersAsync(query);
+            if (results.Count == 0) error = "Aucun utilisateur trouvé.";
+        }
+        catch { error = "Erreur lors de la recherche."; }
+        finally { busy = false; }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Search();
+    }
+
+    private void OpenReset(int id) { resetId = id; pwd = ""; pwd2 = ""; }
+
+    private async Task ConfirmReset()
+    {
+        if (busy) return;
+        if (pwd.Length < 8 || !pwd.Any(char.IsUpper) || !pwd.Any(char.IsLower)
+            || !pwd.Any(char.IsDigit) || !pwd.Any(c => !char.IsLetterOrDigit(c)))
+        { Toasts.Error("Mot de passe trop faible (8+ car., maj., min., chiffre, spécial)."); return; }
+        if (pwd != pwd2) { Toasts.Error("Les mots de passe ne correspondent pas."); return; }
+
+        busy = true;
+        try
+        {
+            if (await Admin.ResetPasswordAsync(resetId, pwd)) { Toasts.Success("Mot de passe réinitialisé."); resetId = 0; }
+            else Toasts.Error("Échec de la réinitialisation.");
+        }
+        finally { busy = false; }
+    }
+}

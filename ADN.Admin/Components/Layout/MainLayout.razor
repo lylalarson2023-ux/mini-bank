@@ -12,11 +12,12 @@
         </div>
         <nav class="sidebar-nav">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All"><i class="bi bi-speedometer2"></i> Tableau de bord</NavLink>
-            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-shield-check"></i> Dossiers KYC <small>(à venir)</small></span>
-            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-currency-exchange"></i> Crédits <small>(à venir)</small></span>
-            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-cash-stack"></i> Dépôt <small>(à venir)</small></span>
-            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-people"></i> Utilisateurs <small>(à venir)</small></span>
-            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-journal-text"></i> Logs <small>(à venir)</small></span>
+            <NavLink class="nav-link" href="kyc"><i class="bi bi-shield-check"></i> Dossiers KYC</NavLink>
+            <NavLink class="nav-link" href="credits"><i class="bi bi-currency-exchange"></i> Crédits</NavLink>
+            <NavLink class="nav-link" href="depot"><i class="bi bi-cash-stack"></i> Dépôt</NavLink>
+            <NavLink class="nav-link" href="utilisateurs"><i class="bi bi-people"></i> Utilisateurs</NavLink>
+            <NavLink class="nav-link" href="tuteurs"><i class="bi bi-people-fill"></i> Tuteurs</NavLink>
+            <NavLink class="nav-link" href="logs"><i class="bi bi-journal-text"></i> Logs</NavLink>
         </nav>
         <div class="sidebar-foot">
             <a class="btn btn-ghost btn-block btn-sm" href="/auth/signout"><i class="bi bi-box-arrow-right"></i> Déconnexion</a>
@@ -30,6 +31,7 @@
         </header>
         @Body
     </div>
+    <ToastHost />
 </div>
 
 @code {

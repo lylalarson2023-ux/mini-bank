@@ -1,0 +1,117 @@
+@page "/tuteurs"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+@inject ADN_pay.Admin.Services.ToastService Toasts
+
+<PageTitle>Tuteurs — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Tuteurs</h1>
+    <div class="page-sub">Rattachement étudiant ↔ tuteur</div>
+
+    <div class="grid two-col" style="margin-top:20px">
+        <div class="panel">
+            <div class="panel-head"><i class="bi bi-link-45deg"></i> Assigner un tuteur</div>
+            <div class="panel-body">
+                @if (student is null)
+                {
+                    <UserSearchBox OnSelect="OnPick" Placeholder="Chercher l'étudiant…" />
+                }
+                else
+                {
+                    <div class="selected">
+                        <div>
+                            <strong>#@student.Id @student.Prenom @student.Nom</strong>
+                            <div class="muted">@student.Email</div>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" @onclick="() => student = null">Changer</button>
+                    </div>
+                    <div class="field" style="margin-top:14px">
+                        <label>E-mail du tuteur (doit avoir un compte ADN_pay)</label>
+                        <input class="input" type="email" @bind="tuteurEmail" placeholder="tuteur@email.com" />
+                    </div>
+                    <button class="btn btn-primary btn-block" disabled="@(string.IsNullOrWhiteSpace(tuteurEmail) || busy)" @onclick="Assigner">
+                        @(busy ? "…" : "Assigner le tuteur")
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><i class="bi bi-diagram-3-fill"></i> Relations existantes</div>
+            <div class="panel-body">
+                @if (loading)
+                {
+                    <div class="empty">Chargement…</div>
+                }
+                else if (groups.Count == 0)
+                {
+                    <div class="empty">Aucune relation tuteur établie</div>
+                }
+                else
+                {
+                    @foreach (var g in groups)
+                    {
+                        <div class="tuteur-group" @key="g.Key">
+                            <div class="tuteur-head">Tuteur : @g.Key</div>
+                            @foreach (var (student, tuteur) in g)
+                            {
+                                <div class="tuteur-row">
+                                    <span>@student.Prenom @student.Nom · <span class="muted">@student.Email</span></span>
+                                    <button class="btn btn-ghost btn-sm danger" disabled="@busy" @onclick="() => Revoquer(student.Id)">Révoquer</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool loading = true;
+    private bool busy;
+    private UserProfile? student;
+    private string tuteurEmail = "";
+    private List<IGrouping<string, (UserProfile Student, UserProfile? Tuteur)>> groups = new();
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        loading = true;
+        var relations = await Admin.GetRelationsTuteurAsync();
+        groups = relations.GroupBy(r => r.Tuteur?.Email ?? "Tuteur inconnu").ToList();
+        loading = false;
+    }
+
+    private void OnPick(UserProfile u) { student = u; tuteurEmail = ""; }
+
+    private async Task Assigner()
+    {
+        if (busy || student is null || string.IsNullOrWhiteSpace(tuteurEmail)) return;
+        busy = true;
+        try
+        {
+            var (ok, msg) = await Admin.AssignerTuteurAsync(student.Id, tuteurEmail);
+            if (ok) { Toasts.Success(msg); student = null; tuteurEmail = ""; await Reload(); }
+            else Toasts.Error(msg);
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Revoquer(int studentId)
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            var (ok, msg) = await Admin.RevoquerTuteurParAdminAsync(studentId);
+            if (ok) { Toasts.Success(msg); await Reload(); }
+            else Toasts.Error(msg);
+        }
+        finally { busy = false; }
+    }
+}

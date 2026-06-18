@@ -1,0 +1,66 @@
+@page "/depot"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+@inject ADN_pay.Admin.Services.ToastService Toasts
+
+<PageTitle>Dépôt — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Dépôt administratif</h1>
+    <div class="page-sub">Créditer manuellement le solde d'un compte</div>
+
+    <div class="panel" style="max-width:520px;margin-top:20px">
+        <div class="panel-head"><i class="bi bi-cash-stack"></i> Effectuer un dépôt</div>
+        <div class="panel-body">
+            @if (target is null)
+            {
+                <UserSearchBox OnSelect="OnPick" Placeholder="Chercher le compte à créditer…" />
+            }
+            else
+            {
+                <div class="selected">
+                    <div>
+                        <strong>#@target.Id @target.Prenom @target.Nom</strong>
+                        <div class="muted">@target.Email · Solde actuel @Money(target.Solde) MAD</div>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" @onclick="() => target = null">Changer</button>
+                </div>
+
+                <div class="field" style="margin-top:14px">
+                    <label>Montant du dépôt (MAD)</label>
+                    <input class="input" type="number" min="0" step="0.01" @bind="amount" placeholder="0.00" />
+                </div>
+                <button class="btn btn-primary btn-block" disabled="@(amount <= 0 || busy)" @onclick="Deposer">
+                    @(busy ? "Traitement…" : "Effectuer le dépôt")
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool busy;
+    private UserProfile? target;
+    private decimal amount;
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    private void OnPick(UserProfile u) { target = u; amount = 0; }
+
+    private async Task Deposer()
+    {
+        if (busy || target is null || amount <= 0) return;
+        busy = true;
+        try
+        {
+            if (await Admin.AdminDepot(target.Id, (long)(amount * 100)))
+            {
+                Toasts.Success($"Dépôt de {amount:N2} MAD effectué sur le compte #{target.Id}.");
+                target = null; amount = 0;
+            }
+            else Toasts.Error("Échec : compte introuvable ou dépôt en doublon.");
+        }
+        finally { busy = false; }
+    }
+}

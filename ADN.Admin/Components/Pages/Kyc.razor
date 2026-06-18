@@ -1,0 +1,183 @@
+@page "/kyc"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+@inject ADN_pay.Admin.Services.ToastService Toasts
+@inject NavigationManager Nav
+
+<PageTitle>Dossiers KYC — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Dossiers KYC</h1>
+    <div class="page-sub">Validation des comptes Premium / vérification d'identité</div>
+
+    <div class="subtabs" style="margin-top:20px">
+        <button class="subtab @(sub == "attente" ? "active" : "")" @onclick='() => sub = "attente"'>
+            En attente @if (enAttente.Count > 0) { <span class="pill">@enAttente.Count</span> }
+        </button>
+        <button class="subtab @(sub == "historique" ? "active" : "")" @onclick='() => sub = "historique"'>
+            Historique @if (historique.Count > 0) { <span class="pill">@historique.Count</span> }
+        </button>
+    </div>
+
+    @if (loading)
+    {
+        <div class="empty">Chargement…</div>
+    }
+    else if (sub == "attente")
+    {
+        <div class="panel">
+            <div class="panel-head"><i class="bi bi-shield-lock-fill"></i> Dossiers en attente</div>
+            <div class="panel-body">
+                @if (enAttente.Count == 0)
+                {
+                    <div class="empty">Aucun dossier en attente</div>
+                }
+                else
+                {
+                    <div style="overflow-x:auto">
+                        <table class="table">
+                            <thead><tr><th>Candidat</th><th>Contact</th><th>Niveau</th><th>Demande</th><th>Pièces</th><th>Actions</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in enAttente)
+                                {
+                                    <tr @key="u.Id">
+                                        <td><strong>@u.Prenom @u.Nom</strong><div class="muted">#@u.Id</div></td>
+                                        <td class="muted">@u.Email<br />@u.Telephone</td>
+                                        <td>@u.NiveauEtude</td>
+                                        <td>
+                                            @if (u.PendingPremiumUpgrade) { <span class="badge warn">Premium</span> }
+                                            @if (u.PendingCreditRequest) { <span class="badge info">Crédit @Money(u.PendingCreditAmount) DH</span> }
+                                        </td>
+                                        <td>@((MarkupString)DocIcons(u))</td>
+                                        <td>
+                                            <div class="actions">
+                                                <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="() => Valider(u.Id)">Valider</button>
+                                                <button class="btn btn-ghost btn-sm" @onclick='() => Nav.NavigateTo($"/utilisateurs/{u.Id}")'>Détails</button>
+                                                <button class="btn btn-ghost btn-sm danger" disabled="@busy" @onclick="() => OpenReject(u.Id)">Rejeter</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="panel">
+            <div class="panel-head"><i class="bi bi-archive-fill"></i> Dossiers traités</div>
+            <div class="panel-body">
+                @if (historique.Count == 0)
+                {
+                    <div class="empty">Aucun dossier traité</div>
+                }
+                else
+                {
+                    <div style="overflow-x:auto">
+                        <table class="table">
+                            <thead><tr><th>Candidat</th><th>Contact</th><th>Traité le</th><th>Résultat</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in historique)
+                                {
+                                    var date = u.PremiumValidatedAt ?? u.PremiumRejectedAt;
+                                    <tr @key="u.Id">
+                                        <td><strong>@u.Prenom @u.Nom</strong><div class="muted">#@u.Id</div></td>
+                                        <td class="muted">@u.Email</td>
+                                        <td class="muted">@(date?.ToString("dd/MM/yy HH:mm") ?? "—")</td>
+                                        <td>
+                                            @if (u.PremiumValidatedAt != null) { <span class="badge ok">Validé</span> }
+                                            else { <span class="badge no">Rejeté</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@if (rejectId > 0)
+{
+    <div class="modal-overlay" @onclick="() => rejectId = 0">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head"><i class="bi bi-shield-exclamation" style="color:var(--danger)"></i> Rejeter le dossier KYC</div>
+            <div class="modal-body">
+                <p class="muted">Utilisateur #@rejectId — 100 DH seront remboursés.</p>
+                <div class="field">
+                    <label>Motif du rejet</label>
+                    <textarea class="input" rows="3" @bind="rejectMotif" placeholder="Visible par l'utilisateur"></textarea>
+                </div>
+                <div class="actions" style="margin-top:14px">
+                    <button class="btn btn-primary danger btn-block" disabled="@busy" @onclick="ConfirmReject">@(busy ? "…" : "Rejeter")</button>
+                    <button class="btn btn-ghost btn-block" @onclick="() => rejectId = 0">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string sub = "attente";
+    private bool loading = true;
+    private bool busy;
+    private List<UserProfile> enAttente = new();
+    private List<UserProfile> historique = new();
+    private int rejectId;
+    private string rejectMotif = "";
+
+    private static string Money(long c) => (c / 100m).ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        loading = true;
+        enAttente = await Admin.GetDossiersEnAttenteAsync();
+        historique = await Admin.GetHistoriqueDossiersAsync();
+        loading = false;
+    }
+
+    private static string DocIcons(UserProfile u)
+    {
+        var s = "";
+        if (!string.IsNullOrEmpty(u.CvUrl)) s += "<i class='bi bi-file-earmark-pdf-fill' title='CV' style='margin-right:6px'></i>";
+        if (!string.IsNullOrEmpty(u.DocIdentiteUrl)) s += "<i class='bi bi-card-heading' title='Identité' style='margin-right:6px'></i>";
+        if (!string.IsNullOrEmpty(u.DocDomicileUrl)) s += "<i class='bi bi-house-check-fill' title='Domicile' style='margin-right:6px'></i>";
+        if (!string.IsNullOrEmpty(u.DocScolariteUrl)) s += "<i class='bi bi-mortarboard-fill' title='Scolarité'></i>";
+        return string.IsNullOrEmpty(s) ? "<span class='muted'>—</span>" : s;
+    }
+
+    private async Task Valider(int id)
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            if (await Admin.ApprouverPremium(id)) { Toasts.Success("Dossier validé : accès Premium octroyé."); await Reload(); }
+            else Toasts.Error("Échec de la validation.");
+        }
+        finally { busy = false; }
+    }
+
+    private void OpenReject(int id) { rejectId = id; rejectMotif = ""; }
+
+    private async Task ConfirmReject()
+    {
+        if (busy || rejectId <= 0) return;
+        busy = true;
+        try
+        {
+            var (ok, msg) = await Admin.RejeterDossierKycAsync(rejectId, rejectMotif);
+            if (ok) { Toasts.Success("Dossier KYC rejeté."); rejectId = 0; await Reload(); }
+            else Toasts.Error(msg);
+        }
+        finally { busy = false; }
+    }
+}

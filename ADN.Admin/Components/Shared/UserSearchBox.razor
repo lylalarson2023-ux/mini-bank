@@ -1,0 +1,64 @@
+@inject AdminService Admin
+
+<div>
+    <div class="search-bar">
+        <input class="input" placeholder="@Placeholder" @bind="query" @bind:event="oninput" @onkeydown="OnKey" disabled="@busy" />
+        <button class="btn btn-primary btn-sm" @onclick="Search" disabled="@busy">@(busy ? "…" : "Chercher")</button>
+    </div>
+    @if (error is not null)
+    {
+        <p class="muted" style="color:var(--danger);margin:6px 0 0">@error</p>
+    }
+    @if (results.Count > 0)
+    {
+        <div class="search-results">
+            @foreach (var u in results)
+            {
+                <div class="result-row" @key="u.Id" @onclick="() => Pick(u)">
+                    <div>
+                        <div class="rr-name">@u.Prenom @u.Nom</div>
+                        <div class="muted">#@u.Id · @u.Email · Solde @Money(u.Solde) MAD</div>
+                    </div>
+                    <i class="bi bi-chevron-right"></i>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Placeholder { get; set; } = "Email, nom ou prénom…";
+    [Parameter] public EventCallback<UserProfile> OnSelect { get; set; }
+
+    private string query = "";
+    private List<UserProfile> results = new();
+    private bool busy;
+    private string? error;
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(query)) { error = "Entrez un email, nom ou prénom."; return; }
+        error = null; busy = true;
+        try
+        {
+            results = await Admin.SearchUsersAsync(query);
+            if (results.Count == 0) error = "Aucun utilisateur trouvé.";
+        }
+        catch { error = "Erreur lors de la recherche."; }
+        finally { busy = false; }
+    }
+
+    private async Task Pick(UserProfile u)
+    {
+        results = new();
+        query = "";
+        await OnSelect.InvokeAsync(u);
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Search();
+    }
+}

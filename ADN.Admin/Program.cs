@@ -66,6 +66,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<NotificationHistoryService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<CreditService>();
+builder.Services.AddScoped<ADN_pay.Admin.Services.ToastService>();
 
 var app = builder.Build();
 
@@ -152,6 +154,34 @@ app.MapGet("/auth/signout", async (HttpContext ctx) =>
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
 });
+
+// --- EXPORT CSV DES UTILISATEURS (admin uniquement) ---
+app.MapGet("/api/admin/users.csv", async (IDbContextFactory<BankDbContext> dbFactory) =>
+{
+    static string Esc(string? v)
+    {
+        v ??= "";
+        return (v.Contains(',') || v.Contains('"') || v.Contains('\n'))
+            ? "\"" + v.Replace("\"", "\"\"") + "\"" : v;
+    }
+
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var users = await db.UserProfiles.OrderBy(u => u.Id).ToListAsync();
+    var sb = new StringBuilder();
+    sb.Append('﻿'); // BOM UTF-8 (accents dans Excel)
+    sb.AppendLine("Id,Nom,Prenom,Email,Telephone,Statut,Solde_DH,Role,DateInscription,TuteurEmail");
+    foreach (var u in users)
+    {
+        sb.AppendLine(string.Join(",",
+            u.Id, Esc(u.Nom), Esc(u.Prenom), Esc(u.Email), Esc(u.Telephone),
+            Esc(u.Statut.ToString()),
+            (u.Solde / 100m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+            Esc(u.IsAdmin ? "Admin" : "User"),
+            u.DateInscription.ToString("yyyy-MM-dd"), Esc(u.TuteurEmail)));
+    }
+    return Results.File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8",
+        $"utilisateurs_adnpay_{DateTime.UtcNow:yyyyMMdd}.csv");
+}).RequireAuthorization("AdminOnly");
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

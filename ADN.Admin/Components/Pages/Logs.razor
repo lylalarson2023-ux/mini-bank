@@ -1,0 +1,60 @@
+@page "/logs"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+
+<PageTitle>Logs — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Journal d'activité</h1>
+    <div class="page-sub">Historique des actions administratives</div>
+
+    <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><i class="bi bi-journal-text"></i> Logs (@Filtres.Count())</div>
+        <div class="panel-body">
+            <input class="input" style="margin-bottom:14px" placeholder="Filtrer (action, détail, cible)…"
+                   @bind="filter" @bind:event="oninput" />
+            @if (loading)
+            {
+                <div class="empty">Chargement…</div>
+            }
+            else if (!Filtres.Any())
+            {
+                <div class="empty">@(string.IsNullOrWhiteSpace(filter) ? "Aucune action enregistrée" : "Aucun log ne correspond")</div>
+            }
+            else
+            {
+                <div class="terminal" style="max-height:520px;overflow-y:auto">
+                    @foreach (var log in Filtres)
+                    {
+                        <div class="log-line" @key="log">
+                            <span class="log-ts">[@log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")]</span>
+                            <span class="log-act">@log.Action</span>
+                            <span class="log-det"> :: @log.Details</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool loading = true;
+    private string filter = "";
+    private List<AdminLog> logs = new();
+
+    private IEnumerable<AdminLog> Filtres =>
+        string.IsNullOrWhiteSpace(filter)
+            ? logs
+            : logs.Where(l =>
+                (l.Action?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (l.Details?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (l.Cible?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync()
+    {
+        logs = await Admin.GetAdminLogsAsync(200);
+        loading = false;
+    }
+}

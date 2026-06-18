@@ -1,0 +1,107 @@
+@page "/utilisateurs/{Id:int}"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+@inject NavigationManager Nav
+
+<PageTitle>Utilisateur #@Id — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <button class="btn btn-ghost btn-sm" @onclick='() => Nav.NavigateTo("/utilisateurs")'><i class="bi bi-arrow-left"></i> Retour</button>
+
+    @if (loading)
+    {
+        <div class="empty">Chargement…</div>
+    }
+    else if (u is null)
+    {
+        <div class="empty">Utilisateur introuvable.</div>
+    }
+    else
+    {
+        <h1 class="page-title" style="margin-top:14px">@u.Prenom @u.Nom</h1>
+        <div class="page-sub">#@u.Id · @u.Email</div>
+
+        <div class="grid two-col" style="margin-top:20px">
+            <div class="panel">
+                <div class="panel-head"><i class="bi bi-person-vcard"></i> Informations</div>
+                <div class="panel-body">
+                    <dl class="kv">
+                        <div><dt>Solde</dt><dd>@Money(u.Solde) MAD</dd></div>
+                        <div><dt>Statut</dt><dd><span class="badge @(u.Statut == UserStatus.PREMIUM || u.Statut == UserStatus.VIP ? "ok" : "info")">@u.Statut</span></dd></div>
+                        <div><dt>Téléphone</dt><dd>@(string.IsNullOrEmpty(u.Telephone) ? "—" : u.Telephone)</dd></div>
+                        <div><dt>Niveau d'étude</dt><dd>@(string.IsNullOrEmpty(u.NiveauEtude) ? "—" : u.NiveauEtude)</dd></div>
+                        <div><dt>Inscription</dt><dd>@u.DateInscription.ToString("dd/MM/yyyy")</dd></div>
+                        <div><dt>Tuteur</dt><dd>@(string.IsNullOrEmpty(u.TuteurEmail) ? "—" : u.TuteurEmail)</dd></div>
+                        <div><dt>Rôle</dt><dd>@(u.IsAdmin ? "Admin" : "Utilisateur")</dd></div>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><i class="bi bi-folder2-open"></i> Dossier KYC</div>
+                <div class="panel-body">
+                    <div style="margin-bottom:12px">
+                        @if (u.PendingPremiumUpgrade) { <span class="badge warn">Premium en attente</span> }
+                        else if (u.PremiumValidatedAt != null) { <span class="badge ok">Premium validé</span> }
+                        else if (u.PremiumRejectedAt != null) { <span class="badge no">Premium rejeté</span> }
+                        else { <span class="muted">Aucune demande Premium</span> }
+                    </div>
+                    @if (!string.IsNullOrEmpty(u.KycRejetMotif))
+                    {
+                        <p class="muted">Motif de rejet : @u.KycRejetMotif</p>
+                    }
+                    <div class="docs">
+                        @RenderDoc("CV", u.CvUrl)
+                        @RenderDoc("Pièce d'identité", u.DocIdentiteUrl)
+                        @RenderDoc("Justificatif de domicile", u.DocDomicileUrl)
+                        @RenderDoc("Certificat de scolarité", u.DocScolariteUrl)
+                    </div>
+                    <p class="muted" style="margin-top:10px;font-size:.72rem">
+                        Les fichiers sont servis par l'app principale ; les liens peuvent être inactifs depuis l'admin tant que le dossier d'uploads n'est pas partagé.
+                    </p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool loading = true;
+    private UserProfile? u;
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    protected override async Task OnInitializedAsync()
+    {
+        u = await Admin.GetUserByIdAsync(Id);
+        loading = false;
+    }
+
+    private RenderFragment RenderDoc(string label, string? url) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "doc-row");
+        builder.OpenElement(2, "span");
+        builder.AddContent(3, label);
+        builder.CloseElement();
+        if (string.IsNullOrEmpty(url))
+        {
+            builder.OpenElement(4, "span");
+            builder.AddAttribute(5, "class", "muted");
+            builder.AddContent(6, "absent");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(7, "a");
+            builder.AddAttribute(8, "href", url);
+            builder.AddAttribute(9, "target", "_blank");
+            builder.AddContent(10, "ouvrir");
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+}
