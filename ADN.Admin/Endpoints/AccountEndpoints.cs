@@ -9,7 +9,7 @@ public static class AccountEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var g = app.MapGroup("/api/v1/account").WithTags("Account").RequireAuthorization();
+        var g = app.MapGroup("/api/v1/account").WithTags("Account").RequireAuthorization("ApiBearer");
         g.MapGet("/me", GetMe);
         g.MapGet("/transactions", GetTransactions);
         g.MapPost("/virement", Virement);

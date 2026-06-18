@@ -6,7 +6,7 @@ public static class CreditEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var g = app.MapGroup("/api/v1/credit").WithTags("Credit").RequireAuthorization();
+        var g = app.MapGroup("/api/v1/credit").WithTags("Credit").RequireAuthorization("ApiBearer");
         g.MapGet("/mes-demandes", GetMesDemandes);
         g.MapPost("/", SoumettreDemandeCredit);
         g.MapGet("/eligibilite", VerifierEligibilite);

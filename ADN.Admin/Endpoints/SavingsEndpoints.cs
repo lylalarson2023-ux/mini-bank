@@ -6,7 +6,7 @@ public static class SavingsEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var g = app.MapGroup("/api/v1/savings").WithTags("Savings").RequireAuthorization();
+        var g = app.MapGroup("/api/v1/savings").WithTags("Savings").RequireAuthorization("ApiBearer");
         g.MapGet("/", GetPockets);
         g.MapPost("/", CreatePocket);
         g.MapDelete("/{id:int}", BreakPocket);

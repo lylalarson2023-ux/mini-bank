@@ -2,11 +2,15 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using ADN_pay.Admin.Components;
+using ADN_pay.Api.Endpoints;
+using ADN_pay.Api.Middleware;
+using ADN_pay.Api.Tokens;
 using ADN_pay.Data;
 using ADN_pay.Models;
 using ADN_pay.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -25,12 +29,21 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 builder.Host.UseSerilog();
 
-// Secret de signature pour la passation login → cookie (Blazor ne peut pas poser
+// Secret de signature pour la passation login admin → cookie (Blazor ne peut pas poser
 // le cookie depuis le circuit : on valide puis on redirige vers un endpoint HTTP signé).
 var loginSecret = builder.Configuration["LoginSecret"]
     ?? Environment.GetEnvironmentVariable("ADMIN_LOGIN_SECRET")
     ?? Guid.NewGuid().ToString("N");
 builder.Configuration["LoginSecret"] = loginSecret;
+
+// --- SECRET JWT (API REST) ---
+var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["Jwt:Secret"];
+if (string.IsNullOrEmpty(jwtSecret))
+{
+    jwtSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+    Log.Warning("JWT_SECRET non configuré — clé aléatoire générée (les tokens ne survivront pas au redémarrage). Configurez JWT_SECRET.");
+}
+builder.Configuration["Jwt:Secret"] = jwtSecret;
 
 // --- BASE DE DONNÉES (partagée avec l'app principale) ---
 var dbPath = Environment.GetEnvironmentVariable("ADN_DB_PATH")
@@ -42,7 +55,9 @@ builder.Services.AddDbContextFactory<BankDbContext>(opt => opt.UseSqlite($"Data 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// --- AUTH COOKIE (mur : rôle Admin exigé) ---
+// --- AUTH : cookie (admin, schéma par défaut) + JWT bearer (API REST) ---
+var tokenSvc = new JwtTokenService(builder.Configuration);
+builder.Services.AddSingleton(tokenSvc);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -54,29 +69,80 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.AccessDeniedPath = "/login";
         options.ExpireTimeSpan = TimeSpan.FromHours(4);
         options.SlidingExpiration = true;
-    });
+    })
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme,
+        opt => opt.TokenValidationParameters = tokenSvc.GetValidationParameters());
+
 builder.Services.AddAuthorization(options =>
 {
+    // Admin Blazor : rôle Admin via le cookie (schéma par défaut).
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    // API REST : authentifié via le schéma JWT bearer UNIQUEMENT (un cookie admin
+    // ne donne pas accès à l'API, et un token API ne donne pas accès à l'admin).
+    options.AddPolicy("ApiBearer", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser());
 });
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 
-// --- SERVICES MÉTIER (réutilisés de la couche Application) ---
+// --- CORS (clients mobiles de l'API) ---
+builder.Services.AddCors(opts => opts.AddDefaultPolicy(p =>
+    p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
+// --- SERVICES MÉTIER (couche Application, partagés admin + API) ---
 builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<NotificationHistoryService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<SavingsService>();
 builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<ADN_pay.Admin.Services.ToastService>();
+builder.Services.AddScoped<UserContextMiddleware>();
+builder.Services.AddSingleton<IEmailSender, ADN_pay.Api.Services.LogEmailSender>();
+
+// --- SWAGGER (API REST) ---
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(opt =>
+{
+    opt.SwaggerDoc("v1", new() { Title = "ADN_pay API", Version = "v1" });
+    opt.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        In = Microsoft.OpenApi.ParameterLocation.Header,
+        Description = "JWT Bearer : entrez 'Bearer <token>'",
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+    opt.AddSecurityRequirement(doc => new Microsoft.OpenApi.OpenApiSecurityRequirement
+    {
+        { new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer", doc), new List<string>() }
+    });
+});
 
 var app = builder.Build();
 
-// --- DÉMARRAGE : schéma + (option) garantie d'un compte admin pour le dev ---
+// --- DÉMARRAGE : schéma + table RefreshTokens (API) + (option) admin dev ---
 using (var scope = app.Services.CreateScope())
 {
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankDbContext>>();
     await using var db = await dbFactory.CreateDbContextAsync();
     db.Database.EnsureCreated();
+
+    try
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS RefreshTokens (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserId INTEGER NOT NULL,
+                TokenHash TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                Revoked INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                DeviceInfo TEXT
+            )");
+    }
+    catch { }
 
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.
@@ -117,11 +183,20 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-// --- PASSATION LOGIN → COOKIE (endpoint HTTP signé) ---
+app.UseSwagger();
+app.UseSwaggerUI(opt => opt.SwaggerEndpoint("/swagger/v1/swagger.json", "ADN_pay API v1"));
+
+// UserContext pour l'API : peuplé depuis le JWT, uniquement sur /api/v1 (l'admin Blazor
+// peuple le sien depuis le cookie dans MainLayout).
+app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/api/v1"),
+    branch => branch.UseMiddleware<UserContextMiddleware>());
+
+// --- PASSATION LOGIN ADMIN → COOKIE (endpoint HTTP signé) ---
 static string Sign(string payload, string secret) =>
     Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 
@@ -155,7 +230,7 @@ app.MapGet("/auth/signout", async (HttpContext ctx) =>
     return Results.Redirect("/login");
 });
 
-// --- EXPORT CSV DES UTILISATEURS (admin uniquement) ---
+// --- EXPORT CSV DES UTILISATEURS (admin cookie uniquement) ---
 app.MapGet("/api/admin/users.csv", async (IDbContextFactory<BankDbContext> dbFactory) =>
 {
     static string Esc(string? v)
@@ -183,6 +258,14 @@ app.MapGet("/api/admin/users.csv", async (IDbContextFactory<BankDbContext> dbFac
         $"utilisateurs_adnpay_{DateTime.UtcNow:yyyyMMdd}.csv");
 }).RequireAuthorization("AdminOnly");
 
+// --- API REST (JWT bearer) ---
+AuthEndpoints.Map(app);
+AccountEndpoints.Map(app);
+SavingsEndpoints.Map(app);
+CreditEndpoints.Map(app);
+app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow })).WithTags("Health");
+
+// --- ADMIN BLAZOR ---
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

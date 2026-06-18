@@ -15,7 +15,7 @@ public static class AuthEndpoints
         var g = app.MapGroup("/api/v1/auth").WithTags("Auth");
         g.MapPost("/login", Login);
         g.MapPost("/refresh", Refresh);
-        g.MapPost("/logout", Logout).RequireAuthorization();
+        g.MapPost("/logout", Logout).RequireAuthorization("ApiBearer");
         g.MapPost("/register", Register);
     }
 
