@@ -1,0 +1,57 @@
+@inherits LayoutComponentBase
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthProvider
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<ADN_pay.Data.BankDbContext> DbFactory
+@inject UserContext UserCtx
+
+<div class="admin-shell">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">ADN_pay</div>
+            <div class="sub">ADMINISTRATION</div>
+        </div>
+        <nav class="sidebar-nav">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All"><i class="bi bi-speedometer2"></i> Tableau de bord</NavLink>
+            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-shield-check"></i> Dossiers KYC <small>(à venir)</small></span>
+            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-currency-exchange"></i> Crédits <small>(à venir)</small></span>
+            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-cash-stack"></i> Dépôt <small>(à venir)</small></span>
+            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-people"></i> Utilisateurs <small>(à venir)</small></span>
+            <span class="nav-link" style="opacity:.45;cursor:default"><i class="bi bi-journal-text"></i> Logs <small>(à venir)</small></span>
+        </nav>
+        <div class="sidebar-foot">
+            <a class="btn btn-ghost btn-block btn-sm" href="/auth/signout"><i class="bi bi-box-arrow-right"></i> Déconnexion</a>
+        </div>
+    </aside>
+
+    <div class="content">
+        <header class="topbar">
+            <div><span class="dot"></span> Session admin active</div>
+            <div class="who">Connecté : <strong>@adminName</strong></div>
+        </header>
+        @Body
+    </div>
+</div>
+
+@code {
+    private string adminName = "admin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        if (user.Identity?.IsAuthenticated != true) return;
+
+        adminName = $"{user.FindFirst(ClaimTypes.GivenName)?.Value} {user.FindFirst(ClaimTypes.Surname)?.Value}".Trim();
+        if (string.IsNullOrWhiteSpace(adminName)) adminName = user.Identity!.Name ?? "admin";
+
+        // Peuple le UserContext (identité de l'admin) pour que AdminService journalise
+        // correctement les actions — équivalent du UserContextMiddleware de l'API.
+        if (!UserCtx.EstConnecte
+            && int.TryParse(user.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var uid))
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var profil = await db.UserProfiles.FindAsync(uid);
+            if (profil != null) { UserCtx.Profil = profil; UserCtx.EstConnecte = true; }
+        }
+    }
+}

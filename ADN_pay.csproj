@@ -20,6 +20,8 @@
     <Content Remove="ADN.Application\**\*" />
     <Compile Remove="ADN.Api\**\*.cs" />
     <Content Remove="ADN.Api\**\*" />
+    <Compile Remove="ADN.Admin\**\*.cs" />
+    <Content Remove="ADN.Admin\**\*" />
   </ItemGroup>
 
   <ItemGroup>

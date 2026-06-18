@@ -1,0 +1,137 @@
+@page "/"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+
+<PageTitle>Tableau de bord — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Tableau de bord</h1>
+    <div class="page-sub">Vue d'ensemble de la plateforme · @DateTime.Now.ToString("dddd d MMMM yyyy, HH:mm")</div>
+
+    @if (loading)
+    {
+        <div class="empty" style="margin-top:40px">Chargement des données…</div>
+    }
+    else
+    {
+        <div class="grid stats-row" style="margin-top:22px">
+            <div class="stat">
+                <div class="label">Réserves totales</div>
+                <div class="value gold">@FormatMad(totalBalance) MAD</div>
+                <div class="hint">solde cumulé de tous les comptes</div>
+            </div>
+            <div class="stat">
+                <div class="label">Utilisateurs</div>
+                <div class="value">@totalUsers</div>
+                <div class="hint">comptes inscrits</div>
+            </div>
+            <div class="stat">
+                <div class="label">Dossiers KYC en attente</div>
+                <div class="value @(pendingPremium > 0 ? "green" : "")">@pendingPremium</div>
+                <div class="hint">demandes Premium à traiter</div>
+            </div>
+            <div class="stat">
+                <div class="label">Crédits en attente</div>
+                <div class="value @(pendingCredit > 0 ? "green" : "")">@pendingCredit</div>
+                <div class="hint">demandes de crédit à traiter</div>
+            </div>
+        </div>
+
+        <div class="grid two-col">
+            <div class="panel">
+                <div class="panel-head"><i class="bi bi-bar-chart-fill"></i> Inscriptions — 14 derniers jours</div>
+                <div class="panel-body">
+                    @if (string.IsNullOrEmpty(chartSvg))
+                    {
+                        <div class="empty">Aucune inscription récente</div>
+                    }
+                    else
+                    {
+                        @((MarkupString)chartSvg)
+                    }
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><i class="bi bi-journal-text"></i> Dernières actions admin</div>
+                <div class="panel-body">
+                    @if (logs.Count == 0)
+                    {
+                        <div class="empty">Aucune action enregistrée</div>
+                    }
+                    else
+                    {
+                        <div class="terminal">
+                            @foreach (var log in logs)
+                            {
+                                <div class="log-line">
+                                    <span class="log-ts">[@log.Timestamp.ToString("dd/MM HH:mm")]</span>
+                                    <span class="log-act">@log.Action</span>
+                                    <span class="log-det"> :: @log.Details</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool loading = true;
+    private long totalBalance;
+    private int totalUsers;
+    private int pendingPremium;
+    private int pendingCredit;
+    private List<AdminLog> logs = new();
+    private string chartSvg = "";
+
+    private static string FormatMad(long centimes) => (centimes / 100m).ToString("N2", CultureInfo.GetCultureInfo("fr-FR"));
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalBalance = await Admin.GetTotalBankBalanceAsync();
+        totalUsers = await Admin.GetTotalUsersAsync();
+        pendingPremium = await Admin.GetPendingPremiumCountAsync();
+        pendingCredit = await Admin.GetPendingCreditCountAsync();
+        logs = await Admin.GetAdminLogsAsync(8);
+
+        var registrations = await Admin.GetRegistrationsPerDayAsync(14);
+        chartSvg = BuildChartSvg(registrations);
+        loading = false;
+    }
+
+    // Le SVG est construit en chaîne puis rendu en MarkupString : l'élément SVG
+    // <text> entre en conflit avec le mot-clé Razor <text> en markup direct.
+    private static string BuildChartSvg(List<(DateTime Jour, int Count)> data)
+    {
+        if (data.Count == 0) return "";
+
+        const double w = 640, baseY = 180, padL = 30, padR = 10, padT = 16;
+        double plotW = w - padL - padR, plotH = baseY - padT;
+        int n = data.Count, max = Math.Max(1, data.Max(d => d.Count));
+        double slot = plotW / n, barW = slot * 0.6;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg viewBox=\"0 0 {w} 210\" xmlns=\"http://www.w3.org/2000/svg\" style=\"width:100%;height:auto;display:block\">");
+        sb.Append("<defs><linearGradient id=\"barGrad\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">");
+        sb.Append("<stop offset=\"0%\" stop-color=\"#0099CC\"/><stop offset=\"100%\" stop-color=\"#30B880\"/></linearGradient></defs>");
+        sb.Append(FormattableString.Invariant($"<line x1=\"{padL}\" y1=\"{baseY}\" x2=\"{w - padR}\" y2=\"{baseY}\" stroke=\"#2a3441\" stroke-width=\"1\"/>"));
+
+        for (int i = 0; i < n; i++)
+        {
+            var (jour, count) = data[i];
+            double h = plotH * count / max;
+            double x = padL + slot * i + (slot - barW) / 2;
+            double y = baseY - h;
+            sb.Append(FormattableString.Invariant($"<rect x=\"{x:F1}\" y=\"{y:F1}\" width=\"{barW:F1}\" height=\"{h:F1}\" rx=\"3\" fill=\"url(#barGrad)\"/>"));
+            if (count > 0)
+                sb.Append(FormattableString.Invariant($"<text x=\"{x + barW / 2:F1}\" y=\"{y - 5:F1}\" text-anchor=\"middle\" font-size=\"10\" fill=\"#9aa7b4\">{count}</text>"));
+            sb.Append(FormattableString.Invariant($"<text x=\"{x + barW / 2:F1}\" y=\"{baseY + 15:F1}\" text-anchor=\"middle\" font-size=\"9\" fill=\"#6b7681\">{jour:dd/MM}</text>"));
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+}

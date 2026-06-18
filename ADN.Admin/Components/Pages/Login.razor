@@ -1,0 +1,103 @@
+@page "/login"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@using System.Security.Cryptography
+@using System.Text
+@using Microsoft.EntityFrameworkCore
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<ADN_pay.Data.BankDbContext> DbFactory
+@inject NavigationManager Nav
+@inject IConfiguration Config
+
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-logo">ADN_pay</div>
+        <div class="login-sub">ADMINISTRATION · ACCÈS RÉSERVÉ</div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="login-error"><i class="bi bi-exclamation-triangle-fill"></i> @error</div>
+        }
+
+        <div class="field">
+            <label>Adresse e-mail</label>
+            <input class="input" type="email" @bind="email" placeholder="admin@adnpay.ma" disabled="@busy" />
+        </div>
+        <div class="field">
+            <label>Mot de passe</label>
+            <input class="input" type="password" @bind="password" placeholder="••••••••"
+                   disabled="@busy" @onkeydown="OnKey" />
+        </div>
+        <button class="btn btn-primary btn-block" @onclick="HandleLogin" disabled="@busy">
+            @(busy ? "CONNEXION…" : "SE CONNECTER")
+        </button>
+    </div>
+</div>
+
+@code {
+    private string email = "";
+    private string password = "";
+    private string? error;
+    private bool busy;
+
+    protected override void OnInitialized()
+    {
+        var q = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        error = q.Get("error") switch
+        {
+            "invalid" => "Échec de l'authentification. Réessayez.",
+            "denied" => "Accès réservé aux administrateurs.",
+            _ => null
+        };
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await HandleLogin();
+    }
+
+    private async Task HandleLogin()
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            error = "E-mail et mot de passe requis.";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var emailLower = email.Trim().ToLower();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var user = await db.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailLower);
+
+            if (user is null || string.IsNullOrEmpty(user.MotDePasseHash)
+                || !BCrypt.Net.BCrypt.Verify(password, user.MotDePasseHash))
+            {
+                error = "E-mail ou mot de passe incorrect.";
+                return;
+            }
+            if (!user.IsAdmin)
+            {
+                error = "Accès réservé aux administrateurs.";
+                return;
+            }
+
+            var secret = Config["LoginSecret"];
+            if (string.IsNullOrEmpty(secret)) { error = "Erreur de configuration serveur."; return; }
+
+            var sig = Convert.ToHexString(
+                HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(user.Id.ToString())));
+            Nav.NavigateTo($"/auth/signin?userId={user.Id}&sig={sig}", forceLoad: true);
+        }
+        catch
+        {
+            error = "Une erreur technique est survenue.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}
