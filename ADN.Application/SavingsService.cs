@@ -14,39 +14,43 @@ namespace ADN_pay.Services
 
     public class SavingsService
     {
-        private readonly BankDbContext _context;
+        private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
         private readonly ILogger<SavingsService> _logger;
         private readonly NotificationHistoryService _notifHist;
 
-        public SavingsService(BankDbContext context, UserContext user, ILogger<SavingsService> logger,
+        public SavingsService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<SavingsService> logger,
             NotificationHistoryService notifHist)
         {
-            _context = context;
+            _factory = factory;
             _user = user;
             _logger = logger;
             _notifHist = notifHist;
         }
 
         public async Task<List<SavingsPocket>> GetPocketsAsync()
-            => await _context.SavingsPockets
+        {
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.SavingsPockets
                 .Where(p => p.UserId == _user.Profil.Id)
                 .ToListAsync();
+        }
 
         // ADR-001 : montants en centimes (long)
         public async Task<bool> CreerPocheEpargne(string obj, long montantInitialCentimes, DateTime fin,
             long montantCibleCentimes = 0L, bool tuteurVisible = false)
         {
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null || u.Solde < montantInitialCentimes) return false;
 
                 if (montantCibleCentimes <= 0L) montantCibleCentimes = montantInitialCentimes * 2;
 
                 u.Solde -= montantInitialCentimes;
-                _context.SavingsPockets.Add(new SavingsPocket
+                ctx.SavingsPockets.Add(new SavingsPocket
                 {
                     UserId = _user.Profil.Id,
                     Objectif = obj,
@@ -55,7 +59,7 @@ namespace ADN_pay.Services
                     MontantCible = montantCibleCentimes,
                     MontantActuel = montantInitialCentimes
                 });
-                var result = await _context.SaveChangesAsync() > 0;
+                var result = await ctx.SaveChangesAsync() > 0;
                 await tx.CommitAsync();
                 if (result)
                 {
@@ -76,16 +80,17 @@ namespace ADN_pay.Services
 
         public async Task<bool> CasserPocheEpargne(int id)
         {
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var p = await _context.SavingsPockets.FindAsync(id);
+                var p = await ctx.SavingsPockets.FindAsync(id);
                 if (p == null || p.UserId != _user.Profil.Id) return false;
-                var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null) return false;
                 u.Solde += p.MontantActuel;
-                _context.SavingsPockets.Remove(p);
-                await _context.SaveChangesAsync();
+                ctx.SavingsPockets.Remove(p);
+                await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 await _notifHist.AddNotificationAsync(
                     $"Poche d'épargne récupérée : {p.MontantActuel.ToDh()} reversés", "INFO", "EPARGNE");
@@ -102,12 +107,13 @@ namespace ADN_pay.Services
 
         public async Task<bool> BoosterPocheAsync(int id, long montantCentimes)
         {
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var p = await _context.SavingsPockets.FindAsync(id);
+                var p = await ctx.SavingsPockets.FindAsync(id);
                 if (p == null || p.UserId != _user.Profil.Id) return false;
-                var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null || u.Solde < montantCentimes)
                 {
                     _logger.LogWarning("Boost poche #{Id} refusé : solde insuffisant pour {Email}",
@@ -117,7 +123,7 @@ namespace ADN_pay.Services
                 u.Solde -= montantCentimes;
                 p.MontantActuel += montantCentimes;
                 _user.Profil.Solde = u.Solde;
-                await _context.SaveChangesAsync();
+                await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 await _notifHist.AddNotificationAsync(
                     $"Poche boostée de {montantCentimes.ToDh()}", "SUCCESS", "EPARGNE");
@@ -137,14 +143,15 @@ namespace ADN_pay.Services
         {
             if (montantCentimes <= 0) return (false, "Montant invalide");
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            await using var tx = await ctx.Database.BeginTransactionAsync();
             try
             {
-                var p = await _context.SavingsPockets.FindAsync(pocketId);
+                var p = await ctx.SavingsPockets.FindAsync(pocketId);
                 if (p == null) return (false, "Poche introuvable");
 
                 // L'étudiant propriétaire doit avoir autorisé ce tuteur…
-                var student = await _context.UserProfiles.FindAsync(p.UserId);
+                var student = await ctx.UserProfiles.FindAsync(p.UserId);
                 if (student == null
                     || !student.TuteurAutorise
                     || !string.Equals(student.TuteurEmail, _user.Profil.Email, StringComparison.OrdinalIgnoreCase))
@@ -154,7 +161,7 @@ namespace ADN_pay.Services
                 if (!(p.TuteurVisible || p.Objectif.Contains("TUTEUR", StringComparison.OrdinalIgnoreCase)))
                     return (false, "Cette poche n'est pas partagée avec vous");
 
-                var tuteur = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+                var tuteur = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (tuteur == null || tuteur.Solde < montantCentimes)
                     return (false, "Solde insuffisant sur votre compte");
 
@@ -163,7 +170,7 @@ namespace ADN_pay.Services
                 _user.Profil.Solde = tuteur.Solde;
 
                 // Trace le boost dans l'historique de l'étudiant (visible côté étudiant ET tuteur).
-                _context.Transactions.Add(new Transaction
+                ctx.Transactions.Add(new Transaction
                 {
                     UserId = student.Id,
                     Type = "ÉPARGNE",
@@ -174,7 +181,7 @@ namespace ADN_pay.Services
                     Motif = $"Versement de votre tuteur ({_user.Profil.Email})"
                 });
 
-                await _context.SaveChangesAsync();
+                await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 await _notifHist.AddNotificationForUserAsync(student.Id,
@@ -194,13 +201,14 @@ namespace ADN_pay.Services
 
         public async Task<List<TuteurPocketView>> GetPocketsForTuteurAsync()
         {
-            var students = await _context.UserProfiles
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var students = await ctx.UserProfiles
                 .Where(u => u.TuteurEmail == _user.Profil.Email && u.TuteurAutorise)
                 .ToListAsync();
             var result = new List<TuteurPocketView>();
             foreach (var s in students)
             {
-                var pockets = await _context.SavingsPockets
+                var pockets = await ctx.SavingsPockets
                     .Where(p => p.UserId == s.Id && (p.TuteurVisible || p.Objectif.Contains("TUTEUR")))
                     .ToListAsync();
                 foreach (var p in pockets)
@@ -219,7 +227,8 @@ namespace ADN_pay.Services
         public async Task<long> GetTotalInvestiThisMonthAsync()
         {
             var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            var studentIds = await _context.UserProfiles
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var studentIds = await ctx.UserProfiles
                 .Where(u => u.TuteurEmail == _user.Profil.Email && u.TuteurAutorise)
                 .Select(u => u.Id)
                 .ToListAsync();
@@ -227,7 +236,7 @@ namespace ADN_pay.Services
             if (!studentIds.Any()) return 0L;
 
             // Somme des boosts réellement versés par ce tuteur ce mois-ci (tracés en Transaction).
-            return await _context.Transactions
+            return await ctx.Transactions
                 .Where(t => studentIds.Contains(t.UserId)
                     && t.Date >= debutMois
                     && t.Libelle.StartsWith("Boost tuteur"))
@@ -236,14 +245,15 @@ namespace ADN_pay.Services
 
         public async Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20)
         {
-            var studentIds = await _context.UserProfiles
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var studentIds = await ctx.UserProfiles
                 .Where(u => u.TuteurEmail == _user.Profil.Email && u.TuteurAutorise)
                 .Select(u => u.Id)
                 .ToListAsync();
 
             if (!studentIds.Any()) return new();
 
-            return await _context.Transactions
+            return await ctx.Transactions
                 .Where(t => studentIds.Contains(t.UserId))
                 .OrderByDescending(t => t.Date)
                 .Take(count)

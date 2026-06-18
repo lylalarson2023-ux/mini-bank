@@ -33,18 +33,18 @@ namespace ADN_pay.Services
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly PawaPayOptions _options;
-        private readonly BankDbContext _db;
+        private readonly IDbContextFactory<BankDbContext> _dbFactory;
         private readonly ILogger<PawaPayService> _logger;
 
         public PawaPayService(
             IHttpClientFactory httpClientFactory,
             IOptions<PawaPayOptions> options,
-            BankDbContext db,
+            IDbContextFactory<BankDbContext> dbFactory,
             ILogger<PawaPayService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _options = options.Value;
-            _db = db;
+            _dbFactory = dbFactory;
             _logger = logger;
         }
 
@@ -98,7 +98,8 @@ namespace ADN_pay.Services
             var responseJson = await response.Content.ReadAsStringAsync();
             var result = JsonSerializer.Deserialize<PawaPayInitiateResponse>(responseJson, JsonOpts);
 
-            _db.PawaPayDeposits.Add(new PawaPayDeposit
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            db.PawaPayDeposits.Add(new PawaPayDeposit
             {
                 DepositId = depositId,
                 UserId = userId,
@@ -110,7 +111,7 @@ namespace ADN_pay.Services
                     ? PawaPayDepositStatus.Pending
                     : PawaPayDepositStatus.Failed
             });
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "PawaPay InitiateDeposit result — depositId={DepositId}, status={Status}",
@@ -153,19 +154,20 @@ namespace ADN_pay.Services
 
             if (dto.Status == "COMPLETED")
             {
-                var deposit = await _db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == dto.DepositId);
+                await using var db = await _dbFactory.CreateDbContextAsync();
+                var deposit = await db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == dto.DepositId);
                 if (deposit != null && deposit.Status != PawaPayDepositStatus.Completed)
                 {
                     deposit.Status = PawaPayDepositStatus.Completed;
                     deposit.UpdatedAt = DateTime.UtcNow;
 
-                    var user = await _db.UserProfiles.FindAsync(deposit.UserId);
+                    var user = await db.UserProfiles.FindAsync(deposit.UserId);
                     if (user != null)
                     {
                         user.Solde += (long)(deposit.Amount * 100);
                     }
 
-                    await _db.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                     _logger.LogInformation(
                         "PawaPay deposit completed — depositId={DepositId}, userId={UserId}, amount={Amount}",
                         dto.DepositId, deposit.UserId, deposit.Amount);
@@ -187,7 +189,8 @@ namespace ADN_pay.Services
 
         private async Task UpdateLocalDepositStatus(string depositId, string apiStatus, string? rawJson = null)
         {
-            var deposit = await _db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == depositId);
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var deposit = await db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == depositId);
             if (deposit == null)
             {
                 _logger.LogWarning("PawaPay deposit not found in DB — depositId={DepositId}", depositId);
@@ -205,7 +208,7 @@ namespace ADN_pay.Services
             if (rawJson != null)
                 deposit.RawCallbackJson = rawJson;
 
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
 
         private static string GenerateStatementDescription()

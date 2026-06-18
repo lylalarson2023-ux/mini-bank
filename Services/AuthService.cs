@@ -7,16 +7,16 @@ namespace ADN_pay.Services
 {
     public class AuthService
     {
-        private readonly BankDbContext _context;
+        private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
         private readonly ILogger<AuthService> _logger;
         private readonly IHttpContextAccessor _http;
         private readonly NotificationHistoryService _notifHist;
 
-        public AuthService(BankDbContext context, UserContext user, ILogger<AuthService> logger, IHttpContextAccessor http,
+        public AuthService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AuthService> logger, IHttpContextAccessor http,
             NotificationHistoryService notifHist)
         {
-            _context = context;
+            _factory = factory;
             _user = user;
             _logger = logger;
             _http = http;
@@ -25,6 +25,7 @@ namespace ADN_pay.Services
 
         private async Task LogLoginAsync(int? userId, string email, bool success, string? reason = null)
         {
+            await using var ctx = await _factory.CreateDbContextAsync();
             var log = new UserLogin
             {
                 UserId = userId,
@@ -35,13 +36,14 @@ namespace ADN_pay.Services
                 IpAddress = _http.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown",
                 UserAgent = _http.HttpContext?.Request?.Headers["User-Agent"].ToString() ?? "unknown"
             };
-            _context.UserLogins.Add(log);
-            await _context.SaveChangesAsync();
+            ctx.UserLogins.Add(log);
+            await ctx.SaveChangesAsync();
         }
 
         public async Task InitializeAsync(int userId)
         {
-            var user = await _context.UserProfiles.FindAsync(userId);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var user = await ctx.UserProfiles.FindAsync(userId);
             if (user != null)
             {
                 _user.Profil = user;
@@ -57,8 +59,9 @@ namespace ADN_pay.Services
                 _logger.LogWarning("Tentative de connexion avec email/mot de passe vide");
                 return false;
             }
+            await using var ctx = await _factory.CreateDbContextAsync();
             var emailLower = email.Trim().ToLower();
-            var user = await _context.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailLower);
+            var user = await ctx.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailLower);
             if (user == null || string.IsNullOrEmpty(user.MotDePasseHash))
             {
                 await LogLoginAsync(user?.Id, email, false, "Compte introuvable");
@@ -96,7 +99,8 @@ namespace ADN_pay.Services
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
                 return false;
 
-            var user = await _context.UserProfiles.FindAsync(userId);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var user = await ctx.UserProfiles.FindAsync(userId);
             if (user == null) return false;
             if (user.CompteCloture) return false;
 
@@ -133,18 +137,19 @@ namespace ADN_pay.Services
             if (!motDePasse.Any(c => !char.IsLetterOrDigit(c)))
                 return (false, "Le mot de passe doit contenir au moins un caractère spécial (!@#$%^&*)");
 
+            await using var ctx = await _factory.CreateDbContextAsync();
             u.Email = u.Email.Trim().ToLower();
-            if (await _context.UserProfiles.AnyAsync(x => x.Email == u.Email))
+            if (await ctx.UserProfiles.AnyAsync(x => x.Email == u.Email))
             {
                 _logger.LogWarning("Création compte échouée : {Email} déjà existant", u.Email);
                 return (false, "Cet email est déjà utilisé");
             }
             u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(motDePasse);
             u.MotDePasse = "";
-            _context.UserProfiles.Add(u);
+            ctx.UserProfiles.Add(u);
             try
             {
-                var result = await _context.SaveChangesAsync() > 0;
+                var result = await ctx.SaveChangesAsync() > 0;
                 if (result)
                 {
                     if (_user.EstConnecte && _user.Profil.Id > 0)
@@ -159,9 +164,11 @@ namespace ADN_pay.Services
                 return (false, "Une erreur technique est survenue. Veuillez réessayer.");
             }
         }
+
         public async Task MigreMotsDePasseEnClair()
         {
-            var users = await _context.UserProfiles.ToListAsync();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var users = await ctx.UserProfiles.ToListAsync();
             foreach (var u in users)
             {
                 if (u.MotDePasseHash.StartsWith("$2"))
@@ -174,7 +181,7 @@ namespace ADN_pay.Services
                     u.MotDePasse = "";
                 }
             }
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _logger.LogInformation("Migration des mots de passe vers BCrypt terminée.");
         }
     }

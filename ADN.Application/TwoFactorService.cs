@@ -7,13 +7,13 @@ namespace ADN_pay.Services
 {
     public class TwoFactorService
     {
-        private readonly BankDbContext _context;
+        private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
         private readonly ILogger<TwoFactorService> _logger;
 
-        public TwoFactorService(BankDbContext context, UserContext user, ILogger<TwoFactorService> logger)
+        public TwoFactorService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<TwoFactorService> logger)
         {
-            _context = context;
+            _factory = factory;
             _user = user;
             _logger = logger;
         }
@@ -74,7 +74,8 @@ namespace ADN_pay.Services
 
         public async Task<(bool Success, string Message, List<string> RecoveryCodes)> EnableAsync(string code)
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable", new());
             var secret = _user.Profil.TwoFactorSecret ?? u.TwoFactorSecret;
             if (string.IsNullOrEmpty(secret))
@@ -87,8 +88,8 @@ namespace ADN_pay.Services
             u.TwoFactorSecret = secret;
             u.TwoFactorEnabled = true;
             u.TwoFactorRecoveryCodes = HashCodes(plainCodes);
-            _context.UserProfiles.Update(u);
-            await _context.SaveChangesAsync();
+            ctx.UserProfiles.Update(u);
+            await ctx.SaveChangesAsync();
             _user.Profil.TwoFactorEnabled = true;
             _user.Profil.TwoFactorRecoveryCodes = u.TwoFactorRecoveryCodes;
             _logger.LogInformation("2FA activée pour {Email}", _user.Profil.Email);
@@ -97,13 +98,14 @@ namespace ADN_pay.Services
 
         public async Task DisableAsync()
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return;
             u.TwoFactorEnabled = false;
             u.TwoFactorSecret = null;
             u.TwoFactorRecoveryCodes = null;
-            _context.UserProfiles.Update(u);
-            await _context.SaveChangesAsync();
+            ctx.UserProfiles.Update(u);
+            await ctx.SaveChangesAsync();
             _user.Profil.TwoFactorEnabled = false;
             _user.Profil.TwoFactorSecret = null;
             _user.Profil.TwoFactorRecoveryCodes = null;
@@ -113,11 +115,12 @@ namespace ADN_pay.Services
         // Régénère un nouveau jeu de codes (invalide les anciens). 2FA doit être active.
         public async Task<List<string>> RegenerateRecoveryCodesAsync()
         {
-            var u = await _context.UserProfiles.FindAsync(_user.Profil.Id);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null || !u.TwoFactorEnabled) return new();
             var plainCodes = NewPlainCodes();
             u.TwoFactorRecoveryCodes = HashCodes(plainCodes);
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _user.Profil.TwoFactorRecoveryCodes = u.TwoFactorRecoveryCodes;
             _logger.LogInformation("Codes de secours 2FA régénérés pour {Email}", _user.Profil.Email);
             return plainCodes;
@@ -133,7 +136,8 @@ namespace ADN_pay.Services
         public async Task<bool> VerifyAndConsumeRecoveryCodeAsync(int userId, string code)
         {
             if (string.IsNullOrWhiteSpace(code)) return false;
-            var u = await _context.UserProfiles.FindAsync(userId);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
             if (u == null || string.IsNullOrEmpty(u.TwoFactorRecoveryCodes)) return false;
 
             var normalized = code.Trim().Replace(" ", "").Replace("-", "").ToLowerInvariant();
@@ -143,7 +147,7 @@ namespace ADN_pay.Services
 
             hashes.Remove(match); // consomme le code
             u.TwoFactorRecoveryCodes = string.Join(';', hashes);
-            await _context.SaveChangesAsync();
+            await ctx.SaveChangesAsync();
             _logger.LogWarning("Connexion via code de secours 2FA pour UserId={UserId} ({Remaining} restants)", userId, hashes.Count);
             return true;
         }
@@ -168,7 +172,8 @@ namespace ADN_pay.Services
 
         public async Task<bool> UserHasTwoFactorAsync(int userId)
         {
-            var u = await _context.UserProfiles.FindAsync(userId);
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
             return u?.TwoFactorEnabled == true && !string.IsNullOrEmpty(u.TwoFactorSecret);
         }
 
