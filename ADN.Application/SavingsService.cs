@@ -59,6 +59,16 @@ namespace ADN_pay.Services
                     MontantCible = montantCibleCentimes,
                     MontantActuel = montantInitialCentimes
                 });
+                // Trace le débit du compte courant vers l'épargne dans l'historique.
+                ctx.Transactions.Add(new Transaction
+                {
+                    UserId = _user.Profil.Id,
+                    Type = "ÉPARGNE",
+                    Montant = montantInitialCentimes,
+                    SoldeApres = u.Solde,
+                    Libelle = $"Épargne — {obj}",
+                    Motif = "Transfert vers poche d'épargne"
+                });
                 var result = await ctx.SaveChangesAsync() > 0;
                 await tx.CommitAsync();
                 if (result)
@@ -88,12 +98,25 @@ namespace ADN_pay.Services
                 if (p == null || p.UserId != _user.Profil.Id) return false;
                 var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
                 if (u == null) return false;
-                u.Solde += p.MontantActuel;
+                var montantRecupere = p.MontantActuel;
+                var objectif = p.Objectif;
+                u.Solde += montantRecupere;
                 ctx.SavingsPockets.Remove(p);
+                // Trace le retour de l'épargne vers le compte courant (entrée).
+                ctx.Transactions.Add(new Transaction
+                {
+                    UserId = _user.Profil.Id,
+                    Type = "RETOUR_ÉPARGNE",
+                    Montant = montantRecupere,
+                    SoldeApres = u.Solde,
+                    Libelle = $"Retour d'épargne — {objectif}",
+                    Motif = "Récupération de poche d'épargne"
+                });
                 await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
+                _user.Profil.Solde = u.Solde;
                 await _notifHist.AddNotificationAsync(
-                    $"Poche d'épargne récupérée : {p.MontantActuel.ToDh()} reversés", "INFO", "EPARGNE");
+                    $"Poche d'épargne récupérée : {montantRecupere.ToDh()} reversés", "INFO", "EPARGNE");
                 _logger.LogInformation("Poche d'épargne #{Id} cassée par {Email}",
                     id, PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
@@ -123,6 +146,16 @@ namespace ADN_pay.Services
                 u.Solde -= montantCentimes;
                 p.MontantActuel += montantCentimes;
                 _user.Profil.Solde = u.Solde;
+                // Trace le débit du compte courant vers l'épargne dans l'historique.
+                ctx.Transactions.Add(new Transaction
+                {
+                    UserId = _user.Profil.Id,
+                    Type = "ÉPARGNE",
+                    Montant = montantCentimes,
+                    SoldeApres = u.Solde,
+                    Libelle = $"Boost épargne — {p.Objectif}",
+                    Motif = "Versement vers poche d'épargne"
+                });
                 await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 await _notifHist.AddNotificationAsync(
@@ -173,7 +206,9 @@ namespace ADN_pay.Services
                 ctx.Transactions.Add(new Transaction
                 {
                     UserId = student.Id,
-                    Type = "ÉPARGNE",
+                    // Type neutre : le versement va dans la POCHE, le solde courant de
+                    // l'étudiant ne bouge pas → ne doit pas peser sur la courbe de solde.
+                    Type = "BOOST_TUTEUR",
                     Montant = montantCentimes,
                     Frais = 0L,
                     SoldeApres = student.Solde,

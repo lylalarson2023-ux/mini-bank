@@ -1,0 +1,132 @@
+@page "/scoring"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+
+<PageTitle>Scoring — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Scoring des utilisateurs</h1>
+    <div class="page-sub">Classement des comptes — score composite par défaut, triable selon l'axe choisi</div>
+
+    <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><i class="bi bi-bar-chart-line"></i> Classement</div>
+        <div class="panel-body">
+            <div class="search-bar" style="flex-wrap:wrap;gap:8px;align-items:center">
+                <span class="muted" style="font-size:.8rem">Trier par :</span>
+                @foreach (var m in modes)
+                {
+                    <button class="btn btn-sm @(mode == m ? "btn-primary" : "btn-ghost")"
+                            @onclick="() => ChangeMode(m)" disabled="@busy">
+                        @Label(m)
+                    </button>
+                }
+                <span style="flex:1"></span>
+                <span class="muted" style="font-size:.8rem">@scored.Count utilisateur(s)</span>
+            </div>
+
+            @if (busy)
+            {
+                <p class="muted" style="margin-top:12px">Calcul des scores…</p>
+            }
+            else if (scored.Count == 0)
+            {
+                <p class="muted" style="margin-top:12px">Aucun utilisateur à classer.</p>
+            }
+            else
+            {
+                <div style="overflow-x:auto;margin-top:14px">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Utilisateur</th>
+                                <th>Statut</th>
+                                <th style="text-align:right">Solde</th>
+                                <th style="text-align:right">Épargne</th>
+                                <th style="text-align:right">Tx (30j)</th>
+                                <th style="text-align:right">Ancienneté</th>
+                                <th style="min-width:160px">@Label(mode)</th>
+                                <th style="text-align:right">Composite</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var rang = 0; }
+                            @foreach (var s in scored)
+                            {
+                                rang++;
+                                var val = s.ScorePour(mode);
+                                <tr @key="s.User.Id">
+                                    <td><strong>@rang</strong></td>
+                                    <td>
+                                        <strong>@s.User.Prenom @s.User.Nom</strong>
+                                        <div class="muted" style="font-size:.75rem">@s.User.Email</div>
+                                    </td>
+                                    <td><span class="badge @(s.User.Statut == UserStatus.PREMIUM || s.User.Statut == UserStatus.VIP ? "ok" : "info")">@s.User.Statut</span></td>
+                                    <td style="text-align:right">@Money(s.User.Solde)</td>
+                                    <td style="text-align:right">@Money(s.EpargneTotale)</td>
+                                    <td style="text-align:right">@s.NbTransactions <span class="muted">(@s.NbTransactions30j)</span></td>
+                                    <td style="text-align:right">@s.AncienneteJours j</td>
+                                    <td>
+                                        <div class="score-row">
+                                            <div class="score-bar">
+                                                <div class="score-fill @(mode == ScoringMode.Risque ? "risk" : "")" style="width:@(val.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                            </div>
+                                            <span class="score-num">@val.ToString("0.0")</span>
+                                        </div>
+                                    </td>
+                                    <td style="text-align:right"><strong>@s.ScoreComposite.ToString("0.0")</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="muted" style="margin-top:10px;font-size:.72rem">
+                    Scores normalisés 0–100 sur la population. Composite = 40 % valeur + 30 % engagement + 20 % fidélité + 10 % statut.
+                    Risque = exposition (dette pondérée par le ratio dette / actifs).
+                </p>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .score-row { display:flex; align-items:center; gap:8px; }
+    .score-bar { flex:1; height:8px; border-radius:6px; background:var(--border-color,#e5e7eb); overflow:hidden; }
+    .score-fill { height:100%; border-radius:6px; background:linear-gradient(90deg,#0099CC,#30B880); }
+    .score-fill.risk { background:linear-gradient(90deg,#f59e0b,#dc2626); }
+    .score-num { font-size:.78rem; font-weight:600; min-width:34px; text-align:right; }
+</style>
+
+@code {
+    private readonly ScoringMode[] modes = Enum.GetValues<ScoringMode>();
+    private ScoringMode mode = ScoringMode.Composite;
+    private List<ScoredUser> scored = new();
+    private bool busy = true;
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    private static string Label(ScoringMode m) => m switch
+    {
+        ScoringMode.Valeur => "Valeur client",
+        ScoringMode.Engagement => "Engagement",
+        ScoringMode.Risque => "Risque",
+        _ => "Composite"
+    };
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task ChangeMode(ScoringMode m)
+    {
+        if (mode == m || busy) return;
+        mode = m;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        busy = true;
+        try { scored = await Admin.GetUsersScoredAsync(mode); }
+        finally { busy = false; }
+    }
+}

@@ -82,6 +82,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ApiBearer", policy => policy
         .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
         .RequireAuthenticatedUser());
+    // API REST réservée aux admins (rôle Admin porté par le JWT).
+    options.AddPolicy("ApiAdmin", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .RequireRole("Admin"));
 });
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
@@ -263,6 +268,7 @@ AuthEndpoints.Map(app);
 AccountEndpoints.Map(app);
 SavingsEndpoints.Map(app);
 CreditEndpoints.Map(app);
+AdminEndpoints.Map(app);
 app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow })).WithTags("Health");
 
 // --- ADMIN BLAZOR ---

@@ -220,6 +220,14 @@ namespace ADN_pay.Services
                 Details = $"Montant: {montantCentimes.ToDh()}"
             });
             await ctx.SaveChangesAsync();
+
+            // Notifie l'utilisateur côté client (notification persistée, lue par le web au
+            // prochain chargement / ouverture de la cloche — les 2 apps partagent la base).
+            if (u.NotifDepot)
+                await _notifHist.AddNotificationForUserAsync(userId,
+                    $"Dépôt de {montantCentimes.ToDh()} crédité sur votre compte par l'administration.",
+                    "SUCCESS", "DEPOT");
+
             _logger.LogInformation("Dépôt admin de {Montant} sur compte #{UserId} par {AdminEmail}",
                 montantCentimes.ToDh(), userId, PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
@@ -393,6 +401,142 @@ namespace ADN_pay.Services
             _logger.LogInformation("Tuteur de {Student} révoqué par admin {Admin}",
                 PiiMasker.MaskEmail(student.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, $"Tuteur révoqué pour {student.Email}");
+        }
+
+        // --- SCORING DES UTILISATEURS ---
+        // Calcule, pour chaque utilisateur (hors admins), une série de sous-scores 0..100
+        // normalisés sur le maximum de la population, puis un score composite. L'axe de tri
+        // est choisi par l'admin (composite par défaut, ou valeur / engagement / risque).
+        public async Task<List<ScoredUser>> GetUsersScoredAsync(ScoringMode mode = ScoringMode.Composite)
+        {
+            if (!_user.Profil.IsAdmin) return new();
+            await using var ctx = await _factory.CreateDbContextAsync();
+
+            var users = await ctx.UserProfiles.Where(u => !u.IsAdmin).ToListAsync();
+            if (users.Count == 0) return new();
+
+            var now = DateTime.UtcNow;
+            var since30 = now.AddDays(-30);
+
+            // Épargne totale par utilisateur (somme des poches).
+            var savings = (await ctx.SavingsPockets
+                    .Select(p => new { p.UserId, p.MontantActuel })
+                    .ToListAsync())
+                .GroupBy(p => p.UserId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.MontantActuel));
+
+            // Comptes de transactions (total + 30 derniers jours) par utilisateur.
+            var txRows = await ctx.Transactions
+                .Select(t => new { t.UserId, t.Date })
+                .ToListAsync();
+            var txByUser = txRows
+                .GroupBy(t => t.UserId)
+                .ToDictionary(g => g.Key, g => (Total: g.Count(), Recent: g.Count(t => t.Date >= since30)));
+
+            // 1ʳᵉ passe : valeurs brutes.
+            var scored = users.Select(u =>
+            {
+                var epargne = savings.GetValueOrDefault(u.Id);
+                var (nbTx, nbTx30) = txByUser.TryGetValue(u.Id, out var c) ? c : (0, 0);
+                return new ScoredUser
+                {
+                    User = u,
+                    EpargneTotale = epargne,
+                    NbTransactions = nbTx,
+                    NbTransactions30j = nbTx30,
+                    AncienneteJours = Math.Max(0, (int)(now - u.DateInscription).TotalDays),
+                };
+            }).ToList();
+
+            // Maxima de la population pour normaliser (évite la division par zéro).
+            double maxValeur = Math.Max(1, scored.Max(s => (double)(s.User.Solde + s.EpargneTotale)));
+            double maxEngagement = Math.Max(1, scored.Max(s => (double)(s.NbTransactions + 2 * s.NbTransactions30j)));
+            double maxFidelite = Math.Max(1, scored.Max(s => (double)s.AncienneteJours));
+            double maxRisque = Math.Max(1, scored.Max(s => (double)RisqueBrut(s)));
+
+            foreach (var s in scored)
+            {
+                s.ScoreValeur = Math.Round((s.User.Solde + s.EpargneTotale) / maxValeur * 100, 1);
+                s.ScoreEngagement = Math.Round((s.NbTransactions + 2 * s.NbTransactions30j) / maxEngagement * 100, 1);
+                s.ScoreFidelite = Math.Round(s.AncienneteJours / maxFidelite * 100, 1);
+                s.ScoreStatut = s.User.Statut switch
+                {
+                    UserStatus.VIP => 100,
+                    UserStatus.PREMIUM => 70,
+                    _ => 30
+                };
+                s.ScoreRisque = Math.Round(RisqueBrut(s) / maxRisque * 100, 1);
+
+                // Composite : valeur 40 %, engagement 30 %, fidélité 20 %, statut 10 %.
+                s.ScoreComposite = Math.Round(
+                    0.40 * s.ScoreValeur +
+                    0.30 * s.ScoreEngagement +
+                    0.20 * s.ScoreFidelite +
+                    0.10 * s.ScoreStatut, 1);
+            }
+
+            return scored.OrderByDescending(s => s.ScorePour(mode)).ThenBy(s => s.User.Id).ToList();
+        }
+
+        // Risque brut : dette pondérée par le ratio dette / actifs (un compte très endetté
+        // au regard de ce qu'il possède est plus risqué qu'un endettement couvert par l'épargne).
+        private static double RisqueBrut(ScoredUser s)
+        {
+            if (s.User.Dette <= 0) return 0;
+            double actifs = s.User.Solde + s.EpargneTotale;
+            double ratio = s.User.Dette / (actifs + 1d); // +1 : garde le ratio fini
+            return s.User.Dette * (1 + Math.Min(ratio, 3)); // plafonne l'effet du ratio
+        }
+
+        // --- VUE GLOBALE DES TRANSACTIONS (point 4) ---
+        public record AdminTxView(
+            int Id, int UserId, string UserNom, string UserEmail,
+            string Type, long Montant, long Frais, long SoldeApres,
+            string Libelle, string Motif, DateTime Date);
+
+        public record AdminTxResult(
+            List<AdminTxView> Items, int Total, long TotalEntrees, long TotalSorties);
+
+        // Toutes les transactions de tous les utilisateurs, filtrables et paginées.
+        public async Task<AdminTxResult> GetAllTransactionsAsync(
+            int? userId = null, string? type = null,
+            DateTime? from = null, DateTime? to = null,
+            int page = 1, int pageSize = 50)
+        {
+            if (!_user.Profil.IsAdmin) return new(new(), 0, 0, 0);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+            page = Math.Max(1, page);
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var q = ctx.Transactions.AsQueryable();
+            if (userId.HasValue) q = q.Where(t => t.UserId == userId.Value);
+            if (!string.IsNullOrWhiteSpace(type)) q = q.Where(t => t.Type == type);
+            if (from.HasValue) q = q.Where(t => t.Date >= from.Value);
+            if (to.HasValue) q = q.Where(t => t.Date <= to.Value);
+
+            var total = await q.CountAsync();
+
+            // Totaux entrées/sorties : IsEntree/IsSortie ne sont pas traduisibles en SQL
+            // (NotMapped) → on agrège côté mémoire sur le sous-ensemble filtré.
+            var typesMontants = await q.Select(t => new { t.Type, t.Montant }).ToListAsync();
+            long totalEntrees = typesMontants
+                .Where(t => new Transaction { Type = t.Type }.IsEntree).Sum(t => t.Montant);
+            long totalSorties = typesMontants
+                .Where(t => new Transaction { Type = t.Type }.IsSortie).Sum(t => t.Montant);
+
+            var items = await q
+                .OrderByDescending(t => t.Date)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Join(ctx.UserProfiles,
+                    t => t.UserId, u => u.Id,
+                    (t, u) => new AdminTxView(
+                        t.Id, t.UserId, u.Prenom + " " + u.Nom, u.Email,
+                        t.Type, t.Montant, t.Frais, t.SoldeApres,
+                        t.Libelle, t.Motif, t.Date))
+                .ToListAsync();
+
+            return new(items, total, totalEntrees, totalSorties);
         }
     }
 }

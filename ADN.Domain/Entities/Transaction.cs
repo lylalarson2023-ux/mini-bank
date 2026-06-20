@@ -30,9 +30,9 @@ namespace ADN_pay.Models
         public long MontantBrut => Montant + Frais;
 
         [NotMapped]
-        public bool IsEntree => Type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" or "DEPOT" or "RECEPTION";
+        public bool IsEntree => Type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" or "DEPOT" or "RECEPTION" or "RETOUR_ÉPARGNE";
 
         [NotMapped]
-        public bool IsSortie => Type is "RETRAIT" or "VIREMENT";
+        public bool IsSortie => Type is "RETRAIT" or "VIREMENT" or "ÉPARGNE";
     }
 }

@@ -1,0 +1,176 @@
+@page "/transactions"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@inject AdminService Admin
+
+<PageTitle>Transactions — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Activité — toutes les transactions</h1>
+    <div class="page-sub">Vue complète des mouvements de tous les utilisateurs</div>
+
+    <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><i class="bi bi-activity"></i> Filtres</div>
+        <div class="panel-body">
+            <div class="search-bar" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+                <div class="field" style="margin:0;min-width:240px;flex:1">
+                    <label>Utilisateur</label>
+                    @if (selectedUser is null)
+                    {
+                        <UserSearchBox OnSelect="OnPickUser" Placeholder="Filtrer par utilisateur…" />
+                    }
+                    else
+                    {
+                        <div class="selected">
+                            <div><strong>#@selectedUser.Id @selectedUser.Prenom @selectedUser.Nom</strong>
+                                <div class="muted">@selectedUser.Email</div></div>
+                            <button class="btn btn-ghost btn-sm" @onclick="ClearUser">Tous</button>
+                        </div>
+                    }
+                </div>
+                <div class="field" style="margin:0">
+                    <label>Type</label>
+                    <select class="input" @bind="typeFilter">
+                        <option value="">Tous</option>
+                        @foreach (var t in types)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="field" style="margin:0">
+                    <label>Du</label>
+                    <input class="input" type="date" @bind="dateFrom" />
+                </div>
+                <div class="field" style="margin:0">
+                    <label>Au</label>
+                    <input class="input" type="date" @bind="dateTo" />
+                </div>
+                <button class="btn btn-primary btn-sm" @onclick="ApplyFilters" disabled="@busy">@(busy ? "…" : "Appliquer")</button>
+                <button class="btn btn-ghost btn-sm" @onclick="ResetFilters" disabled="@busy">Réinitialiser</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-row" style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
+        <div class="panel" style="flex:1;min-width:150px"><div class="panel-body">
+            <div class="muted" style="font-size:.72rem">ENTRÉES</div>
+            <div style="font-size:1.25rem;font-weight:700;color:#16a34a">+@Money(result.TotalEntrees) MAD</div>
+        </div></div>
+        <div class="panel" style="flex:1;min-width:150px"><div class="panel-body">
+            <div class="muted" style="font-size:.72rem">SORTIES</div>
+            <div style="font-size:1.25rem;font-weight:700;color:#dc2626">-@Money(result.TotalSorties) MAD</div>
+        </div></div>
+        <div class="panel" style="flex:1;min-width:150px"><div class="panel-body">
+            <div class="muted" style="font-size:.72rem">NET</div>
+            @{ var net = result.TotalEntrees - result.TotalSorties; }
+            <div style="font-size:1.25rem;font-weight:700;color:@(net >= 0 ? "#16a34a" : "#dc2626")">@(net >= 0 ? "+" : "")@Money(net) MAD</div>
+        </div></div>
+        <div class="panel" style="flex:1;min-width:150px"><div class="panel-body">
+            <div class="muted" style="font-size:.72rem">TRANSACTIONS</div>
+            <div style="font-size:1.25rem;font-weight:700">@result.Total</div>
+        </div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+        <div class="panel-body">
+            @if (busy)
+            {
+                <p class="muted">Chargement…</p>
+            }
+            else if (result.Items.Count == 0)
+            {
+                <p class="muted">Aucune transaction ne correspond aux filtres.</p>
+            }
+            else
+            {
+                <div style="overflow-x:auto">
+                    <table class="table">
+                        <thead>
+                            <tr><th>Date</th><th>Utilisateur</th><th>Type</th><th>Libellé</th><th style="text-align:right">Montant</th><th style="text-align:right">Solde après</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in result.Items)
+                            {
+                                var entree = IsEntree(t.Type);
+                                var sortie = IsSortie(t.Type);
+                                <tr @key="t.Id">
+                                    <td class="muted" style="white-space:nowrap">@t.Date.ToLocalTime().ToString("dd/MM/yy HH:mm")</td>
+                                    <td><strong>@t.UserNom</strong><div class="muted" style="font-size:.72rem">@t.UserEmail</div></td>
+                                    <td><span class="badge info">@t.Type</span></td>
+                                    <td>@t.Libelle
+                                        @if (!string.IsNullOrEmpty(t.Motif) && t.Motif != t.Libelle)
+                                        {
+                                            <div class="muted" style="font-size:.72rem">@t.Motif</div>
+                                        }
+                                    </td>
+                                    <td style="text-align:right;font-weight:700;color:@(entree ? "#16a34a" : sortie ? "#dc2626" : "var(--text-muted)")">
+                                        @(entree ? "+" : sortie ? "-" : "") @Money(t.Montant)
+                                    </td>
+                                    <td style="text-align:right" class="muted">@Money(t.SoldeApres)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="search-bar" style="justify-content:center;gap:12px;margin-top:14px;align-items:center">
+                    <button class="btn btn-ghost btn-sm" @onclick="Prev" disabled="@(busy || page <= 1)">‹ Précédent</button>
+                    <span class="muted" style="font-size:.8rem">Page @(page) / @TotalPages</span>
+                    <button class="btn btn-ghost btn-sm" @onclick="Next" disabled="@(busy || page >= TotalPages)">Suivant ›</button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int PageSize = 50;
+    private readonly string[] types = { "DÉPÔT", "RETRAIT", "VIREMENT", "RÉCEPTION", "ÉPARGNE", "RETOUR_ÉPARGNE", "BOOST_TUTEUR", "CRÉDIT" };
+
+    private AdminService.AdminTxResult result = new(new(), 0, 0, 0);
+    private bool busy = true;
+    private int page = 1;
+
+    private UserProfile? selectedUser;
+    private string typeFilter = "";
+    private DateTime? dateFrom;
+    private DateTime? dateTo;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(result.Total / (double)PageSize));
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    private static bool IsEntree(string type) => type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" or "DEPOT" or "RECEPTION" or "RETOUR_ÉPARGNE";
+    private static bool IsSortie(string type) => type is "RETRAIT" or "VIREMENT" or "ÉPARGNE";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private void OnPickUser(UserProfile u) { selectedUser = u; }
+    private async Task ClearUser() { selectedUser = null; await ApplyFilters(); }
+
+    private async Task ApplyFilters() { page = 1; await Load(); }
+
+    private async Task ResetFilters()
+    {
+        selectedUser = null; typeFilter = ""; dateFrom = null; dateTo = null; page = 1;
+        await Load();
+    }
+
+    private async Task Prev() { if (page > 1) { page--; await Load(); } }
+    private async Task Next() { if (page < TotalPages) { page++; await Load(); } }
+
+    private async Task Load()
+    {
+        busy = true;
+        try
+        {
+            // 'Au' inclusif : on prend toute la journée sélectionnée.
+            var to = dateTo?.Date.AddDays(1).AddTicks(-1);
+            result = await Admin.GetAllTransactionsAsync(
+                selectedUser?.Id, string.IsNullOrEmpty(typeFilter) ? null : typeFilter,
+                dateFrom?.Date, to, page, PageSize);
+        }
+        finally { busy = false; }
+    }
+}
