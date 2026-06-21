@@ -165,11 +165,18 @@
         busy = true;
         try
         {
-            // 'Au' inclusif : on prend toute la journée sélectionnée.
-            var to = dateTo?.Date.AddDays(1).AddTicks(-1);
+            // Les transactions sont stockées en UTC ; on convertit les bornes (jour local
+            // choisi dans le sélecteur) en UTC pour ne pas décaler aux frontières de journée.
+            DateTime? fromUtc = dateFrom.HasValue
+                ? DateTime.SpecifyKind(dateFrom.Value.Date, DateTimeKind.Local).ToUniversalTime()
+                : null;
+            // 'Au' inclusif : toute la journée locale sélectionnée.
+            DateTime? toUtc = dateTo.HasValue
+                ? DateTime.SpecifyKind(dateTo.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Local).ToUniversalTime()
+                : null;
             result = await Admin.GetAllTransactionsAsync(
                 selectedUser?.Id, string.IsNullOrEmpty(typeFilter) ? null : typeFilter,
-                dateFrom?.Date, to, page, PageSize);
+                fromUtc, toUtc, page, PageSize);
         }
         finally { busy = false; }
     }

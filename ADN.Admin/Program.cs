@@ -205,10 +205,12 @@ app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/api/v1"),
 static string Sign(string payload, string secret) =>
     Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 
-app.MapGet("/auth/signin", async (HttpContext ctx, IDbContextFactory<BankDbContext> dbFactory, int userId, string sig) =>
+app.MapGet("/auth/signin", async (HttpContext ctx, IDbContextFactory<BankDbContext> dbFactory, int userId, long exp, string sig) =>
 {
-    if (sig != Sign(userId.ToString(), loginSecret))
+    if (sig != Sign($"{userId}.{exp}", loginSecret))
         return Results.Redirect("/login?error=invalid");
+    if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
+        return Results.Redirect("/login?error=expired");
 
     await using var db = await dbFactory.CreateDbContextAsync();
     var user = await db.UserProfiles.FindAsync(userId);

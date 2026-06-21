@@ -160,6 +160,9 @@ namespace ADN_pay.Services
         // ADR-001 : montantCentimes en long
         public async Task<bool> EffectuerVirementAsync(string emailDestinataire, long montantCentimes, string motif)
         {
+            // Garde-fou : un montant nul ou négatif inverserait le flux (création d'argent).
+            if (montantCentimes <= 0) return false;
+
             var (allow, msg) = VerifierPlafond(montantCentimes);
             if (!allow) return false;
 

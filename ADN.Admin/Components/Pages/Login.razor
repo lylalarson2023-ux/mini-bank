@@ -46,6 +46,7 @@
         error = q.Get("error") switch
         {
             "invalid" => "Échec de l'authentification. Réessayez.",
+            "expired" => "Lien de connexion expiré. Réessayez.",
             "denied" => "Accès réservé aux administrateurs.",
             _ => null
         };
@@ -87,9 +88,11 @@
             var secret = Config["LoginSecret"];
             if (string.IsNullOrEmpty(secret)) { error = "Erreur de configuration serveur."; return; }
 
+            // Lien de passation à durée de vie courte : signe userId + expiration (anti-rejeu).
+            var exp = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
             var sig = Convert.ToHexString(
-                HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(user.Id.ToString())));
-            Nav.NavigateTo($"/auth/signin?userId={user.Id}&sig={sig}", forceLoad: true);
+                HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{user.Id}.{exp}")));
+            Nav.NavigateTo($"/auth/signin?userId={user.Id}&exp={exp}&sig={sig}", forceLoad: true);
         }
         catch
         {

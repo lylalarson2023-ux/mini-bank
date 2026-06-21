@@ -284,10 +284,12 @@ static string SignToken(string payload, string secret)
     return Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 }
 
-app.MapGet("/api/auth/login-handler", async (HttpContext ctx, IDbContextFactory<BankDbContext> dbFactory, int userId, string sig) =>
+app.MapGet("/api/auth/login-handler", async (HttpContext ctx, IDbContextFactory<BankDbContext> dbFactory, int userId, long exp, string sig) =>
 {
-    if (sig != SignToken(userId.ToString(), loginSecret))
+    if (sig != SignToken($"{userId}.{exp}", loginSecret))
         return Results.Redirect("/login?error=invalid");
+    if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
+        return Results.Redirect("/login?error=session");
 
     await using var db = await dbFactory.CreateDbContextAsync();
     var user = await db.UserProfiles.FindAsync(userId);

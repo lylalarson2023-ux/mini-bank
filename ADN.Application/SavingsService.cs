@@ -40,6 +40,7 @@ namespace ADN_pay.Services
         public async Task<bool> CreerPocheEpargne(string obj, long montantInitialCentimes, DateTime fin,
             long montantCibleCentimes = 0L, bool tuteurVisible = false)
         {
+            if (montantInitialCentimes <= 0) return false; // montant négatif/nul interdit
             await using var ctx = await _factory.CreateDbContextAsync();
             await using var tx = await ctx.Database.BeginTransactionAsync();
             try
@@ -130,6 +131,7 @@ namespace ADN_pay.Services
 
         public async Task<bool> BoosterPocheAsync(int id, long montantCentimes)
         {
+            if (montantCentimes <= 0) return false; // montant négatif/nul interdit
             await using var ctx = await _factory.CreateDbContextAsync();
             await using var tx = await ctx.Database.BeginTransactionAsync();
             try

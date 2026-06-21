@@ -249,7 +249,10 @@
             return;
         }
         Notif.Notify("ACCES ACCORDE", NotificationType.SUCCESS);
-        var sig = SignToken(userId.ToString(), secret);
-        Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&sig={sig}", forceLoad: true);
+        // Lien de passation à durée de vie courte : signe userId + expiration (anti-rejeu
+        // si l'URL fuit via logs/historique/referer).
+        var exp = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
+        var sig = SignToken($"{userId}.{exp}", secret);
+        Nav.NavigateTo($"/api/auth/login-handler?userId={userId}&exp={exp}&sig={sig}", forceLoad: true);
     }
 }

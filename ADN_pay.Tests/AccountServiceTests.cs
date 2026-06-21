@@ -87,6 +87,45 @@ public class AccountServiceTests : IDisposable
         Assert.Equal(80_000L, GetSolde(1)); // 800 DH
     }
 
+    [Fact]
+    public async Task EffectuerVirementAsync_MontantNegatif_RetourneFalse()
+    {
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", -10_000L, "Hack");
+
+        Assert.False(result);
+        Assert.Equal(50_000L, GetSolde(1)); // inchangé (pas de création d'argent)
+        Assert.Equal(20_000L, GetSolde(2)); // inchangé
+    }
+
+    [Fact]
+    public async Task UpdatePlafondsAsync_AuDelaDuMaxDuStatut_RetourneFalse()
+    {
+        // User 1 = STANDARD → max 5 000 / 50 000 DH (500 000 / 5 000 000 centimes)
+        var (ok, _) = await _service.UpdatePlafondsAsync(600_000L, 5_000_000L); // journalier > max
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public async Task UpdatePlafondsAsync_DansLaLimiteDuStatut_Reussit()
+    {
+        var (ok, _) = await _service.UpdatePlafondsAsync(500_000L, 5_000_000L); // = max STANDARD
+        Assert.True(ok);
+
+        _db.ChangeTracker.Clear();
+        var u = _db.UserProfiles.Find(1)!;
+        Assert.Equal(500_000L, u.PlafondJournalier);
+        Assert.Equal(5_000_000L, u.PlafondMensuel);
+    }
+
+    [Fact]
+    public void PlafondsMaxPourStatut_VipSuperieurAStandard()
+    {
+        var std = AccountService.PlafondsMaxPourStatut(UserStatus.STANDARD);
+        var vip = AccountService.PlafondsMaxPourStatut(UserStatus.VIP);
+        Assert.True(vip.Journalier > std.Journalier);
+        Assert.True(vip.Mensuel > std.Mensuel);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
