@@ -443,17 +443,22 @@
     {
         <div class="form-section">
             <h6><i class="bi bi-sliders"></i> PLAFONDS DE TRANSACTIONS</h6>
+            @{
+                var (maxJ, maxM) = ADN_pay.Services.AccountService.PlafondsMaxPourStatut(Bank.Profil.Statut);
+            }
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
                 Limites maximales de vos transactions. Réinitialisées automatiquement chaque jour/mois.
+                <br />Maximum pour votre statut <strong>@Bank.Profil.Statut</strong> :
+                @((maxJ / 100m).ToString("N0")) DH/jour · @((maxM / 100m).ToString("N0")) DH/mois.
             </p>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Plafond journalier (DH)</label>
-                    <input type="number" @bind="plafondJournalier" class="form-input" placeholder="5000" />
+                    <input type="number" min="1" max="@(maxJ / 100m)" @bind="plafondJournalier" class="form-input" placeholder="5000" />
                 </div>
                 <div class="form-group">
                     <label>Plafond mensuel (DH)</label>
-                    <input type="number" @bind="plafondMensuel" class="form-input" placeholder="50000" />
+                    <input type="number" min="1" max="@(maxM / 100m)" @bind="plafondMensuel" class="form-input" placeholder="50000" />
                 </div>
             </div>
             <button class="btn btn-primary" @onclick="SavePlafonds" disabled="@saving">

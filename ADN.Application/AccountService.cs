@@ -660,6 +660,13 @@ namespace ADN_pay.Services
             if (u == null) return (false, "Utilisateur introuvable");
             if (journalierCentimes <= 0 || mensuelCentimes <= 0) return (false, "Les plafonds doivent être positifs");
             if (journalierCentimes > mensuelCentimes) return (false, "Le plafond journalier ne peut pas dépasser le plafond mensuel");
+
+            // Garde-fou : le client ne peut pas relever ses plafonds au-delà du maximum
+            // autorisé par son statut (contrôle anti-fraude/AML fixé par l'établissement).
+            var (maxJournalier, maxMensuel) = PlafondsMaxPourStatut(u.Statut);
+            if (journalierCentimes > maxJournalier || mensuelCentimes > maxMensuel)
+                return (false, $"Plafonds trop élevés pour votre statut {u.Statut}. Maximum : {maxJournalier.ToDh()}/jour, {maxMensuel.ToDh()}/mois.");
+
             u.PlafondJournalier = journalierCentimes;
             u.PlafondMensuel = mensuelCentimes;
             await ctx.SaveChangesAsync();
@@ -671,6 +678,15 @@ namespace ADN_pay.Services
                 PiiMasker.MaskEmail(_user.Profil.Email), journalierCentimes.ToDh(), mensuelCentimes.ToDh());
             return (true, "Plafonds mis à jour");
         }
+
+        // Plafonds maximaux (centimes) qu'un client peut s'attribuer selon son statut.
+        // Exposé en public pour que l'UI (Réglages) puisse afficher/borner les valeurs.
+        public static (long Journalier, long Mensuel) PlafondsMaxPourStatut(UserStatus statut) => statut switch
+        {
+            UserStatus.VIP     => (10_000_000L, 100_000_000L), // 100 000 / 1 000 000 DH
+            UserStatus.PREMIUM => (2_000_000L,  20_000_000L),  //  20 000 /   200 000 DH
+            _                  => (500_000L,    5_000_000L),   //   5 000 /    50 000 DH (STANDARD/PENDING)
+        };
 
         // --- BÉNÉFICIAIRES ---
         public async Task<List<Beneficiaire>> GetBeneficiairesAsync()
