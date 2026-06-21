@@ -29,14 +29,14 @@
     <div class="depot-step">
         <div class="depot-step-label">2. MOYEN DE PAIEMENT</div>
         <div class="depot-choices">
-            <button class="depot-choice @(selectedMethod == "stripe" ? "active" : "")" @onclick="SelectStripe" disabled="@(montant <= 0 || !stripeConfigured)">
+            <button class="depot-choice @(selectedMethod == "stripe" ? "active" : "")" @onclick="SelectStripe" disabled="@(montant is null or <= 0 || !stripeConfigured)">
                 <span class="depot-choice-icon">
                     <img src="/images/logo_adn_pay_blanc.png" alt="ADN_pay" class="depot-choice-logo" />
                 </span>
                 <span class="depot-choice-label">CARTE BANCAIRE</span>
                 <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
             </button>
-            <button class="depot-choice @(selectedMethod == "pawapay" ? "active" : "")" @onclick="SelectPawaPay" disabled="@(montant <= 0 || !pawaPayConfigured)">
+            <button class="depot-choice @(selectedMethod == "pawapay" ? "active" : "")" @onclick="SelectPawaPay" disabled="@(montant is null or <= 0 || !pawaPayConfigured)">
                 <span class="depot-choice-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <rect x="5" y="2" width="14" height="20" rx="2" />
@@ -62,14 +62,14 @@
 </div>
 
 @code {
-    private decimal montant;
+    private decimal? montant;
     private string? selectedMethod;
     private bool isProcessing;
     private bool stripeConfigured;
     private bool pawaPayConfigured;
     private string? configError;
 
-    private bool canConfirm => montant > 0 && !string.IsNullOrEmpty(selectedMethod) && !isProcessing
+    private bool canConfirm => montant is > 0 && !string.IsNullOrEmpty(selectedMethod) && !isProcessing
         && (selectedMethod == "stripe" ? stripeConfigured : pawaPayConfigured);
 
     protected override void OnInitialized()
@@ -89,14 +89,14 @@
 
     private async Task EffectuerDepot()
     {
-        if (isProcessing || montant <= 0 || string.IsNullOrEmpty(selectedMethod)) return;
+        if (isProcessing || montant is null or <= 0 || string.IsNullOrEmpty(selectedMethod)) return;
         isProcessing = true;
 
         try
         {
             if (selectedMethod == "stripe")
             {
-                var url = await Stripe.CreerSessionDepotAsync((long)(montant * 100));
+                var url = await Stripe.CreerSessionDepotAsync((long)(montant.Value * 100));
                 if (!string.IsNullOrEmpty(url))
                     Nav.NavigateTo(url, forceLoad: true);
                 else
@@ -107,7 +107,7 @@
             }
             else if (selectedMethod == "pawapay")
             {
-                Nav.NavigateTo($"/pawapay/deposit?amount={montant:F2}", forceLoad: true);
+                Nav.NavigateTo($"/pawapay/deposit?amount={montant.Value:F2}", forceLoad: true);
             }
         }
         catch (Exception ex)

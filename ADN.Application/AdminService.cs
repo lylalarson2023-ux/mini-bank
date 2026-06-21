@@ -165,6 +165,16 @@ namespace ADN_pay.Services
             if (demande != null)
                 demande.Statut = "APPROUVE";
 
+            // Trace le versement du crédit dans l'historique (entrée sur le compte courant).
+            ctx.Transactions.Add(new Transaction
+            {
+                UserId = u.Id,
+                Type = "CRÉDIT",
+                Montant = montant,
+                SoldeApres = u.Solde,
+                Libelle = "Crédit accordé",
+                Motif = "Crédit approuvé par l'administration"
+            });
             ctx.AdminLogs.Add(new AdminLog
             {
                 Action = "CREDIT_APPROUVE",
@@ -172,6 +182,8 @@ namespace ADN_pay.Services
                 Details = $"Montant: {montant.ToDh()}"
             });
             await ctx.SaveChangesAsync();
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                $"Votre crédit de {montant.ToDh()} a été approuvé et versé sur votre compte.", "SUCCESS", "CRÉDIT");
             _logger.LogInformation("Crédit de {Montant} approuvé pour {Email} par {AdminEmail}",
                 montant.ToDh(), PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
@@ -537,6 +549,105 @@ namespace ADN_pay.Services
                 .ToListAsync();
 
             return new(items, total, totalEntrees, totalSorties);
+        }
+
+        // --- POUVOIRS ADMIN SUR LES COMPTES ---
+
+        public async Task<bool> ChangerStatutAsync(int userId, UserStatus statut)
+        {
+            if (!_user.Profil.IsAdmin) return false;
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
+            if (u == null) return false;
+            u.Statut = statut;
+            ctx.AdminLogs.Add(new AdminLog { Action = "CHANGER_STATUT", Cible = u.Email, Details = $"Nouveau statut : {statut}" });
+            await ctx.SaveChangesAsync();
+            await _notifHist.AddNotificationForUserAsync(u.Id, $"Votre statut a été mis à jour : {statut}.", "INFO", "COMPTE");
+            _logger.LogInformation("Statut de {Email} changé en {Statut} par {Admin}",
+                PiiMasker.MaskEmail(u.Email), statut, PiiMasker.MaskEmail(_user.Profil.Email));
+            return true;
+        }
+
+        public async Task<(bool Success, string Message)> SetPlafondsAsync(int userId, long journalierCentimes, long mensuelCentimes)
+        {
+            if (!_user.Profil.IsAdmin) return (false, "Accès refusé");
+            if (journalierCentimes <= 0 || mensuelCentimes <= 0) return (false, "Les plafonds doivent être positifs");
+            if (journalierCentimes > mensuelCentimes) return (false, "Le plafond journalier ne peut pas dépasser le mensuel");
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
+            if (u == null) return (false, "Utilisateur introuvable");
+            u.PlafondJournalier = journalierCentimes;
+            u.PlafondMensuel = mensuelCentimes;
+            ctx.AdminLogs.Add(new AdminLog { Action = "SET_PLAFONDS", Cible = u.Email, Details = $"{journalierCentimes.ToDh()}/jour, {mensuelCentimes.ToDh()}/mois" });
+            await ctx.SaveChangesAsync();
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                $"Vos plafonds ont été mis à jour : {journalierCentimes.ToDh()}/jour, {mensuelCentimes.ToDh()}/mois.", "INFO", "PLAFOND");
+            _logger.LogInformation("Plafonds de {Email} définis par admin {Admin} : {J}/{M}",
+                PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email), journalierCentimes.ToDh(), mensuelCentimes.ToDh());
+            return (true, "Plafonds mis à jour");
+        }
+
+        // Ajuste le solde : delta positif = crédit, négatif = débit. Tracé en transaction + log.
+        public async Task<(bool Success, string Message)> AjusterSoldeAsync(int userId, long deltaCentimes, string motif)
+        {
+            if (!_user.Profil.IsAdmin) return (false, "Accès refusé");
+            if (deltaCentimes == 0) return (false, "Le montant ne peut pas être nul");
+            if (string.IsNullOrWhiteSpace(motif)) return (false, "Un motif est requis");
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
+            if (u == null) return (false, "Utilisateur introuvable");
+            if (deltaCentimes < 0 && u.Solde + deltaCentimes < 0) return (false, "Solde insuffisant pour ce débit");
+            u.Solde += deltaCentimes;
+            ctx.Transactions.Add(new Transaction
+            {
+                UserId = u.Id,
+                Type = deltaCentimes > 0 ? "DÉPÔT" : "RETRAIT",
+                Montant = Math.Abs(deltaCentimes),
+                SoldeApres = u.Solde,
+                Libelle = deltaCentimes > 0 ? "Ajustement admin (crédit)" : "Ajustement admin (débit)",
+                Motif = motif
+            });
+            ctx.AdminLogs.Add(new AdminLog { Action = "AJUSTER_SOLDE", Cible = u.Email, Details = $"{deltaCentimes.ToDh()} — {motif}" });
+            await ctx.SaveChangesAsync();
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                $"Ajustement de votre solde : {deltaCentimes.ToDh()} ({motif}).",
+                deltaCentimes > 0 ? "SUCCESS" : "INFO", deltaCentimes > 0 ? "DEPOT" : "RETRAIT");
+            _logger.LogInformation("Solde de {Email} ajusté de {Delta} par admin {Admin} : {Motif}",
+                PiiMasker.MaskEmail(u.Email), deltaCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email), motif);
+            return (true, "Solde ajusté");
+        }
+
+        public async Task<(bool Success, string Message)> SetBlocageAsync(int userId, bool bloquer)
+        {
+            if (!_user.Profil.IsAdmin) return (false, "Accès refusé");
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(userId);
+            if (u == null) return (false, "Utilisateur introuvable");
+            if (u.IsAdmin) return (false, "Impossible de bloquer un compte administrateur");
+            u.Bloque = bloquer;
+            ctx.AdminLogs.Add(new AdminLog { Action = bloquer ? "BLOQUER_COMPTE" : "DEBLOQUER_COMPTE", Cible = u.Email, Details = bloquer ? "Compte bloqué" : "Compte débloqué" });
+            await ctx.SaveChangesAsync();
+            await _notifHist.AddNotificationForUserAsync(u.Id,
+                bloquer ? "Votre compte a été suspendu. Contactez le support." : "Votre compte a été réactivé.",
+                bloquer ? "ERROR" : "SUCCESS", "COMPTE");
+            _logger.LogInformation("Compte {Email} {Action} par admin {Admin}",
+                PiiMasker.MaskEmail(u.Email), bloquer ? "bloqué" : "débloqué", PiiMasker.MaskEmail(_user.Profil.Email));
+            return (true, bloquer ? "Compte bloqué" : "Compte débloqué");
+        }
+
+        public async Task<List<SavingsPocket>> GetUserSavingsAsync(int userId)
+        {
+            if (!_user.Profil.IsAdmin) return new();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.SavingsPockets.Where(p => p.UserId == userId).ToListAsync();
+        }
+
+        public async Task<List<CreditRequest>> GetUserCreditsAsync(int userId)
+        {
+            if (!_user.Profil.IsAdmin) return new();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            return await ctx.CreditRequests.Where(c => c.UserId == userId)
+                .OrderByDescending(c => c.DateDemande).ToListAsync();
         }
     }
 }

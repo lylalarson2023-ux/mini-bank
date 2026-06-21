@@ -31,7 +31,7 @@
                     <label>Montant du dépôt (MAD)</label>
                     <input class="input" type="number" min="0" step="0.01" @bind="amount" placeholder="0.00" />
                 </div>
-                <button class="btn btn-primary btn-block" disabled="@(amount <= 0 || busy)" @onclick="Deposer">
+                <button class="btn btn-primary btn-block" disabled="@(amount is null or <= 0 || busy)" @onclick="Deposer">
                     @(busy ? "Traitement…" : "Effectuer le dépôt")
                 </button>
             }
@@ -42,22 +42,22 @@
 @code {
     private bool busy;
     private UserProfile? target;
-    private decimal amount;
+    private decimal? amount;
 
     private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
 
-    private void OnPick(UserProfile u) { target = u; amount = 0; }
+    private void OnPick(UserProfile u) { target = u; amount = null; }
 
     private async Task Deposer()
     {
-        if (busy || target is null || amount <= 0) return;
+        if (busy || target is null || amount is null or <= 0) return;
         busy = true;
         try
         {
-            if (await Admin.AdminDepot(target.Id, (long)(amount * 100)))
+            if (await Admin.AdminDepot(target.Id, (long)(amount.Value * 100)))
             {
-                Toasts.Success($"Dépôt de {amount:N2} MAD effectué sur le compte #{target.Id}.");
-                target = null; amount = 0;
+                Toasts.Success($"Dépôt de {amount.Value:N2} MAD effectué sur le compte #{target.Id}.");
+                target = null; amount = null;
             }
             else Toasts.Error("Échec : compte introuvable ou dépôt en doublon.");
         }

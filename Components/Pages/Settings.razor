@@ -25,9 +25,6 @@
         <button class='admin-tab @(activeTab == "connexions" ? "active" : "")' @onclick="GoConnexions">
             <i class="bi bi-clock-history"></i> CONNEXIONS
         </button>
-        <button class='admin-tab @(activeTab == "plafonds" ? "active" : "")' @onclick="GoPlafonds">
-            <i class="bi bi-sliders"></i> PLAFONDS
-        </button>
         <button class='admin-tab @(activeTab == "notifs" ? "active" : "")' @onclick="GoNotifs">
             <i class="bi bi-sliders2"></i> PRÉFÉRENCES
         </button>
@@ -439,40 +436,6 @@
         </div>
     }
 
-    @if (activeTab == "plafonds")
-    {
-        <div class="form-section">
-            <h6><i class="bi bi-sliders"></i> PLAFONDS DE TRANSACTIONS</h6>
-            @{
-                var (maxJ, maxM) = ADN_pay.Services.AccountService.PlafondsMaxPourStatut(Bank.Profil.Statut);
-            }
-            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 16px;">
-                Limites maximales de vos transactions. Réinitialisées automatiquement chaque jour/mois.
-                <br />Maximum pour votre statut <strong>@Bank.Profil.Statut</strong> :
-                @((maxJ / 100m).ToString("N0")) DH/jour · @((maxM / 100m).ToString("N0")) DH/mois.
-            </p>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Plafond journalier (DH)</label>
-                    <input type="number" min="1" max="@(maxJ / 100m)" @bind="plafondJournalier" class="form-input" placeholder="5000" />
-                </div>
-                <div class="form-group">
-                    <label>Plafond mensuel (DH)</label>
-                    <input type="number" min="1" max="@(maxM / 100m)" @bind="plafondMensuel" class="form-input" placeholder="50000" />
-                </div>
-            </div>
-            <button class="btn btn-primary" @onclick="SavePlafonds" disabled="@saving">
-                @(saving ? "ENREGISTREMENT..." : "ENREGISTRER")
-            </button>
-            @if (!string.IsNullOrEmpty(plafondMsg))
-            {
-                <div class="@(plafondSuccess ? "status-banner success" : "status-banner error")" style="margin-top: 12px;">
-                    @plafondMsg
-                </div>
-            }
-        </div>
-    }
-
     @if (activeTab == "notifs")
     {
         <div class="form-section">
@@ -559,12 +522,6 @@
     // Connexions
     private List<UserLogin> loginHistory = new();
 
-    // Plafonds
-    private decimal plafondJournalier = 5000;
-    private decimal plafondMensuel = 50000;
-    private string plafondMsg = "";
-    private bool plafondSuccess;
-
     // Notifications
     private Dictionary<string, bool> notifPrefs = new();
     private string notifMsg = "";
@@ -585,7 +542,6 @@
     private void GoSecurity() { activeTab = "security"; }
     private void GoLegal() { activeTab = "legal"; }
     private void GoConnexions() { activeTab = "connexions"; }
-    private void GoPlafonds() { activeTab = "plafonds"; }
     private void GoNotifs() { activeTab = "notifs"; }
 
     protected override async Task OnInitializedAsync()
@@ -595,8 +551,6 @@
         profileModel.Email = Bank.Profil.Email;
         profileModel.Telephone = Bank.Profil.Telephone;
         try { currentTheme = await JS.InvokeAsync<string>("adnTheme.get"); } catch { currentTheme = "dark"; }
-        plafondJournalier = Bank.Profil.PlafondJournalier / 100m;
-        plafondMensuel = Bank.Profil.PlafondMensuel / 100m;
         notifPrefs["connexion"] = Bank.Profil.NotifConnexion;
         notifPrefs["virement"] = Bank.Profil.NotifVirement;
         notifPrefs["depot"] = Bank.Profil.NotifDepot;
@@ -875,19 +829,6 @@ document.body.removeChild(a);";
     }
 
     private void DismissRecoveryCodes() => recoveryCodes = new();
-
-    private async Task SavePlafonds()
-    {
-        saving = true; plafondMsg = ""; plafondSuccess = false;
-        try
-        {
-            var (success, msg) = await Bank.UpdatePlafondsAsync((long)(plafondJournalier * 100), (long)(plafondMensuel * 100));
-            plafondMsg = msg;
-            plafondSuccess = success;
-        }
-        catch { plafondMsg = "Erreur lors de la sauvegarde"; }
-        finally { saving = false; }
-    }
 
     private bool GetNotif(string key) => notifPrefs.GetValueOrDefault(key, true);
     private void ToggleNotif(string key) { notifPrefs[key] = !GetNotif(key); }

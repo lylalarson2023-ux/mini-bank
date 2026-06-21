@@ -46,8 +46,7 @@
                                         <td class="muted">@u.Email<br />@u.Telephone</td>
                                         <td>@u.NiveauEtude</td>
                                         <td>
-                                            @if (u.PendingPremiumUpgrade) { <span class="badge warn">Premium</span> }
-                                            @if (u.PendingCreditRequest) { <span class="badge info">Crédit @Money(u.PendingCreditAmount) DH</span> }
+                                            <span class="badge warn">Premium</span>
                                         </td>
                                         <td>@((MarkupString)DocIcons(u))</td>
                                         <td>
@@ -139,7 +138,9 @@
     private async Task Reload()
     {
         loading = true;
-        enAttente = await Admin.GetDossiersEnAttenteAsync();
+        // Onglet KYC = dossiers Premium uniquement. Les demandes de crédit ont leur propre
+        // onglet (Crédits) et ne doivent pas apparaître ici.
+        enAttente = (await Admin.GetDossiersEnAttenteAsync()).Where(u => u.PendingPremiumUpgrade).ToList();
         historique = await Admin.GetHistoriqueDossiersAsync();
         loading = false;
     }

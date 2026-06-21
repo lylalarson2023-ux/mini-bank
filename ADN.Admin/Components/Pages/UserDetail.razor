@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = "AdminOnly")]
 @rendermode InteractiveServer
 @inject AdminService Admin
+@inject ADN_pay.Admin.Services.ToastService Toasts
 @inject NavigationManager Nav
 
 <PageTitle>Utilisateur #@Id — ADN_pay Admin</PageTitle>
@@ -19,7 +20,10 @@
     }
     else
     {
-        <h1 class="page-title" style="margin-top:14px">@u.Prenom @u.Nom</h1>
+        <h1 class="page-title" style="margin-top:14px">
+            @u.Prenom @u.Nom
+            @if (u.Bloque) { <span class="badge no">BLOQUÉ</span> }
+        </h1>
         <div class="page-sub">#@u.Id · @u.Email</div>
 
         <div class="grid two-col" style="margin-top:20px">
@@ -28,9 +32,10 @@
                 <div class="panel-body">
                     <dl class="kv">
                         <div><dt>Solde</dt><dd>@Money(u.Solde) MAD</dd></div>
+                        <div><dt>Dette</dt><dd>@Money(u.Dette) MAD</dd></div>
                         <div><dt>Statut</dt><dd><span class="badge @(u.Statut == UserStatus.PREMIUM || u.Statut == UserStatus.VIP ? "ok" : "info")">@u.Statut</span></dd></div>
+                        <div><dt>Plafonds</dt><dd>@Money(u.PlafondJournalier)/j · @Money(u.PlafondMensuel)/mois</dd></div>
                         <div><dt>Téléphone</dt><dd>@(string.IsNullOrEmpty(u.Telephone) ? "—" : u.Telephone)</dd></div>
-                        <div><dt>Niveau d'étude</dt><dd>@(string.IsNullOrEmpty(u.NiveauEtude) ? "—" : u.NiveauEtude)</dd></div>
                         <div><dt>Inscription</dt><dd>@u.DateInscription.ToString("dd/MM/yyyy")</dd></div>
                         <div><dt>Tuteur</dt><dd>@(string.IsNullOrEmpty(u.TuteurEmail) ? "—" : u.TuteurEmail)</dd></div>
                         <div><dt>Rôle</dt><dd>@(u.IsAdmin ? "Admin" : "Utilisateur")</dd></div>
@@ -57,10 +62,132 @@
                         @RenderDoc("Justificatif de domicile", u.DocDomicileUrl)
                         @RenderDoc("Certificat de scolarité", u.DocScolariteUrl)
                     </div>
-                    <p class="muted" style="margin-top:10px;font-size:.72rem">
-                        Les fichiers sont servis par l'app principale ; les liens peuvent être inactifs depuis l'admin tant que le dossier d'uploads n'est pas partagé.
-                    </p>
                 </div>
+            </div>
+        </div>
+
+        @* ─────────── CONTRÔLE ADMIN ─────────── *@
+        @if (!u.IsAdmin)
+        {
+            <div class="panel" style="margin-top:16px">
+                <div class="panel-head"><i class="bi bi-sliders2"></i> Contrôle administrateur</div>
+                <div class="panel-body">
+                    <div class="grid two-col">
+                        <div>
+                            <div class="field">
+                                <label>Statut</label>
+                                <div style="display:flex;gap:8px">
+                                    <select class="input" @bind="formStatut">
+                                        @foreach (var s in statuts) { <option value="@s">@s</option> }
+                                    </select>
+                                    <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="ApplyStatut">Appliquer</button>
+                                </div>
+                            </div>
+
+                            <div class="field" style="margin-top:14px">
+                                <label>Plafonds (MAD) — journalier / mensuel</label>
+                                <div style="display:flex;gap:8px">
+                                    <input class="input" type="number" min="1" placeholder="journalier" @bind="formPlafJ" />
+                                    <input class="input" type="number" min="1" placeholder="mensuel" @bind="formPlafM" />
+                                    <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="ApplyPlafonds">Appliquer</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="field">
+                                <label>Ajuster le solde (MAD)</label>
+                                <input class="input" type="number" min="0" step="0.01" placeholder="montant" @bind="formAjustMontant" />
+                                <input class="input" style="margin-top:8px" placeholder="motif (obligatoire)" @bind="formAjustMotif" />
+                                <div style="display:flex;gap:8px;margin-top:8px">
+                                    <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="() => Ajuster(true)">Créditer</button>
+                                    <button class="btn btn-ghost btn-sm danger" disabled="@busy" @onclick="() => Ajuster(false)">Débiter</button>
+                                </div>
+                            </div>
+
+                            <div class="field" style="margin-top:14px">
+                                <label>Accès au compte</label>
+                                <div>
+                                    @if (u.Bloque)
+                                    {
+                                        <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="() => ToggleBlocage(false)"><i class="bi bi-unlock"></i> Débloquer</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-ghost btn-sm danger" disabled="@busy" @onclick="() => ToggleBlocage(true)"><i class="bi bi-lock"></i> Bloquer le compte</button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ─────────── ACTIVITÉ ─────────── *@
+        <div class="panel" style="margin-top:16px">
+            <div class="panel-head"><i class="bi bi-piggy-bank"></i> Poches d'épargne (@pockets.Count)</div>
+            <div class="panel-body">
+                @if (pockets.Count == 0) { <div class="muted">Aucune poche.</div> }
+                else
+                {
+                    <table class="table">
+                        <thead><tr><th>Objectif</th><th style="text-align:right">Épargné</th><th style="text-align:right">Cible</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in pockets)
+                            {
+                                <tr @key="p.Id"><td>@(string.IsNullOrEmpty(p.Objectif) ? "—" : p.Objectif)</td><td style="text-align:right">@Money(p.MontantActuel)</td><td style="text-align:right">@Money(p.MontantCible)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+            <div class="panel-head"><i class="bi bi-cash-coin"></i> Crédits (@credits.Count)</div>
+            <div class="panel-body">
+                @if (credits.Count == 0) { <div class="muted">Aucune demande de crédit.</div> }
+                else
+                {
+                    <table class="table">
+                        <thead><tr><th>Date</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in credits)
+                            {
+                                <tr @key="c.Id"><td class="muted">@c.DateDemande.ToLocalTime().ToString("dd/MM/yy")</td><td style="text-align:right">@Money(c.Montant)</td><td><span class="badge @StatutBadge(c.Statut)">@c.Statut</span></td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+            <div class="panel-head"><i class="bi bi-list-ul"></i> Dernières transactions (@txs.Count)</div>
+            <div class="panel-body">
+                @if (txs.Count == 0) { <div class="muted">Aucune transaction.</div> }
+                else
+                {
+                    <div style="overflow-x:auto">
+                        <table class="table">
+                            <thead><tr><th>Date</th><th>Type</th><th>Libellé</th><th style="text-align:right">Montant</th><th style="text-align:right">Solde après</th></tr></thead>
+                            <tbody>
+                                @foreach (var t in txs)
+                                {
+                                    var entree = IsEntree(t.Type); var sortie = IsSortie(t.Type);
+                                    <tr @key="t.Id">
+                                        <td class="muted" style="white-space:nowrap">@t.Date.ToLocalTime().ToString("dd/MM/yy HH:mm")</td>
+                                        <td><span class="badge info">@t.Type</span></td>
+                                        <td>@t.Libelle</td>
+                                        <td style="text-align:right;color:@(entree ? "#16a34a" : sortie ? "#dc2626" : "var(--text-muted)")">@(entree ? "+" : sortie ? "-" : "") @Money(t.Montant)</td>
+                                        <td style="text-align:right" class="muted">@Money(t.SoldeApres)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -70,14 +197,97 @@
     [Parameter] public int Id { get; set; }
 
     private bool loading = true;
+    private bool busy;
     private UserProfile? u;
+    private List<SavingsPocket> pockets = new();
+    private List<ADN_pay.Models.CreditRequest> credits = new();
+    private List<AdminService.AdminTxView> txs = new();
+
+    private readonly UserStatus[] statuts = Enum.GetValues<UserStatus>();
+    private UserStatus formStatut;
+    private decimal? formPlafJ;
+    private decimal? formPlafM;
+    private decimal? formAjustMontant;
+    private string formAjustMotif = "";
 
     private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
 
-    protected override async Task OnInitializedAsync()
+    private static bool IsEntree(string type) => type is "DÉPÔT" or "RÉCEPTION" or "CRÉDIT" or "DEPOT" or "RECEPTION" or "RETOUR_ÉPARGNE";
+    private static bool IsSortie(string type) => type is "RETRAIT" or "VIREMENT" or "ÉPARGNE";
+
+    private static string StatutBadge(string s) => s switch
     {
+        "APPROUVE" => "ok",
+        "REJETE" => "no",
+        _ => "warn"
+    };
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        loading = true;
         u = await Admin.GetUserByIdAsync(Id);
+        if (u != null)
+        {
+            formStatut = u.Statut;
+            formPlafJ = u.PlafondJournalier / 100m;
+            formPlafM = u.PlafondMensuel / 100m;
+            pockets = await Admin.GetUserSavingsAsync(Id);
+            credits = await Admin.GetUserCreditsAsync(Id);
+            txs = (await Admin.GetAllTransactionsAsync(Id, page: 1, pageSize: 25)).Items;
+        }
         loading = false;
+    }
+
+    private async Task ApplyStatut()
+    {
+        if (busy) return; busy = true;
+        try
+        {
+            if (await Admin.ChangerStatutAsync(Id, formStatut)) { Toasts.Success("Statut mis à jour."); await Load(); }
+            else Toasts.Error("Échec.");
+        }
+        finally { busy = false; }
+    }
+
+    private async Task ApplyPlafonds()
+    {
+        if (busy) return; busy = true;
+        try
+        {
+            var (ok, msg) = await Admin.SetPlafondsAsync(Id,
+                (long)((formPlafJ ?? 0) * 100), (long)((formPlafM ?? 0) * 100));
+            if (ok) { Toasts.Success("Plafonds mis à jour."); await Load(); } else Toasts.Error(msg);
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Ajuster(bool crediter)
+    {
+        if (busy) return;
+        if (formAjustMontant is null or <= 0) { Toasts.Error("Montant invalide."); return; }
+        if (string.IsNullOrWhiteSpace(formAjustMotif)) { Toasts.Error("Motif obligatoire."); return; }
+        busy = true;
+        try
+        {
+            var delta = (long)(formAjustMontant.Value * 100) * (crediter ? 1 : -1);
+            var (ok, msg) = await Admin.AjusterSoldeAsync(Id, delta, formAjustMotif.Trim());
+            if (ok) { Toasts.Success(msg); formAjustMontant = null; formAjustMotif = ""; await Load(); }
+            else Toasts.Error(msg);
+        }
+        finally { busy = false; }
+    }
+
+    private async Task ToggleBlocage(bool bloquer)
+    {
+        if (busy) return; busy = true;
+        try
+        {
+            var (ok, msg) = await Admin.SetBlocageAsync(Id, bloquer);
+            if (ok) { Toasts.Success(msg); await Load(); } else Toasts.Error(msg);
+        }
+        finally { busy = false; }
     }
 
     private RenderFragment RenderDoc(string label, string? url) => builder =>

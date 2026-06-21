@@ -57,7 +57,7 @@
 </div>
 
 @code {
-    private decimal montantSaisie;
+    private decimal? montantSaisie;
     private List<Transaction> historique = new();
     private bool isProcessing;
 
@@ -68,15 +68,15 @@
 
     private async Task Valider(string type)
     {
-        if (isProcessing || montantSaisie <= 0) return;
+        if (isProcessing || montantSaisie is null or <= 0) return;
         isProcessing = true;
         try
         {
-            var success = await Bank.ExecuterOperationAsync((long)(montantSaisie * 100), "", type);
+            var success = await Bank.ExecuterOperationAsync((long)(montantSaisie.Value * 100), "", type);
             if (success)
             {
                 Notif.Success($"{type} EFFECTUE");
-                montantSaisie = 0;
+                montantSaisie = null;
                 historique = await Bank.GetHistoriqueAsync();
             }
             else

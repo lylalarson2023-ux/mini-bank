@@ -101,7 +101,7 @@
     </div>
 
     @* ─── RÉSULTATS SIMULATION (AMORTISSEMENT FRANÇAIS) ─── *@
-    @if (montantDemande > 0)
+    @if (MontantVal > 0)
     {
         var tauxMensuel = TauxMensuel();
         var mensualite = CalculerMensualite();
@@ -109,7 +109,7 @@
         <div class="credit-result-grid">
             <div class="credit-result-item">
                 <div class="cri-label">Montant du prêt</div>
-                <div class="cri-value">@montantDemande.ToString("N2") DH</div>
+                <div class="cri-value">@MontantVal.ToString("N2") DH</div>
             </div>
             <div class="credit-result-item">
                 <div class="cri-label">Mensualité fixe</div>
@@ -152,7 +152,7 @@
                     </thead>
                     <tbody>
                         @{
-                            var soldeRestant = montantDemande;
+                            var soldeRestant = MontantVal;
                         }
                         @for (int m = 1; m <= dureeMois; m++)
                         {
@@ -189,7 +189,7 @@
     @* ─── SOUMISSION ─── *@
     <button class="btn btn-primary btn-block"
             @onclick="SoumettreDemande"
-            disabled="@(isProcessing || !eligible || montantDemande <= 0 || nbTransactions < 3)">
+            disabled="@(isProcessing || !eligible || MontantVal <= 0 || nbTransactions < 3)">
         @(isProcessing ? "Traitement en cours..." : "Soumettre la demande")
     </button>
 </div>
@@ -240,7 +240,8 @@
     }
 
     private string categorie = "MICRO";
-    private decimal montantDemande;
+    private decimal? montantDemande;
+    private decimal MontantVal => montantDemande ?? 0m;
     private int dureeMois = 6;
     private bool eligible;
     private int nbTransactions;
@@ -333,18 +334,18 @@
 
     private decimal CalculerMensualite()
     {
-        if (montantDemande <= 0 || dureeMois <= 0) return 0;
+        if (MontantVal <= 0 || dureeMois <= 0) return 0;
         var r = TauxMensuel();
-        if (r == 0) return montantDemande / dureeMois;
+        if (r == 0) return MontantVal / dureeMois;
         var unPlusR = 1m + r;
         var denom = (decimal)(Math.Pow((double)unPlusR, dureeMois) - 1d);
-        return denom == 0 ? montantDemande / dureeMois : montantDemande * r * (decimal)Math.Pow((double)unPlusR, dureeMois) / denom;
+        return denom == 0 ? MontantVal / dureeMois : MontantVal * r * (decimal)Math.Pow((double)unPlusR, dureeMois) / denom;
     }
 
     private async Task SoumettreDemande()
     {
-        if (isProcessing || montantDemande <= 0) return;
-        if (fluxTotal < (long)(montantDemande * 2 * 100))
+        if (isProcessing || MontantVal <= 0) return;
+        if (fluxTotal < (long)(MontantVal * 2 * 100))
         {
             Notif.Notify("Volume de transactions insuffisant (2x requis)", NotificationType.ERROR);
             return;
@@ -352,11 +353,11 @@
         isProcessing = true;
         try
         {
-            var success = await Bank.SoumettreDemandeCredit((long)(montantDemande * 100), categorie, dureeMois);
+            var success = await Bank.SoumettreDemandeCredit((long)(MontantVal * 100), categorie, dureeMois);
             if (success)
             {
                 Notif.Notify("Demande transmise - En attente de validation par l'administrateur", NotificationType.INFO);
-                montantDemande = 0;
+                montantDemande = null;
                 mesDemandes = await Bank.GetMesDemandesCreditAsync();
             }
             else

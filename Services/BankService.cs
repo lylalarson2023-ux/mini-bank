@@ -55,6 +55,8 @@ namespace ADN_pay.Services
             => _account.GetBalanceCurve30DaysAsync();
         public Task<bool> EffectuerVirementAsync(string emailDestinataire, long montantCentimes, string motif)
             => _account.EffectuerVirementAsync(emailDestinataire, montantCentimes, motif);
+        public Task<string?> TrouverNomDestinataireAsync(string email)
+            => _account.TrouverNomDestinataireAsync(email);
         public Task<bool> DefinirTuteur(string email) => _account.DefinirTuteur(email);
         public Task<bool> RevoquerTuteur() => _account.RevoquerTuteur();
         public Task<bool> SoumettreDossierKYC(UserProfile kyc) => _account.SoumettreDossierKYC(kyc);

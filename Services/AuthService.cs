@@ -80,6 +80,12 @@ namespace ADN_pay.Services
                 _logger.LogWarning("Connexion refusée : compte clôturé (Id={UserId})", user.Id);
                 return false;
             }
+            if (user.Bloque)
+            {
+                await LogLoginAsync(user.Id, email, false, "Compte bloqué");
+                _logger.LogWarning("Connexion refusée : compte bloqué (Id={UserId})", user.Id);
+                return false;
+            }
             await LogLoginAsync(user.Id, email, true);
             _user.Profil = user;
             _user.EstConnecte = true;

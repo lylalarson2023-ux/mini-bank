@@ -101,6 +101,9 @@ namespace ADN_pay.Models
         public bool CompteCloture { get; set; } = false;
         public DateTime? DateCloture { get; set; }
 
+        // --- BLOCAGE ADMIN (suspension réversible : connexion + opérations refusées) ---
+        public bool Bloque { get; set; } = false;
+
         // --- VÉRIFICATION CHANGEMENT D'E-MAIL (code envoyé à la nouvelle adresse) ---
         public string? PendingEmail { get; set; }
         public string? EmailChangeCodeHash { get; set; }

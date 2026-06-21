@@ -149,6 +149,9 @@ using (var scope = app.Services.CreateScope())
     }
     catch { }
 
+    // Colonne de blocage admin (idempotent — l'app web la crée aussi).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
+
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.
     var adminEmail = Environment.GetEnvironmentVariable("ADMIN_EMAIL");

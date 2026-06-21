@@ -65,7 +65,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <span style="font-size: 0.75rem; color: var(--text-muted);">MONTANT</span>
                     <span style="font-weight: 800; font-size: 1.5rem; color: var(--danger);">
-                        -@montant.ToString("N2") <span style="font-size: 0.8rem;">DH</span>
+                        -@((montant ?? 0).ToString("N2")) <span style="font-size: 0.8rem;">DH</span>
                     </span>
                 </div>
 
@@ -116,7 +116,25 @@
 
             <div class="form-group">
                 <label>DESTINATAIRE (EMAIL)</label>
-                <input type="email" @bind="destinataire" class="form-input" placeholder="email@adnpay.ma" />
+                <input type="email" @bind="destinataire" @bind:after="LookupRecipient" class="form-input" placeholder="email@adnpay.ma" />
+                @if (recipientChecked && !string.IsNullOrEmpty(nomDestinataire))
+                {
+                    <div style="font-size: 0.72rem; margin-top: 6px; color: var(--success); font-weight: 600;">
+                        <i class="bi bi-check-circle-fill"></i> @nomDestinataire
+                    </div>
+                    @if (!DejaFavori)
+                    {
+                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.72rem; color: var(--text-muted);">
+                            <input type="checkbox" @bind="saveAsFavorite" /> Enregistrer ce contact en favori
+                        </label>
+                    }
+                }
+                else if (recipientChecked && !string.IsNullOrWhiteSpace(destinataire))
+                {
+                    <div style="font-size: 0.72rem; margin-top: 6px; color: var(--warning);">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Aucun compte ADN_pay à cette adresse
+                    </div>
+                }
             </div>
 
             <div class="form-group">
@@ -135,7 +153,7 @@
             }
 
             <button class="btn btn-primary btn-block" @onclick="AllerConfirmation"
-                    disabled="@(string.IsNullOrWhiteSpace(destinataire) || montant <= 0)">
+                    disabled="@(string.IsNullOrWhiteSpace(destinataire) || montant is null or <= 0)">
                 <i class="bi bi-arrow-right"></i> CONTINUER
             </button>
         </div>
@@ -153,12 +171,27 @@
 
     private string destinataire = "";
     private string nomDestinataire = "";
-    private decimal montant;
+    private bool recipientChecked;
+    private bool saveAsFavorite;
+    private decimal? montant;
     private decimal montantVire;
     private string motif = "";
     private string erreur = "";
     private long soldeApres;
     private List<Beneficiaire> beneficiaires = new();
+
+    private bool DejaFavori => beneficiaires.Any(b => string.Equals(b.Email, destinataire?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private async Task LookupRecipient()
+    {
+        nomDestinataire = "";
+        recipientChecked = false;
+        saveAsFavorite = false;
+        var e = destinataire?.Trim() ?? "";
+        if (e.Length < 3 || !e.Contains('@')) return;
+        nomDestinataire = await Bank.TrouverNomDestinataireAsync(e) ?? "";
+        recipientChecked = true;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -174,6 +207,8 @@
         if (b != null)
         {
             nomDestinataire = b.Nom;
+            recipientChecked = true;
+            saveAsFavorite = false;
             if (string.IsNullOrEmpty(motif)) motif = $"Virement à {b.Nom}";
         }
     }
@@ -181,7 +216,7 @@
     private void AllerConfirmation()
     {
         erreur = "";
-        var montantCentimes = (long)(montant * 100);
+        var montantCentimes = (long)((montant ?? 0) * 100);
 
         if (montantCentimes <= 0) { erreur = "Montant invalide."; return; }
         if (Bank.Profil.Solde < montantCentimes) { erreur = "Solde insuffisant."; return; }
@@ -203,13 +238,18 @@
     private async Task EffectuerVirement()
     {
         step = Step.Processing;
-        montantVire = montant;
+        montantVire = montant ?? 0;
         try
         {
-            var montantCentimes = (long)(montant * 100);
+            var montantCentimes = (long)((montant ?? 0) * 100);
             var success = await Bank.EffectuerVirementAsync(destinataire.Trim(), montantCentimes, motif);
             if (success)
             {
+                // Enregistrement en favori si demandé (et pas déjà présent).
+                if (saveAsFavorite && !string.IsNullOrEmpty(nomDestinataire) && !DejaFavori)
+                {
+                    try { await Bank.AjouterBeneficiaireAsync(nomDestinataire, destinataire.Trim(), null, null); } catch { }
+                }
                 step = Step.Success;
                 await Task.Delay(2000);
                 Nav.NavigateTo("/", forceLoad: true);

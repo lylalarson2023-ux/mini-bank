@@ -33,7 +33,7 @@
                         <label>Montant du crédit (MAD)</label>
                         <input class="input" type="number" min="0" step="0.01" @bind="amount" placeholder="0.00" />
                     </div>
-                    <button class="btn btn-primary btn-block" disabled="@(amount <= 0 || busy)" @onclick="Accorder">
+                    <button class="btn btn-primary btn-block" disabled="@(amount is null or <= 0 || busy)" @onclick="Accorder">
                         @(busy ? "Traitement…" : "Accorder le crédit")
                     </button>
                     <button class="btn btn-ghost btn-block" style="margin-top:8px" disabled="@busy" @onclick="Eligibilite">
@@ -100,7 +100,7 @@
     private bool loading = true;
     private bool busy;
     private UserProfile? target;
-    private decimal amount;
+    private decimal? amount;
     private List<UserProfile> pending = new();
     private int rejectId;
     private string rejectMotif = "";
@@ -117,18 +117,18 @@
         loading = false;
     }
 
-    private void OnPick(UserProfile u) { target = u; amount = 0; }
+    private void OnPick(UserProfile u) { target = u; amount = null; }
 
     private async Task Accorder()
     {
-        if (busy || target is null || amount <= 0) return;
+        if (busy || target is null || amount is null or <= 0) return;
         busy = true;
         try
         {
-            if (await Admin.ApprouverCredit(target.Id, (long)(amount * 100)))
+            if (await Admin.ApprouverCredit(target.Id, (long)(amount.Value * 100)))
             {
-                Toasts.Success($"Crédit de {amount:N2} MAD accordé au compte #{target.Id}.");
-                target = null; amount = 0;
+                Toasts.Success($"Crédit de {amount.Value:N2} MAD accordé au compte #{target.Id}.");
+                target = null; amount = null;
                 await Reload();
             }
             else Toasts.Error("Échec : compte introuvable.");

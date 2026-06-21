@@ -180,8 +180,8 @@
 
 @code {
     private string nouvelObjectif = "";
-    private decimal montantInitial;
-    private decimal montantCible;
+    private decimal? montantInitial;
+    private decimal? montantCible;
     private DateTime dateCible = DateTime.UtcNow.AddMonths(3);
     private List<SavingsPocket> mesPoches = new();
     private bool tuteurVisible;
@@ -193,7 +193,7 @@
     // Actions inline (boost / retrait forcé)
     private int? actionPocheId;
     private string actionType = "";
-    private decimal actionMontant;
+    private decimal? actionMontant;
     private ElementReference actionInputRef;
 
     protected override async Task OnInitializedAsync()
@@ -242,12 +242,12 @@
     private async Task CreerPoche()
     {
         if (isProcessing) return;
-        if (montantInitial < 100)
+        if ((montantInitial ?? 0) < 100)
         {
             Notif.Notify("Le minimum requis est de 100 DH", NotificationType.ERROR);
             return;
         }
-        if (montantCible > 0 && montantCible < montantInitial)
+        if ((montantCible ?? 0) > 0 && (montantCible ?? 0) < (montantInitial ?? 0))
         {
             Notif.Notify("L'objectif cible doit être supérieur au montant initial", NotificationType.ERROR);
             return;
@@ -256,14 +256,14 @@
         isProcessing = true;
         try
         {
-            var initCents = (long)(montantInitial * 100);
-            var cibleCents = montantCible > 0 ? (long)(montantCible * 100) : initCents * 4;
+            var initCents = (long)((montantInitial ?? 0) * 100);
+            var cibleCents = (montantCible ?? 0) > 0 ? (long)((montantCible ?? 0) * 100) : initCents * 4;
             if (await Bank.CreerPocheEpargne(nouvelObjectif, initCents, dateCible, cibleCents, tuteurVisible))
             {
                 Notif.Notify($"Objectif '{nouvelObjectif}' ouvert avec succès", NotificationType.SUCCESS);
                 nouvelObjectif = "";
-                montantInitial = 0;
-                montantCible = 0;
+                montantInitial = null;
+                montantCible = null;
                 tuteurVisible = false;
                 await ChargerPoches();
             }
@@ -275,7 +275,7 @@
     {
         actionPocheId = p.Id;
         actionType    = "boost";
-        actionMontant = 0;
+        actionMontant = null;
     }
 
     private void OuvrirRetraitForce(SavingsPocket p)
@@ -288,19 +288,19 @@
     {
         actionPocheId = null;
         actionType    = "";
-        actionMontant = 0;
+        actionMontant = null;
     }
 
     private async Task ConfirmerBoost()
     {
-        if (isProcessing || actionPocheId == null || actionMontant <= 0) return;
+        if (isProcessing || actionPocheId == null || actionMontant is null or <= 0) return;
         isProcessing = true;
         try
         {
-            var success = await Bank.BoosterPocheAsync(actionPocheId.Value, (long)(actionMontant * 100));
+            var success = await Bank.BoosterPocheAsync(actionPocheId.Value, (long)(actionMontant.Value * 100));
             if (success)
             {
-                Notif.Notify($"Poche boostée de {actionMontant:N2} DH", NotificationType.SUCCESS);
+                Notif.Notify($"Poche boostée de {actionMontant.Value:N2} DH", NotificationType.SUCCESS);
                 AnnulerAction();
                 await ChargerPoches();
             }

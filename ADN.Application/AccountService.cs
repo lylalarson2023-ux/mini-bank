@@ -158,6 +158,20 @@ namespace ADN_pay.Services
         }
 
         // ADR-001 : montantCentimes en long
+        // Confirme un destinataire de virement par e-mail : renvoie son nom complet si un
+        // compte actif existe à cette adresse (hors soi-même), sinon null. Ne divulgue rien
+        // tant que l'e-mail exact n'est pas connu (respect de la vie privée).
+        public async Task<string?> TrouverNomDestinataireAsync(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email)) return null;
+            var e = email.Trim().ToLower();
+            if (e == _user.Profil.Email.Trim().ToLower()) return null;
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles
+                .FirstOrDefaultAsync(x => x.Email == e && !x.CompteCloture && !x.Bloque);
+            return u?.GetFullName();
+        }
+
         public async Task<bool> EffectuerVirementAsync(string emailDestinataire, long montantCentimes, string motif)
         {
             // Garde-fou : un montant nul ou négatif inverserait le flux (création d'argent).

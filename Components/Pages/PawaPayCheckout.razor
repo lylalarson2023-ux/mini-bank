@@ -100,7 +100,7 @@
     [SupplyParameterFromQuery(Name = "amount")]
     public string? AmountParam { get; set; }
 
-    private decimal montant;
+    private decimal? montant;
     private decimal montantDepose;
     private string selectedCorrespondent = "";
     private string selectedCurrency = "EUR";
@@ -160,7 +160,7 @@
             errorMessage = "Veuillez saisir un numéro de téléphone.";
             return;
         }
-        if (montant <= 0)
+        if (montant is null or <= 0)
         {
             errorMessage = "Veuillez saisir un montant valide.";
             return;
@@ -171,7 +171,7 @@
         try
         {
             var result = await PawaPay.InitiateDepositAsync(
-                montant, selectedCurrency, selectedCorrespondent, phoneNumber, Bank.Profil.Id);
+                montant.Value, selectedCurrency, selectedCorrespondent, phoneNumber, Bank.Profil.Id);
 
             isProcessing = false;
 
@@ -189,7 +189,7 @@
 
             // Accepted — start polling
             currentDepositId = result.DepositId;
-            montantDepose = montant;
+            montantDepose = montant.Value;
             isPolling = true;
             StateHasChanged();
 
