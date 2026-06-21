@@ -140,7 +140,12 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "ADN_PAY_AUTH";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        // Prod (HTTPS via Cloudflare) : cookie Secure strict.
+        // Dev : SameAsRequest, pour que le cookie soit accepté en HTTP simple sur le
+        // réseau local (test LAN sur http://<IP>:5163, où Secure ferait jeter le cookie).
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/access-denied";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
