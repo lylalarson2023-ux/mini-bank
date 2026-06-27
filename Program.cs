@@ -106,17 +106,17 @@ builder.Services.AddScoped<IPawaPayService, PawaPayService>();
 // --- ALERTING (ADR-007) ---
 builder.Services.AddHttpClient<IAlertingService, AlertingService>();
 
-// --- E-MAIL (Resend en prod, log en dev) ---
-var resendKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
-if (!string.IsNullOrEmpty(resendKey)) builder.Configuration["Resend:ApiKey"] = resendKey;
-var resendFrom = Environment.GetEnvironmentVariable("RESEND_FROM_EMAIL");
-if (!string.IsNullOrEmpty(resendFrom)) builder.Configuration["Resend:FromEmail"] = resendFrom;
+// --- E-MAIL (Brevo en prod, log en dev) ---
+var brevoKey = Environment.GetEnvironmentVariable("BREVO_API_KEY");
+if (!string.IsNullOrEmpty(brevoKey)) builder.Configuration["Brevo:ApiKey"] = brevoKey;
+var brevoFrom = Environment.GetEnvironmentVariable("BREVO_SENDER_EMAIL");
+if (!string.IsNullOrEmpty(brevoFrom)) builder.Configuration["Brevo:SenderEmail"] = brevoFrom;
 
-// Resend uniquement si une clé est dispo ET (hors dev OU forçage explicite). Sinon : log dev.
-var useResend = !string.IsNullOrEmpty(builder.Configuration["Resend:ApiKey"])
+// Brevo uniquement si une clé est dispo ET (hors dev OU forçage explicite). Sinon : log dev.
+var useBrevo = !string.IsNullOrEmpty(builder.Configuration["Brevo:ApiKey"])
     && (!builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Email:ForceRealInDev"));
-if (useResend)
-    builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>();
+if (useBrevo)
+    builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>();
 else
     builder.Services.AddSingleton<IEmailSender, LogEmailSender>();
 

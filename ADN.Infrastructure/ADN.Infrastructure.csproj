@@ -9,7 +9,7 @@
 
   <!-- Persistance + accès aux données : EF Core, DbContext, migrations.
        Plus tard : implémentations des intégrations partenaires (Stripe,
-       PawaPay, Resend). Dépend uniquement du Domaine. -->
+       PawaPay, Brevo). Dépend uniquement du Domaine. -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />

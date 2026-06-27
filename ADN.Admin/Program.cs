@@ -104,7 +104,15 @@ builder.Services.AddScoped<SavingsService>();
 builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<ADN_pay.Admin.Services.ToastService>();
 builder.Services.AddScoped<UserContextMiddleware>();
-builder.Services.AddSingleton<IEmailSender, ADN_pay.Api.Services.LogEmailSender>();
+// E-mail : Brevo en prod (clé dispo + hors dev ou forçage), sinon log dev.
+var brevoKeyAdmin = Environment.GetEnvironmentVariable("BREVO_API_KEY");
+if (!string.IsNullOrEmpty(brevoKeyAdmin)) builder.Configuration["Brevo:ApiKey"] = brevoKeyAdmin;
+var useBrevoAdmin = !string.IsNullOrEmpty(builder.Configuration["Brevo:ApiKey"])
+    && (!builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Email:ForceRealInDev"));
+if (useBrevoAdmin)
+    builder.Services.AddHttpClient<IEmailSender, ADN_pay.Api.Services.BrevoEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender, ADN_pay.Api.Services.LogEmailSender>();
 
 // --- SWAGGER (API REST) ---
 builder.Services.AddEndpointsApiExplorer();
