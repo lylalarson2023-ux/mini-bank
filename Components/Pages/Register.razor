@@ -23,6 +23,49 @@
         </div>
     </div>
 }
+else if (showAdnChoice)
+{
+    <div class="auth-wrapper" style="max-width: 520px;">
+        <div class="auth-card">
+            <div class="auth-header">
+                <img src="images/logo_adn_pay_auth.png" alt="ADN_pay" class="auth-logo" style="max-width: 140px; margin-bottom: 14px;" />
+                <h1 class="auth-title" style="font-size: 1.45rem;">Votre adresse ADN_pay</h1>
+                <p class="auth-subtitle">CHOISISSEZ VOTRE @@adnpay.ma</p>
+                <div style="height: 3px; width: 56px; margin: 14px auto 0; background: linear-gradient(90deg, #0099CC, #30B880); border-radius: 3px;"></div>
+            </div>
+
+            <p style="color: var(--text-secondary); font-size: 0.78rem; text-align:center; margin-bottom: 18px;">
+                Compte créé ✓ — réservez dès maintenant votre adresse <strong>@@adnpay.ma</strong> (vous pourrez l'utiliser plus tard).
+            </p>
+
+            @if (!string.IsNullOrEmpty(adnError))
+            {
+                <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+                    @adnError
+                </div>
+            }
+
+            <div class="form-section" style="padding: 20px;">
+                @foreach (var opt in adnOptions)
+                {
+                    var o = opt;
+                    <label style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px; border:1px solid @(selectedAdn == o ? "var(--blue-500)" : "var(--border)"); border-radius: var(--radius-md); cursor:pointer; background:@(selectedAdn == o ? "var(--blue-glow)" : "transparent");">
+                        <input type="radio" name="adnchoice" checked="@(selectedAdn == o)" @onchange="@(() => selectedAdn = o)" />
+                        <span style="font-weight:600;">@o</span>
+                    </label>
+                }
+            </div>
+
+            <button type="button" class="btn btn-adn btn-block" @onclick="ConfirmerAdn" disabled="@adnLoading" style="margin-top:8px;">
+                @(adnLoading ? "RÉSERVATION..." : "RÉSERVER CETTE ADRESSE")
+            </button>
+
+            <div class="auth-footer">
+                <a href="#" @onclick="PasserAdn" @onclick:preventDefault="true">Passer pour l'instant</a>
+            </div>
+        </div>
+    </div>
+}
 else
 {
     <div class="auth-wrapper" style="max-width: 520px;">
@@ -54,8 +97,9 @@ else
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>EMAIL (ADN_ID)</label>
-                    <input @bind="newUser.Email" type="email" class="form-input" placeholder="nom@adnpay.ma" />
+                    <label>VOTRE E-MAIL (ACTUEL)</label>
+                    <input @bind="newUser.Email" type="email" class="form-input" placeholder="vous@exemple.com" />
+                    <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">Votre e-mail personnel, utilisé pour vous connecter. Vous réserverez une adresse @@adnpay.ma juste après.</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -131,6 +175,13 @@ else
     private string errorMessage = "";
     private bool isLoading = false;
     private bool showSuccess = false;
+
+    // --- Étape « choisir son adresse @adnpay.ma » (après création du compte) ---
+    private bool showAdnChoice = false;
+    private List<string> adnOptions = new();
+    private string selectedAdn = "";
+    private string adnError = "";
+    private bool adnLoading = false;
     private List<string> optsV = new() { "Casablanca", "Rabat", "Marrakech", "Tanger", "Agadir", "Fès", "Oujda", "Kenitra", "Meknès", "Safi" , "Tétouan", "Khouribga", "El Jadida", "Nador", "Béni Mellal", "Kénitra", "Settat", "Larache", "Sidi Kacem", "Guelmim", "Taza", "Ouarzazate", "Dakhla", "Tan-Tan", "Errachidia", "Sidi Ifni", "Zagora", "Boujdour", "Laayoune", "Assilah", "Fnideq", "Martil", "Al Hoceima", "Tiznit", "Sidi Slimane", "Ouazzane", "Azrou", "Midelt", "Ifrane", "Kelaat M'Gouna" };
 
     // --- Jauge de force du mot de passe (live) ---
@@ -214,11 +265,11 @@ else
 
             if (success)
             {
-                showSuccess = true;
-                Notif.Notify("COMPTE CRÉÉ — Bienvenue sur ADN_pay", NotificationType.SUCCESS);
+                Notif.Notify("COMPTE CRÉÉ — choisissez votre adresse @adnpay.ma", NotificationType.SUCCESS);
+                adnOptions = await Bank.GenererAdnEmailsAsync(newUser.Prenom, newUser.Nom);
+                selectedAdn = adnOptions.FirstOrDefault() ?? "";
+                showAdnChoice = true;
                 StateHasChanged();
-                await Task.Delay(2000);
-                Nav.NavigateTo("/login", forceLoad: true);
             }
             else
             {
@@ -235,5 +286,45 @@ else
         {
             isLoading = false;
         }
+    }
+
+    private async Task ConfirmerAdn()
+    {
+        adnError = "";
+        if (string.IsNullOrEmpty(selectedAdn)) { adnError = "Choisissez une adresse."; return; }
+        adnLoading = true;
+        try
+        {
+            var (ok, msg) = await Bank.ReserverAdnEmailAsync(newUser.Email, selectedAdn);
+            if (ok)
+            {
+                await FinaliserAsync();
+            }
+            else
+            {
+                adnError = msg;
+                adnOptions = await Bank.GenererAdnEmailsAsync(newUser.Prenom, newUser.Nom);
+                selectedAdn = adnOptions.FirstOrDefault() ?? "";
+            }
+        }
+        catch
+        {
+            adnError = "Erreur technique. Veuillez réessayer.";
+        }
+        finally
+        {
+            adnLoading = false;
+        }
+    }
+
+    private async Task PasserAdn() => await FinaliserAsync();
+
+    private async Task FinaliserAsync()
+    {
+        showAdnChoice = false;
+        showSuccess = true;
+        StateHasChanged();
+        await Task.Delay(1800);
+        Nav.NavigateTo("/login", forceLoad: true);
     }
 }

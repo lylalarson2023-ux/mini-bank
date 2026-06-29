@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ADN_pay.Data;
 using ADN_pay.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
 namespace ADN_pay.Services
 {
@@ -12,15 +13,19 @@ namespace ADN_pay.Services
         private readonly ILogger<AuthService> _logger;
         private readonly IHttpContextAccessor _http;
         private readonly NotificationHistoryService _notifHist;
+        private readonly IEmailSender _email;
+        private readonly IConfiguration _config;
 
         public AuthService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AuthService> logger, IHttpContextAccessor http,
-            NotificationHistoryService notifHist)
+            NotificationHistoryService notifHist, IEmailSender email, IConfiguration config)
         {
             _factory = factory;
             _user = user;
             _logger = logger;
             _http = http;
             _notifHist = notifHist;
+            _email = email;
+            _config = config;
         }
 
         private async Task LogLoginAsync(int? userId, string email, bool success, string? reason = null)
@@ -161,6 +166,17 @@ namespace ADN_pay.Services
                     if (_user.EstConnecte && _user.Profil.Id > 0)
                         await _notifHist.AddNotificationAsync("Bienvenue sur ADN_pay — votre compte a été créé avec succès", "SUCCESS", "COMPTE");
                     _logger.LogInformation("Nouveau compte créé : {Email}", u.Email);
+
+                    // E-mail de bienvenue via template Brevo (non bloquant : un échec n'empêche pas la création).
+                    try
+                    {
+                        var welcomeId = _config.GetValue<int?>("Brevo:Templates:WelcomeId") ?? 2;
+                        await _email.SendTemplateAsync(u.Email, welcomeId, new { firstName = u.Prenom });
+                    }
+                    catch (Exception exMail)
+                    {
+                        _logger.LogWarning(exMail, "Envoi e-mail de bienvenue échoué (non bloquant) pour {Email}", u.Email);
+                    }
                 }
                 return (result, result ? "Compte créé avec succès" : "Erreur lors de la création du compte");
             }
@@ -169,6 +185,77 @@ namespace ADN_pay.Services
                 _logger.LogError(ex, "Échec création compte {Email}", u.Email);
                 return (false, "Une erreur technique est survenue. Veuillez réessayer.");
             }
+        }
+
+        // Propose 3 adresses @adnpay.ma DISPONIBLES dérivées du prénom/nom.
+        public async Task<List<string>> GenererAdnEmailsAsync(string prenom, string nom)
+        {
+            string p = NormaliserLocalPart(prenom);
+            string n = NormaliserLocalPart(nom);
+            if (string.IsNullOrEmpty(p)) p = "user";
+            if (string.IsNullOrEmpty(n)) n = "adn";
+
+            var bases = new List<string>
+            {
+                $"{p}.{n}",
+                $"{p[0]}{n}",
+                $"{n}.{p}"
+            }.Distinct().ToList();
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var taken = new HashSet<string>(
+                await ctx.UserProfiles.Where(x => x.AdnEmail != "").Select(x => x.AdnEmail).ToListAsync());
+
+            var result = new List<string>();
+            foreach (var b in bases)
+            {
+                var addr = $"{b}@adnpay.ma";
+                int i = 1;
+                while (taken.Contains(addr) || result.Contains(addr))
+                    addr = $"{b}{i++}@adnpay.ma";
+                result.Add(addr);
+            }
+            return result.Take(3).ToList();
+        }
+
+        // Réserve l'adresse @adnpay.ma choisie pour le compte (identifié par son e-mail perso).
+        public async Task<(bool Success, string Message)> ReserverAdnEmailAsync(string email, string adnEmail)
+        {
+            email = (email ?? "").Trim().ToLower();
+            adnEmail = (adnEmail ?? "").Trim().ToLower();
+
+            if (string.IsNullOrEmpty(adnEmail) || !adnEmail.EndsWith("@adnpay.ma"))
+                return (false, "Adresse @adnpay.ma invalide.");
+            var local = adnEmail[..adnEmail.IndexOf('@')];
+            if (!System.Text.RegularExpressions.Regex.IsMatch(local, "^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$"))
+                return (false, "Format d'adresse @adnpay.ma invalide.");
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            if (await ctx.UserProfiles.AnyAsync(x => x.AdnEmail == adnEmail))
+                return (false, "Cette adresse @adnpay.ma est déjà réservée. Choisissez-en une autre.");
+
+            var u = await ctx.UserProfiles.FirstOrDefaultAsync(x => x.Email == email);
+            if (u == null)
+                return (false, "Compte introuvable.");
+            if (!string.IsNullOrEmpty(u.AdnEmail))
+                return (true, "Adresse déjà réservée."); // idempotent : on n'écrase pas
+
+            u.AdnEmail = adnEmail;
+            await ctx.SaveChangesAsync();
+            _logger.LogInformation("Adresse @adnpay.ma réservée : {Adn} pour {Email}", adnEmail, email);
+            return (true, "Adresse @adnpay.ma réservée avec succès.");
+        }
+
+        // Réduit un nom à une partie locale d'e-mail : minuscules, sans accents, [a-z0-9] uniquement.
+        private static string NormaliserLocalPart(string s)
+        {
+            s = (s ?? "").Trim().ToLowerInvariant();
+            var formD = s.Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in formD)
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                    sb.Append(c);
+            return new string(sb.ToString().Where(char.IsLetterOrDigit).ToArray());
         }
 
         public async Task MigreMotsDePasseEnClair()

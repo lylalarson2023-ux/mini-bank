@@ -109,6 +109,10 @@ namespace ADN_pay.Models
         public string? EmailChangeCodeHash { get; set; }
         public DateTime? EmailChangeCodeExpiry { get; set; }
 
+        // --- ADRESSE ADN_pay RÉSERVÉE (@adnpay.ma) ---
+        // Identifiant réservé à l'inscription (la vraie boîte mail sera branchée plus tard).
+        public string AdnEmail { get; set; } = "";
+
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();
         public List<SavingsPocket> SavingsPockets { get; set; } = new();

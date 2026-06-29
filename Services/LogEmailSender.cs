@@ -19,6 +19,14 @@ namespace ADN_pay.Services
             return Task.FromResult(true);
         }
 
+        public Task<bool> SendTemplateAsync(string to, int templateId, object? parameters = null)
+        {
+            _logger.LogInformation(
+                "\n📧 ─── E-MAIL TEMPLATE (DEV, non envoyé) ───\n   À          : {To}\n   TemplateId : {Id}\n   Params     : {Params}\n──────────────────────────────",
+                to, templateId, System.Text.Json.JsonSerializer.Serialize(parameters));
+            return Task.FromResult(true);
+        }
+
         private static string StripHtml(string html) =>
             Regex.Replace(html ?? "", "<.*?>", " ").Replace("&nbsp;", " ").Trim();
     }

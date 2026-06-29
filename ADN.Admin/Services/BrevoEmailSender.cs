@@ -58,4 +58,32 @@ public class BrevoEmailSender : IEmailSender
             return false;
         }
     }
+
+    public async Task<bool> SendTemplateAsync(string to, int templateId, object? parameters = null)
+    {
+        try
+        {
+            // Avec un templateId, l'expéditeur et le sujet viennent du template Brevo.
+            var payload = new
+            {
+                to = new[] { new { email = to } },
+                templateId,
+                @params = parameters
+            };
+            var resp = await _http.PostAsJsonAsync(ApiUrl, payload);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _logger.LogError("Brevo (template {Id}) a échoué ({Status}) : {Body}", templateId, (int)resp.StatusCode, body);
+                return false;
+            }
+            _logger.LogInformation("E-mail (template {Id}) envoyé via Brevo à {To}", templateId, to);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception envoi template Brevo {Id}", templateId);
+            return false;
+        }
+    }
 }

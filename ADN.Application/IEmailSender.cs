@@ -5,5 +5,8 @@ namespace ADN_pay.Services
     public interface IEmailSender
     {
         Task<bool> SendAsync(string to, string subject, string htmlBody, string? textBody = null);
+
+        // Envoi via un template Brevo (ID numérique) + paramètres ({{ params.X }} dans le template).
+        Task<bool> SendTemplateAsync(string to, int templateId, object? parameters = null);
     }
 }

@@ -17,4 +17,12 @@ public class LogEmailSender : IEmailSender
             to, subject, corps);
         return Task.FromResult(true);
     }
+
+    public Task<bool> SendTemplateAsync(string to, int templateId, object? parameters = null)
+    {
+        _logger.LogInformation(
+            "\n[E-MAIL TEMPLATE non envoyé]\n  À          : {To}\n  TemplateId : {Id}\n  Params     : {Params}",
+            to, templateId, System.Text.Json.JsonSerializer.Serialize(parameters));
+        return Task.FromResult(true);
+    }
 }
