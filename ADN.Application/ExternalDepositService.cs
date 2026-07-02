@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ADN_pay.Services
 {
-    // Crédit des dépôts venant de l'extérieur (Stripe, PawaPay, virement bancaire).
+    // Crédit des dépôts venant de l'extérieur (Stripe, Flutterwave, virement bancaire).
     // Contrairement à AccountService, ce service ne dépend PAS de UserContext : il est
     // appelable depuis un webhook ou un callback serveur→serveur, sans session utilisateur.
     //

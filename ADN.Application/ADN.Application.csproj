@@ -10,7 +10,7 @@
   <!-- Cas d'usage / logique applicative : services métier partagés par le
        web ET (à terme) l'API. Dépend du Domaine et de l'Infrastructure.
        Aucune dépendance ASP.NET (ce qui est web-spécifique reste dans le
-       projet web : AuthService, FileService, Stripe/PawaPay, notifications UI). -->
+       projet web : AuthService, FileService, Stripe/Flutterwave, notifications UI). -->
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />

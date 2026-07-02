@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADN_pay.Tests;
 
-// Idempotence des dépôts externes (Stripe, PawaPay, virement) : une référence
+// Idempotence des dépôts externes (Stripe, Flutterwave, virement) : une référence
 // donnée ne peut créditer le compte qu'une seule fois, quel que soit le nombre
 // de rejeux (webhook dupliqué, URL de succès rechargée, callback + polling).
 public class ExternalDepositServiceTests : IDisposable
@@ -69,8 +69,8 @@ public class ExternalDepositServiceTests : IDisposable
     [Fact]
     public async Task Crediter_ReferencesDifferentes_CrediteLesDeux()
     {
-        await _service.CrediterAsync(1, 10_000L, "pawapay", "dep-1", "Dépôt Mobile Money");
-        await _service.CrediterAsync(1, 20_000L, "pawapay", "dep-2", "Dépôt Mobile Money");
+        await _service.CrediterAsync(1, 10_000L, "flutterwave", "dep-1", "Dépôt Mobile Money");
+        await _service.CrediterAsync(1, 20_000L, "flutterwave", "dep-2", "Dépôt Mobile Money");
 
         Assert.Equal(40_000L, GetUser(1).Solde); // 100 + 100 + 200 DH
         Assert.Equal(2, GetTransactions(1).Count);
@@ -79,9 +79,9 @@ public class ExternalDepositServiceTests : IDisposable
     [Fact]
     public async Task Crediter_MemeIdMaisSourcesDifferentes_CrediteLesDeux()
     {
-        // « abc » chez Stripe et « abc » chez PawaPay sont deux paiements distincts.
+        // « abc » chez Stripe et « abc » chez Flutterwave sont deux paiements distincts.
         await _service.CrediterAsync(1, 10_000L, "stripe", "abc", "Dépôt carte");
-        await _service.CrediterAsync(1, 10_000L, "pawapay", "abc", "Dépôt mobile");
+        await _service.CrediterAsync(1, 10_000L, "flutterwave", "abc", "Dépôt mobile");
 
         Assert.Equal(30_000L, GetUser(1).Solde);
         Assert.Equal(2, GetTransactions(1).Count);
