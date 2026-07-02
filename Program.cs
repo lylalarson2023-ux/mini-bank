@@ -132,6 +132,9 @@ builder.Services.AddScoped<BankService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NotificationHistoryService>();
 builder.Services.AddScoped<TwoFactorService>();
+// Crédit idempotent des dépôts externes (Stripe, PawaPay, virement) — sans UserContext,
+// utilisable depuis les webhooks/callbacks serveur→serveur.
+builder.Services.AddScoped<ExternalDepositService>();
 
 // --- AUTHENTIFICATION AVEC COOKIE ---
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -201,6 +204,9 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("UPDATE UserProfiles SET Role = '' WHERE Role IS NULL"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN TuteurVisible INTEGER NOT NULL DEFAULT 0"); } catch { }
+    // Idempotence des dépôts externes (Stripe/PawaPay/virement) : référence unique.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE Transactions ADD COLUMN ReferenceExterne TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_Transactions_ReferenceExterne ON Transactions(ReferenceExterne) WHERE ReferenceExterne IS NOT NULL"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 
@@ -354,10 +360,45 @@ app.MapGet("/api/admin/users.csv", async (IDbContextFactory<BankDbContext> dbFac
 }).RequireAuthorization("AdminOnly");
 
 // --- STRIPE SUCCESS (retour après paiement réussi) ---
+// Le statut est re-vérifié auprès de l'API Stripe et le crédit est idempotent
+// (référence de session unique) : recharger cette URL ne crédite pas deux fois.
 app.MapGet("/api/stripe/success", async (HttpContext ctx, StripeService stripe, string session_id) =>
 {
     await stripe.ConfirmerDepotAsync(session_id);
     return Results.Redirect("/depot?paid=ok");
+});
+
+// --- STRIPE WEBHOOK (filet de sécurité serveur→serveur) ---
+// Crédite même si l'utilisateur ferme son navigateur avant la redirection de succès.
+// Signature vérifiée avec STRIPE_WEBHOOK_SECRET ; 404 si non configuré.
+app.MapPost("/api/stripe/webhook", async (HttpContext ctx,
+    Microsoft.Extensions.Options.IOptions<StripeOptions> stripeOpts,
+    ExternalDepositService deposits, ILogger<Program> logger) =>
+{
+    var secret = stripeOpts.Value.WebhookSecret;
+    if (string.IsNullOrEmpty(secret)) return Results.NotFound();
+
+    var json = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
+    Stripe.Event stripeEvent;
+    try
+    {
+        stripeEvent = Stripe.EventUtility.ConstructEvent(json, ctx.Request.Headers["Stripe-Signature"], secret);
+    }
+    catch (Stripe.StripeException ex)
+    {
+        logger.LogWarning("Webhook Stripe rejeté (signature invalide) : {Message}", ex.Message);
+        return Results.BadRequest();
+    }
+
+    if (stripeEvent.Type == "checkout.session.completed"
+        && stripeEvent.Data.Object is Stripe.Checkout.Session session)
+    {
+        var ok = await StripeService.CrediterDepuisSessionAsync(session, deposits);
+        logger.LogInformation("Webhook Stripe checkout.session.completed — session={SessionId}, crédité={Ok}",
+            session.Id, ok);
+    }
+
+    return Results.Ok();
 });
 
 // --- UPLOAD FICHIER (hors circuit Blazor — évite le bug de formulaire qui se vide) ---

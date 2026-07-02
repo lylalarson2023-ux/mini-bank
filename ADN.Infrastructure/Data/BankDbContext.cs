@@ -25,6 +25,12 @@ namespace ADN_pay.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            // Idempotence des dépôts externes : une référence (stripe:…, pawapay:…,
+            // virement:…) ne peut créditer qu'une fois. NULL autorisé en multiple.
+            modelBuilder.Entity<Transaction>()
+                .HasIndex(t => t.ReferenceExterne)
+                .IsUnique();
+
             // Configuration pour SQLite gérant les décimaux
             foreach (var entityType in modelBuilder.Model.GetEntityTypes())
             {

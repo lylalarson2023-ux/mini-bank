@@ -137,6 +137,7 @@ builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<SavingsService>();
 builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<ADN_pay.Admin.Services.ToastService>();
+builder.Services.AddScoped<ExternalDepositService>();
 builder.Services.AddScoped<UserContextMiddleware>();
 // E-mail : Brevo en prod (clé dispo + hors dev ou forçage), sinon log dev.
 var brevoKeyAdmin = Environment.GetEnvironmentVariable("BREVO_API_KEY");
@@ -194,6 +195,9 @@ using (var scope = app.Services.CreateScope())
     // Colonne de blocage admin (idempotent — l'app web la crée aussi).
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Idempotence des dépôts externes (Stripe/PawaPay/virement) — l'app web la crée aussi.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE Transactions ADD COLUMN ReferenceExterne TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_Transactions_ReferenceExterne ON Transactions(ReferenceExterne) WHERE ReferenceExterne IS NOT NULL"); } catch { }
 
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.

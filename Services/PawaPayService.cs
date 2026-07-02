@@ -34,17 +34,20 @@ namespace ADN_pay.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly PawaPayOptions _options;
         private readonly IDbContextFactory<BankDbContext> _dbFactory;
+        private readonly ExternalDepositService _deposits;
         private readonly ILogger<PawaPayService> _logger;
 
         public PawaPayService(
             IHttpClientFactory httpClientFactory,
             IOptions<PawaPayOptions> options,
             IDbContextFactory<BankDbContext> dbFactory,
+            ExternalDepositService deposits,
             ILogger<PawaPayService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _options = options.Value;
             _dbFactory = dbFactory;
+            _deposits = deposits;
             _logger = logger;
         }
 
@@ -138,7 +141,15 @@ namespace ADN_pay.Services
             var result = JsonSerializer.Deserialize<PawaPayStatusResponse>(responseJson, JsonOpts);
 
             if (result != null)
+            {
                 await UpdateLocalDepositStatus(depositId, result.Status);
+                // Statut lu directement auprès de PawaPay (source de confiance) : c'est
+                // ici — et seulement ici — qu'on crédite. Le polling du checkout comme
+                // le callback passent par cette méthode ; le crédit est idempotent
+                // (référence unique), donc peu importe qui arrive le premier.
+                if (result.Status == "COMPLETED")
+                    await CrediterDepotAsync(depositId);
+            }
 
             return result;
         }
@@ -152,27 +163,33 @@ namespace ADN_pay.Services
             var rawJson = JsonSerializer.Serialize(dto, JsonOpts);
             await UpdateLocalDepositStatus(dto.DepositId, dto.Status, rawJson);
 
+            // Le callback n'est pas signé : on ne crédite JAMAIS sur la seule foi du
+            // payload (forgeable). On re-vérifie le statut auprès de l'API PawaPay,
+            // qui déclenche le crédit idempotent si le dépôt est bien COMPLETED.
             if (dto.Status == "COMPLETED")
+                await CheckDepositStatusAsync(dto.DepositId);
+        }
+
+        private async Task CrediterDepotAsync(string depositId)
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var deposit = await db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == depositId);
+            if (deposit == null)
             {
-                await using var db = await _dbFactory.CreateDbContextAsync();
-                var deposit = await db.PawaPayDeposits.FirstOrDefaultAsync(d => d.DepositId == dto.DepositId);
-                if (deposit != null && deposit.Status != PawaPayDepositStatus.Completed)
-                {
-                    deposit.Status = PawaPayDepositStatus.Completed;
-                    deposit.UpdatedAt = DateTime.UtcNow;
-
-                    var user = await db.UserProfiles.FindAsync(deposit.UserId);
-                    if (user != null)
-                    {
-                        user.Solde += (long)(deposit.Amount * 100);
-                    }
-
-                    await db.SaveChangesAsync();
-                    _logger.LogInformation(
-                        "PawaPay deposit completed — depositId={DepositId}, userId={UserId}, amount={Amount}",
-                        dto.DepositId, deposit.UserId, deposit.Amount);
-                }
+                _logger.LogWarning("PawaPay : dépôt COMPLETED inconnu en base — depositId={DepositId}", depositId);
+                return;
             }
+
+            var credited = await _deposits.CrediterAsync(
+                deposit.UserId,
+                (long)(deposit.Amount * 100),
+                "pawapay",
+                depositId,
+                $"Dépôt Mobile Money ({deposit.Amount:0.00} {deposit.Currency})");
+
+            if (!credited)
+                _logger.LogError("PawaPay : échec du crédit — depositId={DepositId}, userId={UserId}",
+                    depositId, deposit.UserId);
         }
 
         private HttpClient CreateClient()

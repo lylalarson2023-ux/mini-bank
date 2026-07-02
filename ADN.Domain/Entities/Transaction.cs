@@ -20,6 +20,12 @@ namespace ADN_pay.Models
         public long Montant { get; set; }
         public string Libelle { get; set; } = "";
 
+        // Référence unique du dépôt externe (ex. « stripe:cs_… », « pawapay:<uuid> »,
+        // « virement:ADN-… ») : l'index unique garantit qu'un même paiement ne peut
+        // créditer le compte qu'une seule fois (idempotence anti-rejeu).
+        [MaxLength(96)]
+        public string? ReferenceExterne { get; set; }
+
         // --- RELATIONS ---
         public int UserId { get; set; }
 

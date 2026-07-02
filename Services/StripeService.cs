@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Options;
 using Stripe;
 using Stripe.Checkout;
-using AppAccount = ADN_pay.Services.AccountService;
 
 namespace ADN_pay.Services
 {
@@ -16,16 +15,14 @@ namespace ADN_pay.Services
     {
         private readonly StripeOptions _options;
         private readonly UserContext _user;
-        private readonly AppAccount _account;
-        private readonly AuthService _auth;
+        private readonly ExternalDepositService _deposits;
         private readonly IHttpContextAccessor _http;
 
-        public StripeService(IOptions<StripeOptions> options, UserContext user, AppAccount account, AuthService auth, IHttpContextAccessor http)
+        public StripeService(IOptions<StripeOptions> options, UserContext user, ExternalDepositService deposits, IHttpContextAccessor http)
         {
             _options = options.Value;
             _user = user;
-            _account = account;
-            _auth = auth;
+            _deposits = deposits;
             _http = http;
             StripeConfiguration.ApiKey = _options.SecretKey;
         }
@@ -76,11 +73,19 @@ namespace ADN_pay.Services
             return session.Url;
         }
 
+        // Statut vérifié auprès de l'API Stripe (jamais confiance au navigateur), puis
+        // crédit idempotent par référence de session : recharger l'URL de succès ou
+        // recevoir le webhook en double ne peut pas créditer deux fois.
         public async Task<bool> ConfirmerDepotAsync(string sessionId)
         {
             var service = new SessionService();
             var session = await service.GetAsync(sessionId);
+            return await CrediterDepuisSessionAsync(session, _deposits);
+        }
 
+        // Partagé entre le retour navigateur (success) et le webhook.
+        public static async Task<bool> CrediterDepuisSessionAsync(Session session, ExternalDepositService deposits)
+        {
             if (session.PaymentStatus != "paid") return false;
 
             if (!session.Metadata.TryGetValue("amount_cents", out var amountStr)
@@ -92,8 +97,7 @@ namespace ADN_pay.Services
                 || !int.TryParse(userIdStr, out var userId))
                 return false;
 
-            await _auth.InitializeAsync(userId);
-            return await _account.ExecuterOperationAsync(montantCentimes, "Dépôt par carte Stripe", "DÉPÔT");
+            return await deposits.CrediterAsync(userId, montantCentimes, "stripe", session.Id, "Dépôt par carte Stripe");
         }
 
         private string GetBaseUrl()
