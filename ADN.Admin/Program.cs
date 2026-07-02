@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
 using ADN_pay.Admin.Components;
 using ADN_pay.Api.Endpoints;
 using ADN_pay.Api.Middleware;
@@ -44,6 +45,21 @@ if (string.IsNullOrEmpty(jwtSecret))
     Log.Warning("JWT_SECRET non configuré — clé aléatoire générée (les tokens ne survivront pas au redémarrage). Configurez JWT_SECRET.");
 }
 builder.Configuration["Jwt:Secret"] = jwtSecret;
+
+// --- GARDE-FOU : jamais les secrets jetables de dev en production ---
+if (builder.Environment.IsProduction())
+{
+    var devSecrets = new[]
+    {
+        "adminverifysecret123456",
+        "dev-merge-jwt-secret-ZGV2LW1lcmdlLTMyYnl0ZXMtbWluaW11bS1sZW5ndGgtb2s=",
+    };
+    if (devSecrets.Contains(loginSecret) || devSecrets.Contains(jwtSecret) || jwtSecret.StartsWith("dev-")
+        || Environment.GetEnvironmentVariable("ADMIN_PASSWORD") == "AdminVerif1!")
+        throw new InvalidOperationException(
+            "Secrets de DEV détectés en Production (ADMIN_LOGIN_SECRET / JWT_SECRET / ADMIN_PASSWORD). " +
+            "Générez de vrais secrets aléatoires avant le déploiement.");
+}
 
 // --- BASE DE DONNÉES (partagée avec l'app principale) ---
 var dbPath = Environment.GetEnvironmentVariable("ADN_DB_PATH")
@@ -94,6 +110,24 @@ builder.Services.AddHttpContextAccessor();
 // --- CORS (clients mobiles de l'API) ---
 builder.Services.AddCors(opts => opts.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
+// --- RATE LIMITING (anti brute-force sur l'authentification, par IP) ---
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
+// Anti-brute-force du login admin Blazor (hors de portée du middleware HTTP).
+builder.Services.AddSingleton<ADN_pay.Admin.Services.LoginThrottle>();
+// Vérification TOTP/codes de secours à la connexion admin (couche Application).
+builder.Services.AddScoped<TwoFactorService>();
 
 // --- SERVICES MÉTIER (couche Application, partagés admin + API) ---
 builder.Services.AddScoped<UserContext>();
@@ -201,12 +235,18 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.UseSwagger();
-app.UseSwaggerUI(opt => opt.SwaggerEndpoint("/swagger/v1/swagger.json", "ADN_pay API v1"));
+// Swagger : dev uniquement (ou forçage explicite Swagger:Enabled) — ne pas
+// cartographier l'API publiquement en production.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(opt => opt.SwaggerEndpoint("/swagger/v1/swagger.json", "ADN_pay API v1"));
+}
 
 // UserContext pour l'API : peuplé depuis le JWT, uniquement sur /api/v1 (l'admin Blazor
 // peuple le sien depuis le cookie dans MainLayout).
@@ -239,9 +279,15 @@ app.MapGet("/auth/signin", async (HttpContext ctx, IDbContextFactory<BankDbConte
     };
     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
     await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+    db.UserLogins.Add(new UserLogin
+    {
+        UserId = user.Id, Email = user.Email, Date = DateTime.UtcNow, Success = true,
+        IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? "admin", UserAgent = "admin"
+    });
+    await db.SaveChangesAsync();
     Log.Information("Connexion admin : {Email}", user.Email);
     return Results.Redirect("/");
-});
+}).RequireRateLimiting("auth");
 
 app.MapGet("/auth/signout", async (HttpContext ctx) =>
 {

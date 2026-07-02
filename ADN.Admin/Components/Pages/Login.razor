@@ -4,33 +4,58 @@
 @rendermode InteractiveServer
 @using System.Security.Cryptography
 @using System.Text
+@using ADN_pay.Models
 @using Microsoft.EntityFrameworkCore
 @inject Microsoft.EntityFrameworkCore.IDbContextFactory<ADN_pay.Data.BankDbContext> DbFactory
 @inject NavigationManager Nav
 @inject IConfiguration Config
+@inject IHttpContextAccessor HttpAccessor
+@inject ADN_pay.Admin.Services.LoginThrottle Throttle
+@inject ADN_pay.Services.TwoFactorService TwoFactor
 
 <div class="login-wrap">
     <div class="login-card">
         <div class="login-logo">ADN_pay</div>
-        <div class="login-sub">ADMINISTRATION · ACCÈS RÉSERVÉ</div>
+        <div class="login-sub">@(showTwoFactor ? "VÉRIFICATION EN DEUX ÉTAPES" : "ADMINISTRATION · ACCÈS RÉSERVÉ")</div>
 
         @if (!string.IsNullOrEmpty(error))
         {
             <div class="login-error"><i class="bi bi-exclamation-triangle-fill"></i> @error</div>
         }
 
-        <div class="field">
-            <label>Adresse e-mail</label>
-            <input class="input" type="email" @bind="email" placeholder="admin@adnpay.ma" disabled="@busy" />
-        </div>
-        <div class="field">
-            <label>Mot de passe</label>
-            <input class="input" type="password" @bind="password" placeholder="••••••••"
-                   disabled="@busy" @onkeydown="OnKey" />
-        </div>
-        <button class="btn btn-primary btn-block" @onclick="HandleLogin" disabled="@busy">
-            @(busy ? "CONNEXION…" : "SE CONNECTER")
-        </button>
+        @if (!showTwoFactor)
+        {
+            <div class="field">
+                <label>Adresse e-mail</label>
+                <input class="input" type="email" @bind="email" placeholder="admin@adnpay.ma" disabled="@busy" />
+            </div>
+            <div class="field">
+                <label>Mot de passe</label>
+                <input class="input" type="password" @bind="password" placeholder="••••••••"
+                       disabled="@busy" @onkeydown="OnKey" />
+            </div>
+            <button class="btn btn-primary btn-block" @onclick="HandleLogin" disabled="@busy">
+                @(busy ? "CONNEXION…" : "SE CONNECTER")
+            </button>
+        }
+        else
+        {
+            <div class="field">
+                <label>@(useRecovery ? "Code de secours" : "Code de votre application d'authentification")</label>
+                <input class="input" @bind="twoFactorCode" placeholder="@(useRecovery ? "xxxxx-xxxxx" : "123456")"
+                       autocomplete="one-time-code" disabled="@busy" @onkeydown="OnKey2fa" />
+            </div>
+            <button class="btn btn-primary btn-block" @onclick="ValidateTwoFactor" disabled="@busy">
+                @(busy ? "VÉRIFICATION…" : "VÉRIFIER")
+            </button>
+            <div style="margin-top:14px;text-align:center;font-size:.85rem">
+                <a href="javascript:void(0)" @onclick="() => { useRecovery = !useRecovery; twoFactorCode = string.Empty; error = null; }">
+                    @(useRecovery ? "Utiliser l'application d'authentification" : "Utiliser un code de secours")
+                </a>
+                &nbsp;·&nbsp;
+                <a href="javascript:void(0)" @onclick="CancelTwoFactor">Annuler</a>
+            </div>
+        }
     </div>
 </div>
 
@@ -40,8 +65,19 @@
     private string? error;
     private bool busy;
 
+    // Étape 2FA : identité vérifiée (mot de passe OK) en attente du code.
+    private bool showTwoFactor;
+    private bool useRecovery;
+    private string twoFactorCode = "";
+    private int pendingUserId;
+
+    // IP client capturée à la requête initiale (indisponible ensuite sur le circuit).
+    private string? clientIp;
+
     protected override void OnInitialized()
     {
+        clientIp = HttpAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+
         var q = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
         error = q.Get("error") switch
         {
@@ -57,6 +93,35 @@
         if (e.Key == "Enter") await HandleLogin();
     }
 
+    private async Task OnKey2fa(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ValidateTwoFactor();
+    }
+
+    private bool GateLockedOut(string? emailKey)
+    {
+        var retry = Throttle.RetryAfter(clientIp, emailKey);
+        if (retry is null) return false;
+        error = $"Trop de tentatives. Réessayez dans {Math.Max(1, (int)Math.Ceiling(retry.Value.TotalMinutes))} min.";
+        return true;
+    }
+
+    private async Task LogAttempt(string emailValue, int? userId, bool success, string? failureReason)
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.UserLogins.Add(new UserLogin
+            {
+                UserId = userId, Email = emailValue, Date = DateTime.UtcNow,
+                Success = success, FailureReason = failureReason,
+                IpAddress = clientIp ?? "admin", UserAgent = "admin"
+            });
+            await db.SaveChangesAsync();
+        }
+        catch { /* la journalisation ne doit jamais bloquer la connexion */ }
+    }
+
     private async Task HandleLogin()
     {
         error = null;
@@ -66,33 +131,41 @@
             return;
         }
 
+        var emailLower = email.Trim().ToLower();
+        if (GateLockedOut(emailLower)) return;
+
         busy = true;
         try
         {
-            var emailLower = email.Trim().ToLower();
             await using var db = await DbFactory.CreateDbContextAsync();
             var user = await db.UserProfiles.FirstOrDefaultAsync(u => u.Email == emailLower);
 
             if (user is null || string.IsNullOrEmpty(user.MotDePasseHash)
                 || !BCrypt.Net.BCrypt.Verify(password, user.MotDePasseHash))
             {
+                Throttle.RecordFailure(clientIp, emailLower);
+                await LogAttempt(emailLower, user?.Id, false, "Identifiants invalides");
                 error = "E-mail ou mot de passe incorrect.";
                 return;
             }
             if (!user.IsAdmin)
             {
+                Throttle.RecordFailure(clientIp, emailLower);
+                await LogAttempt(emailLower, user.Id, false, "Non administrateur");
                 error = "Accès réservé aux administrateurs.";
                 return;
             }
 
-            var secret = Config["LoginSecret"];
-            if (string.IsNullOrEmpty(secret)) { error = "Erreur de configuration serveur."; return; }
+            // 2FA active sur le compte : exiger le code avant la passation cookie.
+            if (user.TwoFactorEnabled && !string.IsNullOrEmpty(user.TwoFactorSecret))
+            {
+                pendingUserId = user.Id;
+                showTwoFactor = true;
+                return;
+            }
 
-            // Lien de passation à durée de vie courte : signe userId + expiration (anti-rejeu).
-            var exp = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
-            var sig = Convert.ToHexString(
-                HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{user.Id}.{exp}")));
-            Nav.NavigateTo($"/auth/signin?userId={user.Id}&exp={exp}&sig={sig}", forceLoad: true);
+            Throttle.RecordSuccess(clientIp, emailLower);
+            Finish(user.Id);
         }
         catch
         {
@@ -102,5 +175,74 @@
         {
             busy = false;
         }
+    }
+
+    private async Task ValidateTwoFactor()
+    {
+        error = null;
+        var emailLower = email.Trim().ToLower();
+        if (GateLockedOut(emailLower)) return;
+        if (string.IsNullOrWhiteSpace(twoFactorCode))
+        {
+            error = "Code requis.";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var user = await db.UserProfiles.FindAsync(pendingUserId);
+            if (user is null || !user.IsAdmin || !user.TwoFactorEnabled || string.IsNullOrEmpty(user.TwoFactorSecret))
+            {
+                CancelTwoFactor();
+                return;
+            }
+
+            var ok = useRecovery
+                ? await TwoFactor.VerifyAndConsumeRecoveryCodeAsync(user.Id, twoFactorCode)
+                : TwoFactor.VerifyCodeWithWindow(user.TwoFactorSecret, twoFactorCode.Trim());
+
+            if (!ok)
+            {
+                Throttle.RecordFailure(clientIp, emailLower);
+                await LogAttempt(emailLower, user.Id, false, useRecovery ? "Code de secours invalide" : "Code 2FA invalide");
+                error = useRecovery ? "Code de secours invalide ou déjà utilisé." : "Code invalide. Réessayez.";
+                return;
+            }
+
+            Throttle.RecordSuccess(clientIp, emailLower);
+            Finish(user.Id);
+        }
+        catch
+        {
+            error = "Une erreur technique est survenue.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void CancelTwoFactor()
+    {
+        showTwoFactor = false;
+        useRecovery = false;
+        twoFactorCode = "";
+        pendingUserId = 0;
+        password = "";
+        error = null;
+    }
+
+    // Passation vers le cookie : lien signé à durée de vie courte (anti-rejeu).
+    private void Finish(int userId)
+    {
+        var secret = Config["LoginSecret"];
+        if (string.IsNullOrEmpty(secret)) { error = "Erreur de configuration serveur."; return; }
+
+        var exp = DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds();
+        var sig = Convert.ToHexString(
+            HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{userId}.{exp}")));
+        Nav.NavigateTo($"/auth/signin?userId={userId}&exp={exp}&sig={sig}", forceLoad: true);
     }
 }

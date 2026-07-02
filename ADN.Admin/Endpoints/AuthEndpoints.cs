@@ -12,7 +12,9 @@ public static class AuthEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var g = app.MapGroup("/api/v1/auth").WithTags("Auth");
+        // Rate-limité par IP (politique « auth ») : login/register/refresh sont
+        // les cibles naturelles du brute-force.
+        var g = app.MapGroup("/api/v1/auth").WithTags("Auth").RequireRateLimiting("auth");
         g.MapPost("/login", Login);
         g.MapPost("/refresh", Refresh);
         g.MapPost("/logout", Logout).RequireAuthorization("ApiBearer");
