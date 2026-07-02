@@ -20,6 +20,7 @@ namespace ADN_pay.Data
         public DbSet<NotificationHistory> NotificationHistories { get; set; }
         public DbSet<PawaPayDeposit> PawaPayDeposits { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<BankTransferRequest> BankTransferRequests { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -29,6 +30,11 @@ namespace ADN_pay.Data
             // virement:…) ne peut créditer qu'une fois. NULL autorisé en multiple.
             modelBuilder.Entity<Transaction>()
                 .HasIndex(t => t.ReferenceExterne)
+                .IsUnique();
+
+            // La référence de virement est communiquée au client : jamais deux identiques.
+            modelBuilder.Entity<BankTransferRequest>()
+                .HasIndex(r => r.Reference)
                 .IsUnique();
 
             // Configuration pour SQLite gérant les décimaux

@@ -8,6 +8,20 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "dev-preview": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5210",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ADN_DB_PATH": "C:\\PROJETS\\MbankWeb\\ADN_pay\\AdnPayData.db",
+        "ADMIN_LOGIN_SECRET": "adminverifysecret123456",
+        "ADMIN_EMAIL": "admin@adnpay.ma",
+        "ADMIN_PASSWORD": "AdminVerif1!",
+        "JWT_SECRET": "dev-merge-jwt-secret-ZGV2LW1lcmdlLTMyYnl0ZXMtbWluaW11bS1sZW5ndGgtb2s="
+      }
     }
   }
 }

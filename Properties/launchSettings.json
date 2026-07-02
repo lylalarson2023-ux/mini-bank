@@ -1,6 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/launchsettings.json",
     "profiles": {
+      "dev-preview": {
+        "commandName": "Project",
+        "dotnetRunMessages": true,
+        "launchBrowser": false,
+        "applicationUrl": "http://localhost:5163",
+        "environmentVariables": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ADN_DB_PATH": "C:\\PROJETS\\MbankWeb\\ADN_pay\\AdnPayData.db",
+          "VIREMENT_RIB": "007 810 0001234567890123 45",
+          "VIREMENT_BANQUE": "Attijariwafa Bank",
+          "VIREMENT_TITULAIRE": "ADN Corp."
+        }
+      },
       "http": {
         "commandName": "Project",
         "dotnetRunMessages": true,

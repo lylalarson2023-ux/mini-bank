@@ -94,6 +94,14 @@ if (!string.IsNullOrEmpty(stripeWebhook)) builder.Configuration["Stripe:WebhookS
 builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
 builder.Services.AddScoped<StripeService>();
 
+// --- VIREMENT BANCAIRE (coordonnées affichées au client ; dépôt validé par l'admin) ---
+var virRib = Environment.GetEnvironmentVariable("VIREMENT_RIB");
+var virBanque = Environment.GetEnvironmentVariable("VIREMENT_BANQUE");
+var virTitulaire = Environment.GetEnvironmentVariable("VIREMENT_TITULAIRE");
+if (!string.IsNullOrEmpty(virRib)) builder.Configuration["Virement:Rib"] = virRib;
+if (!string.IsNullOrEmpty(virBanque)) builder.Configuration["Virement:Banque"] = virBanque;
+if (!string.IsNullOrEmpty(virTitulaire)) builder.Configuration["Virement:Titulaire"] = virTitulaire;
+
 // --- PAWAPAY (Mobile Money) ---
 var pawaPayToken = Environment.GetEnvironmentVariable("PAWAPAY_API_TOKEN");
 if (!string.IsNullOrEmpty(pawaPayToken)) builder.Configuration["PawaPay:ApiToken"] = pawaPayToken;
@@ -135,6 +143,7 @@ builder.Services.AddScoped<TwoFactorService>();
 // Crédit idempotent des dépôts externes (Stripe, PawaPay, virement) — sans UserContext,
 // utilisable depuis les webhooks/callbacks serveur→serveur.
 builder.Services.AddScoped<ExternalDepositService>();
+builder.Services.AddScoped<BankTransferService>();
 
 // --- AUTHENTIFICATION AVEC COOKIE ---
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -207,6 +216,21 @@ using (var scope = app.Services.CreateScope())
     // Idempotence des dépôts externes (Stripe/PawaPay/virement) : référence unique.
     try { db.Database.ExecuteSqlRaw("ALTER TABLE Transactions ADD COLUMN ReferenceExterne TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_Transactions_ReferenceExterne ON Transactions(ReferenceExterne) WHERE ReferenceExterne IS NOT NULL"); } catch { }
+    // Demandes de dépôt par virement bancaire (l'admin les crée aussi).
+    try { db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS BankTransferRequests (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserId INTEGER NOT NULL,
+            MontantCentimes INTEGER NOT NULL,
+            Reference TEXT NOT NULL,
+            Statut TEXT NOT NULL DEFAULT 'EN_ATTENTE',
+            MotifRejet TEXT,
+            DateCreation TEXT NOT NULL,
+            DateTraitement TEXT,
+            TraitePar TEXT,
+            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
+        )"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_BankTransferRequests_Reference ON BankTransferRequests(Reference)"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 

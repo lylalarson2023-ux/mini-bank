@@ -1,11 +1,14 @@
 @page "/depot"
 @attribute [Authorize]
+@using ADN_pay.Models
 @using ADN_pay.Services
 @inject BankService Bank
 @inject StripeService Stripe
 @inject IPawaPayService PawaPay
+@inject BankTransferService Virements
 @inject NotificationService Notif
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 <div class="cyber-panel" style="max-width: 480px;">
     <h3>MODULE DE DÉPÔT</h3>
@@ -14,47 +17,109 @@
         SOLDE ACTUEL : <span class="highlight">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</span>
     </div>
 
-    @if (!string.IsNullOrEmpty(configError))
+    @if (demandeVirement is not null)
     {
-        <div class="alert alert-danger" style="margin-top: 16px; font-size: 0.75rem;">
-            @configError
+        <!-- Instructions après création d'une demande de virement -->
+        <div class="depot-step" style="margin-top: 16px;">
+            <div class="depot-step-label">VOTRE DEMANDE EST ENREGISTRÉE</div>
+            <div class="warning-box" style="text-align:center; margin-top: 10px;">
+                RÉFÉRENCE À METTRE DANS LE MOTIF DU VIREMENT :<br />
+                <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demandeVirement.Reference</span><br />
+                MONTANT : <span class="highlight">@((demandeVirement.MontantCentimes / 100m).ToString("N2")) DH</span>
+            </div>
+            <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
+                <div><strong>Coordonnées bancaires :</strong></div>
+                <div>Titulaire : <strong>@virTitulaire</strong></div>
+                <div>Banque : <strong>@virBanque</strong></div>
+                <div>RIB : <strong style="letter-spacing:1px">@virRib</strong></div>
+            </div>
+            <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
+                <li>Effectuez le virement du montant exact depuis votre banque.</li>
+                <li>Indiquez impérativement la référence <strong>@demandeVirement.Reference</strong> dans le motif.</li>
+                <li>Votre compte est crédité après réception (généralement 24–48 h ouvrées).</li>
+            </ol>
+            <button class="btn btn-primary btn-block" style="margin-top: 10px;" @onclick="() => demandeVirement = null">
+                J'AI NOTÉ LES INSTRUCTIONS
+            </button>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(configError))
+        {
+            <div class="alert alert-danger" style="margin-top: 16px; font-size: 0.75rem;">
+                @configError
+            </div>
+        }
+
+        <div class="depot-step">
+            <div class="depot-step-label">1. MONTANT À DÉPOSER (DH)</div>
+            <input type="number" @bind="montant" class="form-input depot-montant-input" placeholder="0.00" />
+        </div>
+
+        <div class="depot-step">
+            <div class="depot-step-label">2. MOYEN DE PAIEMENT</div>
+            <div class="depot-choices">
+                <button class="depot-choice @(selectedMethod == "stripe" ? "active" : "")" @onclick="@(() => selectedMethod = "stripe")" disabled="@(montant is null or <= 0 || !stripeConfigured)">
+                    <span class="depot-choice-icon">
+                        <img src="/images/logo_adn_pay_blanc.png" alt="ADN_pay" class="depot-choice-logo" />
+                    </span>
+                    <span class="depot-choice-label">CARTE BANCAIRE</span>
+                    <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
+                </button>
+                <button class="depot-choice @(selectedMethod == "pawapay" ? "active" : "")" @onclick="@(() => selectedMethod = "pawapay")" disabled="@(montant is null or <= 0 || !pawaPayConfigured)">
+                    <span class="depot-choice-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="5" y="2" width="14" height="20" rx="2" />
+                            <line x1="12" y1="18" x2="12.01" y2="18" />
+                            <path d="M8 8h8v3H8z" />
+                        </svg>
+                    </span>
+                    <span class="depot-choice-label">MOBILE MONEY</span>
+                    <span class="depot-choice-sub">@(pawaPayConfigured ? "MTN · M-Pesa · Orange Money" : "Non configuré")</span>
+                </button>
+                <button class="depot-choice @(selectedMethod == "virement" ? "active" : "")" @onclick="@(() => selectedMethod = "virement")" disabled="@(montant is null or <= 0 || !virementConfigured)">
+                    <span class="depot-choice-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 21h18" /><path d="M4 18h16" /><path d="M6 18v-7" /><path d="M10 18v-7" />
+                            <path d="M14 18v-7" /><path d="M18 18v-7" /><path d="M12 3 3 8h18z" />
+                        </svg>
+                    </span>
+                    <span class="depot-choice-label">VIREMENT BANCAIRE</span>
+                    <span class="depot-choice-sub">@(virementConfigured ? "Sans frais — crédité après réception" : "Non configuré")</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="depot-step">
+            <button class="btn btn-primary btn-block depot-confirm" @onclick="EffectuerDepot" disabled="@(!canConfirm)">
+                @(isProcessing ? "TRAITEMENT..." : "CONFIRMER LE DÉPÔT")
+            </button>
         </div>
     }
 
-    <div class="depot-step">
-        <div class="depot-step-label">1. MONTANT À DÉPOSER (DH)</div>
-        <input type="number" @bind="montant" class="form-input depot-montant-input" placeholder="0.00" />
-    </div>
-
-    <div class="depot-step">
-        <div class="depot-step-label">2. MOYEN DE PAIEMENT</div>
-        <div class="depot-choices">
-            <button class="depot-choice @(selectedMethod == "stripe" ? "active" : "")" @onclick="SelectStripe" disabled="@(montant is null or <= 0 || !stripeConfigured)">
-                <span class="depot-choice-icon">
-                    <img src="/images/logo_adn_pay_blanc.png" alt="ADN_pay" class="depot-choice-logo" />
-                </span>
-                <span class="depot-choice-label">CARTE BANCAIRE</span>
-                <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
-            </button>
-            <button class="depot-choice @(selectedMethod == "pawapay" ? "active" : "")" @onclick="SelectPawaPay" disabled="@(montant is null or <= 0 || !pawaPayConfigured)">
-                <span class="depot-choice-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <rect x="5" y="2" width="14" height="20" rx="2" />
-                        <line x1="12" y1="18" x2="12.01" y2="18" />
-                        <path d="M8 8h8v3H8z" />
-                    </svg>
-                </span>
-                <span class="depot-choice-label">MOBILE MONEY</span>
-                <span class="depot-choice-sub">@(pawaPayConfigured ? "MTN · M-Pesa · Orange Money" : "Non configuré")</span>
-            </button>
+    @if (mesDemandes.Count > 0)
+    {
+        <div class="depot-step" style="margin-top: 20px;">
+            <div class="depot-step-label">MES DEMANDES DE VIREMENT</div>
+            @foreach (var d in mesDemandes)
+            {
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); font-size:.8rem;">
+                    <div>
+                        <strong>@d.Reference</strong> · @((d.MontantCentimes / 100m).ToString("N2")) DH
+                        <div style="color:var(--text-muted); font-size:.7rem;">@d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="highlight" style="font-size:.7rem;">@StatutLabel(d)</span>
+                        @if (d.Statut == BankTransferRequest.EnAttente)
+                        {
+                            <button class="btn btn-block" style="width:auto; padding:2px 8px; font-size:.65rem;" @onclick="() => Annuler(d.Id)">ANNULER</button>
+                        }
+                    </div>
+                </div>
+            }
         </div>
-    </div>
-
-    <div class="depot-step">
-        <button class="btn btn-primary btn-block depot-confirm" @onclick="EffectuerDepot" disabled="@(!canConfirm)">
-            @(isProcessing ? "TRAITEMENT..." : "CONFIRMER LE DÉPÔT")
-        </button>
-    </div>
+    }
 
     <div style="margin-top: 24px; text-align: center;">
         <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">&larr; RETOUR DASHBOARD</a>
@@ -67,25 +132,50 @@
     private bool isProcessing;
     private bool stripeConfigured;
     private bool pawaPayConfigured;
+    private bool virementConfigured;
     private string? configError;
+    private string virRib = "", virBanque = "", virTitulaire = "";
+    private BankTransferRequest? demandeVirement;
+    private List<BankTransferRequest> mesDemandes = new();
 
     private bool canConfirm => montant is > 0 && !string.IsNullOrEmpty(selectedMethod) && !isProcessing
-        && (selectedMethod == "stripe" ? stripeConfigured : pawaPayConfigured);
+        && selectedMethod switch
+        {
+            "stripe" => stripeConfigured,
+            "pawapay" => pawaPayConfigured,
+            "virement" => virementConfigured,
+            _ => false
+        };
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         stripeConfigured = !string.IsNullOrEmpty(Stripe.PublishableKey);
         pawaPayConfigured = PawaPay.EstConfigured;
-        if (!stripeConfigured && !pawaPayConfigured)
-            configError = "Aucun moyen de paiement configuré. Contactez l'administrateur (clés Stripe / token PawaPay manquants).";
-        else if (!stripeConfigured)
-            configError = "Paiement par carte indisponible (Stripe non configuré). Seul le Mobile Money est disponible.";
-        else if (!pawaPayConfigured)
-            configError = "Paiement Mobile Money indisponible (PawaPay non configuré). Seule la carte bancaire est disponible.";
+        virRib = Config["Virement:Rib"] ?? "";
+        virBanque = Config["Virement:Banque"] ?? "";
+        virTitulaire = Config["Virement:Titulaire"] ?? "";
+        virementConfigured = !string.IsNullOrEmpty(virRib);
+
+        if (!stripeConfigured && !pawaPayConfigured && !virementConfigured)
+            configError = "Aucun moyen de paiement configuré. Contactez l'administrateur.";
+
+        mesDemandes = await Virements.GetMesDemandesAsync();
     }
 
-    private void SelectStripe() { selectedMethod = "stripe"; }
-    private void SelectPawaPay() { selectedMethod = "pawapay"; }
+    private static string StatutLabel(BankTransferRequest d) => d.Statut switch
+    {
+        BankTransferRequest.EnAttente => "EN ATTENTE",
+        BankTransferRequest.Valide => "VALIDÉ ✓",
+        BankTransferRequest.Rejete => $"REJETÉ — {d.MotifRejet}",
+        BankTransferRequest.Annule => "ANNULÉE",
+        _ => d.Statut
+    };
+
+    private async Task Annuler(int id)
+    {
+        if (await Virements.AnnulerDemandeAsync(id))
+            mesDemandes = await Virements.GetMesDemandesAsync();
+    }
 
     private async Task EffectuerDepot()
     {
@@ -108,6 +198,22 @@
             else if (selectedMethod == "pawapay")
             {
                 Nav.NavigateTo($"/pawapay/deposit?amount={montant.Value:F2}", forceLoad: true);
+            }
+            else if (selectedMethod == "virement")
+            {
+                var (ok, message, demande) = await Virements.CreerDemandeAsync((long)(montant.Value * 100));
+                if (ok && demande is not null)
+                {
+                    demandeVirement = demande;
+                    montant = null;
+                    selectedMethod = null;
+                    mesDemandes = await Virements.GetMesDemandesAsync();
+                }
+                else
+                {
+                    Notif.Notify(message.ToUpper(), NotificationType.ERROR);
+                }
+                isProcessing = false;
             }
         }
         catch (Exception ex)
