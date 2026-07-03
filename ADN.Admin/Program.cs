@@ -214,6 +214,10 @@ using (var scope = app.Services.CreateScope())
             FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
         )"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_BankTransferRequests_Reference ON BankTransferRequests(Reference)"); } catch { }
+    // Canal de dépôt manuel (virement / mobile money) — l'app web la crée aussi.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN Canal TEXT NOT NULL DEFAULT 'VIREMENT'"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN MontantConverti INTEGER"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN DeviseConvertie TEXT"); } catch { }
 
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.

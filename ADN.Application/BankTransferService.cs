@@ -15,7 +15,13 @@ namespace ADN_pay.Services
         // Limites : pas de spam de demandes, montants raisonnables (centimes, ADR-001).
         public const int MaxDemandesEnAttente = 3;
         public const long MontantMin = 50_00L;        // 50 DH
-        public const long MontantMax = 50_000_00L;    // 50 000 DH
+        public const long MontantMax = 50_000_00L;    // 50 000 DH (virement)
+
+        // Garde-fous du Mobile Money manuel (phase pilote : les fonds transitent
+        // par le compte mobile money personnel du fondateur, sans agrément PSP —
+        // on plafonne bas tant que la société n'est pas immatriculée).
+        public const long MontantMaxMobileMoney = 1_000_00L;        // 1 000 DH / dépôt
+        public const long PlafondMensuelMobileMoney = 3_000_00L;    // 3 000 DH / mois / client
 
         private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
@@ -39,14 +45,21 @@ namespace ADN_pay.Services
 
         // ─────────────────────────── Côté client ───────────────────────────
 
-        public async Task<(bool Success, string Message, BankTransferRequest? Demande)> CreerDemandeAsync(long montantCentimes)
+        // tauxConversion : pour le Mobile Money, taux FCFA par DH — le montant à
+        // envoyer est figé sur la demande (arrondi au FCFA supérieur).
+        public async Task<(bool Success, string Message, BankTransferRequest? Demande)> CreerDemandeAsync(
+            long montantCentimes, string canal = BankTransferRequest.CanalVirement, decimal? tauxConversion = null)
         {
             if (!_user.EstConnecte || _user.Profil is null)
                 return (false, "Session expirée. Reconnectez-vous.", null);
+            if (canal is not (BankTransferRequest.CanalVirement or BankTransferRequest.CanalMobileMoney))
+                return (false, "Canal de dépôt inconnu.", null);
             if (montantCentimes < MontantMin)
                 return (false, $"Montant minimum : {MontantMin.ToDh()}.", null);
             if (montantCentimes > MontantMax)
                 return (false, $"Montant maximum : {MontantMax.ToDh()} par demande.", null);
+            if (canal == BankTransferRequest.CanalMobileMoney && montantCentimes > MontantMaxMobileMoney)
+                return (false, $"Montant maximum en Mobile Money : {MontantMaxMobileMoney.ToDh()} par dépôt (phase pilote).", null);
 
             await using var ctx = await _factory.CreateDbContextAsync();
             var enAttente = await ctx.BankTransferRequests
@@ -54,17 +67,40 @@ namespace ADN_pay.Services
             if (enAttente >= MaxDemandesEnAttente)
                 return (false, $"Vous avez déjà {enAttente} demandes en attente. Attendez leur traitement (ou annulez-en une).", null);
 
+            if (canal == BankTransferRequest.CanalMobileMoney)
+            {
+                // Plafond mensuel pilote : demandes du mois civil non rejetées/annulées.
+                var debutMois = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var totalMois = await ctx.BankTransferRequests
+                    .Where(r => r.UserId == _user.Profil.Id
+                        && r.Canal == BankTransferRequest.CanalMobileMoney
+                        && r.Statut != BankTransferRequest.Rejete
+                        && r.Statut != BankTransferRequest.Annule
+                        && r.DateCreation >= debutMois)
+                    .SumAsync(r => r.MontantCentimes);
+                if (totalMois + montantCentimes > PlafondMensuelMobileMoney)
+                    return (false, $"Plafond Mobile Money atteint : {PlafondMensuelMobileMoney.ToDh()} par mois pendant la phase pilote " +
+                        $"(déjà {totalMois.ToDh()} ce mois-ci).", null);
+            }
+
             var demande = new BankTransferRequest
             {
                 UserId = _user.Profil.Id,
                 MontantCentimes = montantCentimes,
+                Canal = canal,
                 Reference = await GenererReferenceUniqueAsync(ctx),
             };
+            if (canal == BankTransferRequest.CanalMobileMoney && tauxConversion is > 0)
+            {
+                // Le FCFA n'a pas de décimales : arrondi supérieur, jamais moins que l'équivalent.
+                demande.MontantConverti = (long)Math.Ceiling(montantCentimes / 100m * tauxConversion.Value);
+                demande.DeviseConvertie = "FCFA";
+            }
             ctx.BankTransferRequests.Add(demande);
             await ctx.SaveChangesAsync();
 
-            _logger.LogInformation("Demande de virement {Reference} de {Montant} créée par {Email}",
-                demande.Reference, montantCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
+            _logger.LogInformation("Demande de dépôt {Canal} {Reference} de {Montant} créée par {Email}",
+                canal, demande.Reference, montantCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Demande enregistrée.", demande);
         }
 
@@ -116,9 +152,11 @@ namespace ADN_pay.Services
             var demande = await ctx.BankTransferRequests.FindAsync(demandeId);
             if (demande is null || demande.Statut != BankTransferRequest.EnAttente) return false;
 
+            var motif = demande.Canal == BankTransferRequest.CanalMobileMoney
+                ? $"Dépôt Mobile Money ({demande.Reference})"
+                : $"Dépôt par virement bancaire ({demande.Reference})";
             var credite = await _deposits.CrediterAsync(
-                demande.UserId, demande.MontantCentimes, "virement", demande.Reference,
-                $"Dépôt par virement bancaire ({demande.Reference})");
+                demande.UserId, demande.MontantCentimes, "virement", demande.Reference, motif);
             if (!credite) return false;
 
             demande.Statut = BankTransferRequest.Valide;

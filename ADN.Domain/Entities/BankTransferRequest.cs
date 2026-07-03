@@ -4,15 +4,19 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ADN_pay.Models
 {
-    // Demande de dépôt par virement bancaire : l'utilisateur annonce un montant,
-    // reçoit une référence unique à mettre dans le motif du virement, et l'admin
-    // valide (crédit idempotent) ou rejette à réception du virement réel.
+    // Demande de dépôt manuel : l'utilisateur annonce un montant, reçoit une
+    // référence unique à mettre dans le motif de son envoi (virement bancaire ou
+    // Mobile Money vers le numéro du fondateur), et l'admin valide (crédit
+    // idempotent) ou rejette à réception des fonds réels.
     public class BankTransferRequest
     {
         public const string EnAttente = "EN_ATTENTE";
         public const string Valide = "VALIDE";
         public const string Rejete = "REJETE";
         public const string Annule = "ANNULE";
+
+        public const string CanalVirement = "VIREMENT";
+        public const string CanalMobileMoney = "MOBILE_MONEY";
 
         [Key]
         public int Id { get; set; }
@@ -28,6 +32,16 @@ namespace ADN_pay.Models
 
         [MaxLength(16)]
         public string Statut { get; set; } = EnAttente;
+
+        [MaxLength(16)]
+        public string Canal { get; set; } = CanalVirement;
+
+        // Montant communiqué au client dans la devise d'envoi (ex. FCFA pour le
+        // Mobile Money), figé à la création — l'admin le compare au SMS reçu.
+        public long? MontantConverti { get; set; }
+
+        [MaxLength(8)]
+        public string? DeviseConvertie { get; set; }
 
         public string? MotifRejet { get; set; }
 

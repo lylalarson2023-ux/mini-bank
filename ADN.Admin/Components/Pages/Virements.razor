@@ -5,11 +5,11 @@
 @inject BankTransferService Transferts
 @inject ADN_pay.Admin.Services.ToastService Toasts
 
-<PageTitle>Virements — ADN_pay Admin</PageTitle>
+<PageTitle>Dépôts manuels — ADN_pay Admin</PageTitle>
 
 <div class="page">
-    <h1 class="page-title">Virements bancaires</h1>
-    <div class="page-sub">Valider les dépôts par virement à réception sur le compte bancaire</div>
+    <h1 class="page-title">Dépôts manuels</h1>
+    <div class="page-sub">Valider les virements bancaires et envois Mobile Money à réception des fonds</div>
 
     <div class="panel" style="margin-top:20px">
         <div class="panel-head"><i class="bi bi-bank"></i> Demandes en attente</div>
@@ -28,8 +28,17 @@
                 {
                     <div class="req-row" @key="d.Id">
                         <div>
-                            <div class="rr-name">@d.User?.Prenom @d.User?.Nom <span class="muted">· réf</span> <strong>@d.Reference</strong></div>
-                            <div class="muted">#@d.UserId · @d.User?.Email · demandé le @d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                            <div class="rr-name">
+                                @d.User?.Prenom @d.User?.Nom <span class="muted">· réf</span> <strong>@d.Reference</strong>
+                                <span class="muted">· @(d.Canal == BankTransferRequest.CanalMobileMoney ? "Mobile Money" : "Virement")</span>
+                            </div>
+                            <div class="muted">
+                                #@d.UserId · @d.User?.Email · demandé le @d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                @if (d.MontantConverti is not null)
+                                {
+                                    <text> · montant attendu : <strong>@d.MontantConverti @d.DeviseConvertie</strong></text>
+                                }
+                            </div>
                         </div>
                         <div class="req-amount">+@Money(d.MontantCentimes) MAD</div>
                         <div class="actions">
@@ -45,8 +54,9 @@
     <div class="panel" style="margin-top:16px">
         <div class="panel-body muted" style="font-size:.85rem">
             <i class="bi bi-info-circle"></i>
-            Validez uniquement après avoir vu le virement (avec la bonne référence en motif)
-            arriver sur le relevé bancaire. Le crédit est idempotent : un double-clic ne
+            Validez uniquement après avoir vu les fonds arriver (relevé bancaire pour un
+            virement, SMS de l'opérateur pour un envoi Mobile Money) avec la bonne référence
+            en motif et le montant attendu. Le crédit est idempotent : un double-clic ne
             créditera jamais deux fois la même référence.
         </div>
     </div>

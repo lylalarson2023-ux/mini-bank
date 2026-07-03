@@ -86,6 +86,74 @@ public class BankTransferServiceTests : IDisposable
         Assert.Contains("en attente", message);
     }
 
+    // ─────────────────────────── Mobile Money (pilote) ───────────────────────────
+
+    [Fact]
+    public async Task CreerMobileMoney_FigeLaConversionEnFcfa()
+    {
+        var (ok, _, demande) = await _service.CreerDemandeAsync(
+            20_000L, BankTransferRequest.CanalMobileMoney, tauxConversion: 60m); // 200 DH
+
+        Assert.True(ok);
+        Assert.Equal(BankTransferRequest.CanalMobileMoney, demande!.Canal);
+        Assert.Equal(12_000L, demande.MontantConverti); // 200 × 60 = 12 000 FCFA
+        Assert.Equal("FCFA", demande.DeviseConvertie);
+    }
+
+    [Fact]
+    public async Task CreerMobileMoney_ArrondiAuFcfaSuperieur()
+    {
+        // 50,01 DH × 60 = 3 000,6 → 3 001 FCFA (jamais moins que l'équivalent)
+        var (_, _, demande) = await _service.CreerDemandeAsync(
+            5_001L, BankTransferRequest.CanalMobileMoney, tauxConversion: 60m);
+
+        Assert.Equal(3_001L, demande!.MontantConverti);
+    }
+
+    [Fact]
+    public async Task CreerMobileMoney_AuDessusDuPlafondParDepot_Refuse()
+    {
+        var (ok, message, _) = await _service.CreerDemandeAsync(
+            BankTransferService.MontantMaxMobileMoney + 1, BankTransferRequest.CanalMobileMoney, 60m);
+
+        Assert.False(ok);
+        Assert.Contains("pilote", message);
+    }
+
+    [Fact]
+    public async Task CreerMobileMoney_PlafondMensuel_Refuse()
+    {
+        // 3 dépôts de 1 000 DH = plafond mensuel (3 000 DH) atteint.
+        for (var i = 0; i < 3; i++)
+        {
+            var (ok, _, demande) = await _service.CreerDemandeAsync(
+                BankTransferService.MontantMaxMobileMoney, BankTransferRequest.CanalMobileMoney, 60m);
+            Assert.True(ok);
+            // On valide au fur et à mesure pour ne pas buter sur MaxDemandesEnAttente :
+            // le plafond mensuel doit compter les demandes VALIDÉES aussi.
+            DevientAdmin();
+            Assert.True(await _service.ValiderAsync(demande!.Id));
+            _user.Profil = new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test" };
+        }
+
+        var (refus, message, _) = await _service.CreerDemandeAsync(
+            5_000L, BankTransferRequest.CanalMobileMoney, 60m); // 50 DH de plus
+
+        Assert.False(refus);
+        Assert.Contains("Plafond", message);
+    }
+
+    [Fact]
+    public async Task CreerMobileMoney_LePlafondNeTouchePasLeVirement()
+    {
+        // Le virement garde son plafond de 50 000 DH, indépendant du pilote Mobile Money.
+        var (ok, _, demande) = await _service.CreerDemandeAsync(10_000_00L); // 10 000 DH
+
+        Assert.True(ok);
+        Assert.Equal(BankTransferRequest.CanalVirement, demande!.Canal);
+        Assert.Null(demande.MontantConverti);
+    }
+
     [Fact]
     public async Task Annuler_PropreDemandeEnAttente_PasseAnnulee()
     {

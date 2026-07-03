@@ -18,25 +18,52 @@
 
     @if (demandeVirement is not null)
     {
-        <!-- Instructions après création d'une demande de virement -->
+        <!-- Instructions après création d'une demande de dépôt manuel -->
         <div class="depot-step" style="margin-top: 16px;">
             <div class="depot-step-label">VOTRE DEMANDE EST ENREGISTRÉE</div>
-            <div class="warning-box" style="text-align:center; margin-top: 10px;">
-                RÉFÉRENCE À METTRE DANS LE MOTIF DU VIREMENT :<br />
-                <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demandeVirement.Reference</span><br />
-                MONTANT : <span class="highlight">@((demandeVirement.MontantCentimes / 100m).ToString("N2")) DH</span>
-            </div>
-            <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
-                <div><strong>Coordonnées bancaires :</strong></div>
-                <div>Titulaire : <strong>@virTitulaire</strong></div>
-                <div>Banque : <strong>@virBanque</strong></div>
-                <div>RIB : <strong style="letter-spacing:1px">@virRib</strong></div>
-            </div>
-            <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
-                <li>Effectuez le virement du montant exact depuis votre banque.</li>
-                <li>Indiquez impérativement la référence <strong>@demandeVirement.Reference</strong> dans le motif.</li>
-                <li>Votre compte est crédité après réception (généralement 24–48 h ouvrées).</li>
-            </ol>
+            @if (demandeVirement.Canal == BankTransferRequest.CanalMobileMoney)
+            {
+                <div class="warning-box" style="text-align:center; margin-top: 10px;">
+                    RÉFÉRENCE À METTRE DANS LE MOTIF DE L'ENVOI :<br />
+                    <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demandeVirement.Reference</span><br />
+                    MONTANT À ENVOYER : <span class="highlight">@demandeVirement.MontantConverti @demandeVirement.DeviseConvertie</span>
+                    <span style="font-size:.75rem;"> (= @((demandeVirement.MontantCentimes / 100m).ToString("N2")) DH crédités)</span>
+                </div>
+                <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
+                    <div><strong>Envoi Mobile Money :</strong></div>
+                    <div>Opérateur : <strong>@mmOperateur</strong></div>
+                    <div>Numéro : <strong style="letter-spacing:1px">@mmNumero</strong></div>
+                    <div>Titulaire : <strong>@mmTitulaire</strong></div>
+                </div>
+                <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
+                    <li>Envoyez le montant exact (<strong>@demandeVirement.MontantConverti @demandeVirement.DeviseConvertie</strong>) au numéro ci-dessus.</li>
+                    <li>Indiquez impérativement la référence <strong>@demandeVirement.Reference</strong> dans le motif/message.</li>
+                    <li>Votre compte est crédité après vérification (en journée, généralement sous quelques heures).</li>
+                </ol>
+                <div style="margin-top: 10px; font-size: .7rem; color: var(--text-muted);">
+                    Service en phase pilote : dépôt limité à @((BankTransferService.MontantMaxMobileMoney / 100m).ToString("N0")) DH,
+                    plafond de @((BankTransferService.PlafondMensuelMobileMoney / 100m).ToString("N0")) DH par mois.
+                </div>
+            }
+            else
+            {
+                <div class="warning-box" style="text-align:center; margin-top: 10px;">
+                    RÉFÉRENCE À METTRE DANS LE MOTIF DU VIREMENT :<br />
+                    <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demandeVirement.Reference</span><br />
+                    MONTANT : <span class="highlight">@((demandeVirement.MontantCentimes / 100m).ToString("N2")) DH</span>
+                </div>
+                <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
+                    <div><strong>Coordonnées bancaires :</strong></div>
+                    <div>Titulaire : <strong>@virTitulaire</strong></div>
+                    <div>Banque : <strong>@virBanque</strong></div>
+                    <div>RIB : <strong style="letter-spacing:1px">@virRib</strong></div>
+                </div>
+                <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
+                    <li>Effectuez le virement du montant exact depuis votre banque.</li>
+                    <li>Indiquez impérativement la référence <strong>@demandeVirement.Reference</strong> dans le motif.</li>
+                    <li>Votre compte est crédité après réception (généralement 24–48 h ouvrées).</li>
+                </ol>
+            }
             <button class="btn btn-primary btn-block" style="margin-top: 10px;" @onclick="() => demandeVirement = null">
                 J'AI NOTÉ LES INSTRUCTIONS
             </button>
@@ -66,9 +93,10 @@
                     <span class="depot-choice-label">CARTE BANCAIRE</span>
                     <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
                 </button>
-                @* Mobile Money : en attente d'un agrégateur éligible (PawaPay ne couvre
-                   pas le Gabon, Flutterwave refusé — société en cours de création). *@
-                <button class="depot-choice" disabled>
+                @* Mobile Money manuel (phase pilote) : envoi direct sur le numéro du
+                   fondateur + référence, validation admin — pas d'agrégateur (aucun
+                   PSP éligible tant que la société n'est pas immatriculée). *@
+                <button class="depot-choice @(selectedMethod == "mobilemoney" ? "active" : "")" @onclick="@(() => selectedMethod = "mobilemoney")" disabled="@(montant is null or <= 0 || !mobileMoneyConfigured)">
                     <span class="depot-choice-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <rect x="5" y="2" width="14" height="20" rx="2" />
@@ -77,7 +105,7 @@
                         </svg>
                     </span>
                     <span class="depot-choice-label">MOBILE MONEY</span>
-                    <span class="depot-choice-sub">Bientôt disponible</span>
+                    <span class="depot-choice-sub">@(mobileMoneyConfigured ? $"{mmOperateur} — max {BankTransferService.MontantMaxMobileMoney / 100m:N0} DH (pilote)" : "Bientôt disponible")</span>
                 </button>
                 <button class="depot-choice @(selectedMethod == "virement" ? "active" : "")" @onclick="@(() => selectedMethod = "virement")" disabled="@(montant is null or <= 0 || !virementConfigured)">
                     <span class="depot-choice-icon">
@@ -102,13 +130,20 @@
     @if (mesDemandes.Count > 0)
     {
         <div class="depot-step" style="margin-top: 20px;">
-            <div class="depot-step-label">MES DEMANDES DE VIREMENT</div>
+            <div class="depot-step-label">MES DEMANDES DE DÉPÔT</div>
             @foreach (var d in mesDemandes)
             {
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); font-size:.8rem;">
                     <div>
                         <strong>@d.Reference</strong> · @((d.MontantCentimes / 100m).ToString("N2")) DH
-                        <div style="color:var(--text-muted); font-size:.7rem;">@d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                        @if (d.MontantConverti is not null)
+                        {
+                            <span style="color:var(--text-muted);"> (@d.MontantConverti @d.DeviseConvertie)</span>
+                        }
+                        <div style="color:var(--text-muted); font-size:.7rem;">
+                            @(d.Canal == BankTransferRequest.CanalMobileMoney ? "Mobile Money" : "Virement") ·
+                            @d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span class="highlight" style="font-size:.7rem;">@StatutLabel(d)</span>
@@ -133,8 +168,11 @@
     private bool isProcessing;
     private bool stripeConfigured;
     private bool virementConfigured;
+    private bool mobileMoneyConfigured;
     private string? configError;
     private string virRib = "", virBanque = "", virTitulaire = "";
+    private string mmNumero = "", mmOperateur = "", mmTitulaire = "";
+    private decimal mmXafParDh;
     private BankTransferRequest? demandeVirement;
     private List<BankTransferRequest> mesDemandes = new();
 
@@ -143,6 +181,7 @@
         {
             "stripe" => stripeConfigured,
             "virement" => virementConfigured,
+            "mobilemoney" => mobileMoneyConfigured,
             _ => false
         };
 
@@ -154,7 +193,15 @@
         virTitulaire = Config["Virement:Titulaire"] ?? "";
         virementConfigured = !string.IsNullOrEmpty(virRib);
 
-        if (!stripeConfigured && !virementConfigured)
+        mmNumero = Config["MobileMoney:Numero"] ?? "";
+        mmOperateur = Config["MobileMoney:Operateur"] ?? "Mobile Money";
+        mmTitulaire = Config["MobileMoney:Titulaire"] ?? "";
+        mmXafParDh = decimal.TryParse(Config["MobileMoney:XafParDh"],
+            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var taux) && taux > 0
+            ? taux : 60m;
+        mobileMoneyConfigured = !string.IsNullOrEmpty(mmNumero);
+
+        if (!stripeConfigured && !virementConfigured && !mobileMoneyConfigured)
             configError = "Aucun moyen de paiement configuré. Contactez l'administrateur.";
 
         mesDemandes = await Virements.GetMesDemandesAsync();
@@ -193,9 +240,13 @@
                     isProcessing = false;
                 }
             }
-            else if (selectedMethod == "virement")
+            else if (selectedMethod is "virement" or "mobilemoney")
             {
-                var (ok, message, demande) = await Virements.CreerDemandeAsync((long)(montant.Value * 100));
+                var canal = selectedMethod == "mobilemoney"
+                    ? BankTransferRequest.CanalMobileMoney : BankTransferRequest.CanalVirement;
+                var (ok, message, demande) = await Virements.CreerDemandeAsync(
+                    (long)(montant.Value * 100), canal,
+                    canal == BankTransferRequest.CanalMobileMoney ? mmXafParDh : null);
                 if (ok && demande is not null)
                 {
                     demandeVirement = demande;

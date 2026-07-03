@@ -102,6 +102,17 @@ if (!string.IsNullOrEmpty(virRib)) builder.Configuration["Virement:Rib"] = virRi
 if (!string.IsNullOrEmpty(virBanque)) builder.Configuration["Virement:Banque"] = virBanque;
 if (!string.IsNullOrEmpty(virTitulaire)) builder.Configuration["Virement:Titulaire"] = virTitulaire;
 
+// --- MOBILE MONEY MANUEL (phase pilote : envoi direct sur le numéro du fondateur,
+//     référence en motif, validation admin — plafonds gérés par BankTransferService) ---
+var mmNumero = Environment.GetEnvironmentVariable("MOBILEMONEY_NUMERO");
+var mmOperateur = Environment.GetEnvironmentVariable("MOBILEMONEY_OPERATEUR");
+var mmTitulaire = Environment.GetEnvironmentVariable("MOBILEMONEY_TITULAIRE");
+var mmXafParDh = Environment.GetEnvironmentVariable("MOBILEMONEY_XAF_PAR_DH");
+if (!string.IsNullOrEmpty(mmNumero)) builder.Configuration["MobileMoney:Numero"] = mmNumero;
+if (!string.IsNullOrEmpty(mmOperateur)) builder.Configuration["MobileMoney:Operateur"] = mmOperateur;
+if (!string.IsNullOrEmpty(mmTitulaire)) builder.Configuration["MobileMoney:Titulaire"] = mmTitulaire;
+if (!string.IsNullOrEmpty(mmXafParDh)) builder.Configuration["MobileMoney:XafParDh"] = mmXafParDh;
+
 // --- ALERTING (ADR-007) ---
 builder.Services.AddHttpClient<IAlertingService, AlertingService>();
 
@@ -222,6 +233,10 @@ using (var scope = app.Services.CreateScope())
             FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
         )"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_BankTransferRequests_Reference ON BankTransferRequests(Reference)"); } catch { }
+    // Canal de dépôt manuel (virement / mobile money) + montant converti affiché au client.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN Canal TEXT NOT NULL DEFAULT 'VIREMENT'"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN MontantConverti INTEGER"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN DeviseConvertie TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 
