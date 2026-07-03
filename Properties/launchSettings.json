@@ -10,11 +10,11 @@
           "ASPNETCORE_ENVIRONMENT": "Development",
           "ADN_DB_PATH": "C:\\PROJETS\\MbankWeb\\ADN_pay\\AdnPayData.db",
           "VIREMENT_RIB": "007 810 0001234567890123 45",
-          "VIREMENT_BANQUE": "Attijariwafa Bank",
-          "VIREMENT_TITULAIRE": "ADN Corp.",
-          "MOBILEMONEY_NUMERO": "077 39 24 54",
-          "MOBILEMONEY_OPERATEUR": "Airtel Money (Gabon)",
-          "MOBILEMONEY_TITULAIRE": "Dan Larson",
+          "VIREMENT_BANQUE": "Banque de test (dev)",
+          "VIREMENT_TITULAIRE": "Compte de test (dev)",
+          "MOBILEMONEY_NUMERO": "000 00 00 00",
+          "MOBILEMONEY_OPERATEUR": "Opérateur de test (dev)",
+          "MOBILEMONEY_TITULAIRE": "Compte de test (dev)",
           "MOBILEMONEY_XAF_PAR_DH": "60"
         }
       },
