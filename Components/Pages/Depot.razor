@@ -4,7 +4,6 @@
 @using ADN_pay.Services
 @inject BankService Bank
 @inject StripeService Stripe
-@inject IFlutterwaveService Flutterwave
 @inject BankTransferService Virements
 @inject NotificationService Notif
 @inject NavigationManager Nav
@@ -67,7 +66,9 @@
                     <span class="depot-choice-label">CARTE BANCAIRE</span>
                     <span class="depot-choice-sub">@(stripeConfigured ? "Visa · Mastercard — Paiement sécurisé" : "Non configuré")</span>
                 </button>
-                <button class="depot-choice @(selectedMethod == "flutterwave" ? "active" : "")" @onclick="@(() => selectedMethod = "flutterwave")" disabled="@(montant is null or <= 0 || !flutterwaveConfigured)">
+                @* Mobile Money : en attente d'un agrégateur éligible (PawaPay ne couvre
+                   pas le Gabon, Flutterwave refusé — société en cours de création). *@
+                <button class="depot-choice" disabled>
                     <span class="depot-choice-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <rect x="5" y="2" width="14" height="20" rx="2" />
@@ -76,7 +77,7 @@
                         </svg>
                     </span>
                     <span class="depot-choice-label">MOBILE MONEY</span>
-                    <span class="depot-choice-sub">@(flutterwaveConfigured ? "Airtel · Moov Money — via Flutterwave" : "Non configuré")</span>
+                    <span class="depot-choice-sub">Bientôt disponible</span>
                 </button>
                 <button class="depot-choice @(selectedMethod == "virement" ? "active" : "")" @onclick="@(() => selectedMethod = "virement")" disabled="@(montant is null or <= 0 || !virementConfigured)">
                     <span class="depot-choice-icon">
@@ -131,7 +132,6 @@
     private string? selectedMethod;
     private bool isProcessing;
     private bool stripeConfigured;
-    private bool flutterwaveConfigured;
     private bool virementConfigured;
     private string? configError;
     private string virRib = "", virBanque = "", virTitulaire = "";
@@ -142,7 +142,6 @@
         && selectedMethod switch
         {
             "stripe" => stripeConfigured,
-            "flutterwave" => flutterwaveConfigured,
             "virement" => virementConfigured,
             _ => false
         };
@@ -150,13 +149,12 @@
     protected override async Task OnInitializedAsync()
     {
         stripeConfigured = !string.IsNullOrEmpty(Stripe.PublishableKey);
-        flutterwaveConfigured = Flutterwave.EstConfigured;
         virRib = Config["Virement:Rib"] ?? "";
         virBanque = Config["Virement:Banque"] ?? "";
         virTitulaire = Config["Virement:Titulaire"] ?? "";
         virementConfigured = !string.IsNullOrEmpty(virRib);
 
-        if (!stripeConfigured && !flutterwaveConfigured && !virementConfigured)
+        if (!stripeConfigured && !virementConfigured)
             configError = "Aucun moyen de paiement configuré. Contactez l'administrateur.";
 
         mesDemandes = await Virements.GetMesDemandesAsync();
@@ -192,17 +190,6 @@
                 else
                 {
                     Notif.Notify("ERREUR STRIPE : Impossible de créer la session de paiement. Vérifiez la configuration.", NotificationType.ERROR);
-                    isProcessing = false;
-                }
-            }
-            else if (selectedMethod == "flutterwave")
-            {
-                var url = await Flutterwave.CreerPaiementAsync((long)(montant.Value * 100));
-                if (!string.IsNullOrEmpty(url))
-                    Nav.NavigateTo(url, forceLoad: true);
-                else
-                {
-                    Notif.Notify("ERREUR MOBILE MONEY : Impossible de créer le paiement. Réessayez plus tard.", NotificationType.ERROR);
                     isProcessing = false;
                 }
             }

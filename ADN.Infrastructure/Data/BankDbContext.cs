@@ -18,7 +18,6 @@ namespace ADN_pay.Data
         // Table pour l'historique des tâches administrateur
         public DbSet<AdminLog> AdminLogs { get; set; }
         public DbSet<NotificationHistory> NotificationHistories { get; set; }
-        public DbSet<FlutterwaveDeposit> FlutterwaveDeposits { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<BankTransferRequest> BankTransferRequests { get; set; }
 
@@ -35,11 +34,6 @@ namespace ADN_pay.Data
             // La référence de virement est communiquée au client : jamais deux identiques.
             modelBuilder.Entity<BankTransferRequest>()
                 .HasIndex(r => r.Reference)
-                .IsUnique();
-
-            // tx_ref envoyé à Flutterwave : unique (référence d'idempotence du crédit).
-            modelBuilder.Entity<FlutterwaveDeposit>()
-                .HasIndex(d => d.TxRef)
                 .IsUnique();
 
             // Configuration pour SQLite gérant les décimaux

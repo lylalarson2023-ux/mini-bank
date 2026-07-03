@@ -20,9 +20,9 @@ namespace ADN_pay.Models
         public long Montant { get; set; }
         public string Libelle { get; set; } = "";
 
-        // Référence unique du dépôt externe (ex. « stripe:cs_… », « flutterwave:adnpay-… »,
-        // « virement:ADN-… ») : l'index unique garantit qu'un même paiement ne peut
-        // créditer le compte qu'une seule fois (idempotence anti-rejeu).
+        // Référence unique du dépôt externe (ex. « stripe:cs_… », « virement:ADN-… ») :
+        // l'index unique garantit qu'un même paiement ne peut créditer le compte
+        // qu'une seule fois (idempotence anti-rejeu).
         [MaxLength(96)]
         public string? ReferenceExterne { get; set; }
 

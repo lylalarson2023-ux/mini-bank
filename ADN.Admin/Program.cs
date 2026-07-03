@@ -214,22 +214,6 @@ using (var scope = app.Services.CreateScope())
             FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
         )"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_BankTransferRequests_Reference ON BankTransferRequests(Reference)"); } catch { }
-    // Dépôts Mobile Money via Flutterwave (l'app web la crée aussi).
-    try { db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS FlutterwaveDeposits (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            TxRef TEXT NOT NULL,
-            UserId INTEGER NOT NULL,
-            MontantDhCentimes INTEGER NOT NULL,
-            MontantXaf INTEGER NOT NULL,
-            Currency TEXT NOT NULL DEFAULT 'XAF',
-            Status INTEGER NOT NULL DEFAULT 0,
-            CreatedAt TEXT NOT NULL,
-            UpdatedAt TEXT NOT NULL,
-            RawJson TEXT,
-            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
-        )"); } catch { }
-    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_FlutterwaveDeposits_TxRef ON FlutterwaveDeposits(TxRef)"); } catch { }
 
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.

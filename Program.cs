@@ -102,19 +102,6 @@ if (!string.IsNullOrEmpty(virRib)) builder.Configuration["Virement:Rib"] = virRi
 if (!string.IsNullOrEmpty(virBanque)) builder.Configuration["Virement:Banque"] = virBanque;
 if (!string.IsNullOrEmpty(virTitulaire)) builder.Configuration["Virement:Titulaire"] = virTitulaire;
 
-// --- FLUTTERWAVE (Mobile Money — couvre le Gabon, contrairement à PawaPay) ---
-var flwSecret = Environment.GetEnvironmentVariable("FLUTTERWAVE_SECRET_KEY");
-var flwWebhook = Environment.GetEnvironmentVariable("FLUTTERWAVE_WEBHOOK_SECRET");
-var flwXafParDh = Environment.GetEnvironmentVariable("FLUTTERWAVE_XAF_PAR_DH");
-if (!string.IsNullOrEmpty(flwSecret)) builder.Configuration["Flutterwave:SecretKey"] = flwSecret;
-if (!string.IsNullOrEmpty(flwWebhook)) builder.Configuration["Flutterwave:WebhookSecret"] = flwWebhook;
-if (!string.IsNullOrEmpty(flwXafParDh)) builder.Configuration["Flutterwave:XafParDh"] = flwXafParDh;
-builder.Services.Configure<FlutterwaveOptions>(builder.Configuration.GetSection("Flutterwave"));
-builder.Services.AddHttpClient("Flutterwave")
-    .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(3, retryAttempt =>
-        TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
-builder.Services.AddScoped<IFlutterwaveService, FlutterwaveService>();
-
 // --- ALERTING (ADR-007) ---
 builder.Services.AddHttpClient<IAlertingService, AlertingService>();
 
@@ -235,22 +222,6 @@ using (var scope = app.Services.CreateScope())
             FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
         )"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_BankTransferRequests_Reference ON BankTransferRequests(Reference)"); } catch { }
-    // Dépôts Mobile Money via Flutterwave (l'admin la crée aussi).
-    try { db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS FlutterwaveDeposits (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            TxRef TEXT NOT NULL,
-            UserId INTEGER NOT NULL,
-            MontantDhCentimes INTEGER NOT NULL,
-            MontantXaf INTEGER NOT NULL,
-            Currency TEXT NOT NULL DEFAULT 'XAF',
-            Status INTEGER NOT NULL DEFAULT 0,
-            CreatedAt TEXT NOT NULL,
-            UpdatedAt TEXT NOT NULL,
-            RawJson TEXT,
-            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
-        )"); } catch { }
-    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_FlutterwaveDeposits_TxRef ON FlutterwaveDeposits(TxRef)"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 
@@ -461,55 +432,6 @@ app.MapPost("/api/upload", async (HttpRequest request, ADN_pay.Services.FileServ
         return Results.BadRequest(new { error = "Fichier invalide" });
     return Results.Ok(new { url });
 }).RequireAuthorization();
-
-// --- FLUTTERWAVE : RETOUR NAVIGATEUR (redirect_url après paiement) ---
-// Le statut est re-vérifié auprès de l'API Flutterwave et le crédit est
-// idempotent (tx_ref unique) : recharger cette URL ne crédite pas deux fois.
-app.MapGet("/api/flutterwave/callback", async (IFlutterwaveService flutterwave, string? tx_ref, string? status) =>
-{
-    if (string.IsNullOrEmpty(tx_ref))
-        return Results.Redirect("/depot");
-    var ok = await flutterwave.VerifierEtCrediterAsync(tx_ref);
-    return Results.Redirect(ok ? "/depot?paid=ok" : "/depot?paid=failed");
-});
-
-// --- FLUTTERWAVE : WEBHOOK (serveur→serveur — filet si le navigateur est fermé) ---
-// Authentifié par l'en-tête « verif-hash » (= secret hash du dashboard). On ne
-// crédite jamais sur la foi du payload : on ne lit que le tx_ref, puis le statut
-// est re-vérifié auprès de l'API. 401 si hash absent/incorrect, 404 si non configuré.
-app.MapPost("/api/flutterwave/webhook", async (HttpContext ctx,
-    Microsoft.Extensions.Options.IOptions<FlutterwaveOptions> flwOpts,
-    IFlutterwaveService flutterwave, ILogger<Program> logger) =>
-{
-    var secret = flwOpts.Value.WebhookSecret;
-    if (string.IsNullOrEmpty(secret)) return Results.NotFound();
-    if (ctx.Request.Headers["verif-hash"].ToString() != secret)
-    {
-        logger.LogWarning("Webhook Flutterwave rejeté (verif-hash invalide)");
-        return Results.Unauthorized();
-    }
-
-    try
-    {
-        using var doc = await System.Text.Json.JsonDocument.ParseAsync(ctx.Request.Body);
-        string? txRef = null;
-        if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Object)
-        {
-            if (data.TryGetProperty("tx_ref", out var t)) txRef = t.GetString();
-            else if (data.TryGetProperty("txRef", out var t2)) txRef = t2.GetString();
-        }
-        if (!string.IsNullOrEmpty(txRef))
-        {
-            var ok = await flutterwave.VerifierEtCrediterAsync(txRef);
-            logger.LogInformation("Webhook Flutterwave — tx_ref={TxRef}, crédité={Ok}", txRef, ok);
-        }
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Traitement du webhook Flutterwave échoué");
-    }
-    return Results.Ok(new { received = true });
-});
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
