@@ -73,13 +73,7 @@
             </div>
         }
 
-        @* ─── ALERTE CRÉDIT EN ATTENTE ─── *@
-        @if (hasPendingCredit)
-        {
-            <div class="warning-box" style="margin-bottom: 16px;">
-                <i class="bi bi-clock-history"></i> DEMANDE DE CRÉDIT EN ATTENTE DE VALIDATION ADMINISTRATIVE
-            </div>
-        }
+        @* Alerte crédit en attente retirée avec le module Crédit (MVP) *@
 
         @* ─── ACTIONS RAPIDES ─── *@
         <div class="action-grid">
@@ -159,7 +153,6 @@
     private long depensesMois;
     private long totalEpargne;
     private List<SavingsPocket> savingsPockets = new();
-    private bool hasPendingCredit;
     private bool isLoading = true;
 
     // Courbe 30 jours
@@ -177,7 +170,6 @@
             revenusMois = stats.RevenusMois;
             depensesMois = stats.DepensesMois;
             totalEpargne = stats.TotalEpargne;
-            hasPendingCredit = BankService.Profil.PendingCreditRequest;
             balanceCurve = await BankService.GetBalanceCurve30DaysAsync();
             BuildSvgData();
         }

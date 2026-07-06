@@ -259,6 +259,8 @@
                 Conformément à la Loi 09-08 et au RGPD : gérez vos données personnelles et vos préférences.
             </p>
 
+            @* ─── Gestion du tuteur retirée avec le module Tuteur (MVP).
+               Réintégration : décommenter ce bloc (méthodes ToggleTuteur/SaveTuteur intactes).
             <div class="setting-row">
                 <div>
                     <strong style="color: var(--text-primary);">Tuteur</strong>
@@ -286,6 +288,7 @@
                     <button class="btn btn-primary btn-sm" @onclick="SaveTuteur" style="margin-top: 8px;" disabled="@saving">VALIDER</button>
                 </div>
             }
+            *@
         </div>
 
         <div class="form-section">
@@ -533,7 +536,7 @@
         ("depot", "Dépôt", "bi-arrow-down-circle"),
         ("retrait", "Retrait", "bi-arrow-up-circle"),
         ("epargne", "Épargne", "bi-piggy-bank"),
-        ("credit", "Crédit", "bi-cash-stack"),
+        // ("credit", "Crédit", "bi-cash-stack"),  — retiré avec le module Crédit (MVP)
         ("promo", "Offres promotionnelles", "bi-megaphone"),
     };
 
