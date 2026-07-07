@@ -196,6 +196,18 @@ using (var scope = app.Services.CreateScope())
     // Colonne de blocage admin (idempotent — l'app web la crée aussi).
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Design de carte choisi dans la galerie (idempotent — l'app web la crée aussi).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN CarteDesign TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Champs KYC premium adaptés au statut (idempotent — l'app web les crée aussi).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN StatutKyc TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN UrgenceNom TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN UrgenceTelephone TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN SourceFonds TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN SelfieUrl TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Profession TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Employeur TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Secteur TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN TrancheRevenu TEXT NOT NULL DEFAULT ''"); } catch { }
     // Idempotence des dépôts externes (Stripe/Flutterwave/virement) — l'app web la crée aussi.
     try { db.Database.ExecuteSqlRaw("ALTER TABLE Transactions ADD COLUMN ReferenceExterne TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_Transactions_ReferenceExterne ON Transactions(ReferenceExterne) WHERE ReferenceExterne IS NOT NULL"); } catch { }

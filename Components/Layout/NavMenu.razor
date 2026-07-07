@@ -5,12 +5,8 @@
         </NavLink>
     </div>
 
-    <div class="nav-item">
-        <NavLink class="nav-link-custom" href="courant">
-            <i class="bi bi-wallet2"></i> COMPTE COURANT
-        </NavLink>
-    </div>
-
+    @* Module Compte courant supprimé (refonte UI, doublon du dashboard) —
+       le retrait vit sur /retrait, accessible via l'action rapide du dashboard. *@
     <div class="nav-item">
         <NavLink class="nav-link-custom" href="epargne">
             <i class="bi bi-piggy-bank"></i> EPARGNE PRO
@@ -45,12 +41,8 @@
         </NavLink>
     </div>
 
-    <div class="nav-item">
-        <NavLink class="nav-link-custom" href="notifications">
-            <i class="bi bi-bell-fill"></i> NOTIFICATIONS
-        </NavLink>
-    </div>
-
+    @* Notifications : la page détachée a été intégrée à Paramètres (onglet
+       Notifications) — la cloche du header reste le point d'accès rapide. *@
     <div class="nav-item">
         <NavLink class="nav-link-custom" href="parametres">
             <i class="bi bi-gear"></i> PARAMETRES

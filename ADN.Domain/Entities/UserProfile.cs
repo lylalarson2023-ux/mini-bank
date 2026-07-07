@@ -48,6 +48,18 @@ namespace ADN_pay.Models
         public string AnneeEtude { get; set; } = "";
         public string MatriculeEtudiant { get; set; } = "";
 
+        // --- KYC PREMIUM ADAPTÉ AU STATUT (refonte UI) ---
+        public string StatutKyc { get; set; } = "";        // "ETUDIANT" | "TRAVAILLEUR"
+        public string UrgenceNom { get; set; } = "";       // contact d'urgence
+        public string UrgenceTelephone { get; set; } = "";
+        public string SourceFonds { get; set; } = "";      // liste d'options selon le statut
+        public string SelfieUrl { get; set; } = "";        // selfie de vérification
+        // Volet travailleur
+        public string Profession { get; set; } = "";
+        public string Employeur { get; set; } = "";
+        public string Secteur { get; set; } = "";
+        public string TrancheRevenu { get; set; } = "";
+
         // --- DOCUMENTS (URLs) ---
         public string ReseauPrincipal { get; set; } = "";
         public string DocIdentiteUrl { get; set; } = "";
@@ -112,6 +124,11 @@ namespace ADN_pay.Models
         // --- ADRESSE ADN_pay RÉSERVÉE (@adnpay.ma) ---
         // Identifiant réservé à l'inscription (la vraie boîte mail sera branchée plus tard).
         public string AdnEmail { get; set; } = "";
+
+        // --- PERSONNALISATION ---
+        // Design de carte choisi dans la galerie (slug du catalogue CarteDesigns).
+        // Vide = design par défaut. Déblocage cumulatif selon le statut (validé serveur).
+        public string CarteDesign { get; set; } = "";
 
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();

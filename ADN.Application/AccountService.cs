@@ -563,8 +563,21 @@ namespace ADN_pay.Services
                 u.Telephone = kyc.Telephone;
                 u.ReseauPrincipal = kyc.ReseauPrincipal;
                 u.DocIdentiteUrl = kyc.DocIdentiteUrl;
-                u.DocDomicileUrl = kyc.DocDomicileUrl;
+                // DocDomicileUrl n'est plus collecté (KYC refonte) — on préserve
+                // l'éventuel justificatif des dossiers antérieurs.
                 u.CguAcceptees = kyc.CguAcceptees;
+                // KYC adapté au statut (Travailleur/Étudiant)
+                u.StatutKyc = kyc.StatutKyc;
+                u.Etablissement = kyc.Etablissement;
+                u.Filiere = kyc.Filiere;
+                u.UrgenceNom = kyc.UrgenceNom;
+                u.UrgenceTelephone = kyc.UrgenceTelephone;
+                u.SourceFonds = kyc.SourceFonds;
+                u.SelfieUrl = kyc.SelfieUrl;
+                u.Profession = kyc.Profession;
+                u.Employeur = kyc.Employeur;
+                u.Secteur = kyc.Secteur;
+                u.TrancheRevenu = kyc.TrancheRevenu;
                 u.PendingPremiumUpgrade = true;
                 u.Solde -= 10_000L; // 100 DH en centimes
                 await ctx.SaveChangesAsync();
@@ -585,8 +598,18 @@ namespace ADN_pay.Services
                 _user.Profil.Telephone = u.Telephone;
                 _user.Profil.ReseauPrincipal = u.ReseauPrincipal;
                 _user.Profil.DocIdentiteUrl = u.DocIdentiteUrl;
-                _user.Profil.DocDomicileUrl = u.DocDomicileUrl;
                 _user.Profil.CguAcceptees = u.CguAcceptees;
+                _user.Profil.StatutKyc = u.StatutKyc;
+                _user.Profil.Etablissement = u.Etablissement;
+                _user.Profil.Filiere = u.Filiere;
+                _user.Profil.UrgenceNom = u.UrgenceNom;
+                _user.Profil.UrgenceTelephone = u.UrgenceTelephone;
+                _user.Profil.SourceFonds = u.SourceFonds;
+                _user.Profil.SelfieUrl = u.SelfieUrl;
+                _user.Profil.Profession = u.Profession;
+                _user.Profil.Employeur = u.Employeur;
+                _user.Profil.Secteur = u.Secteur;
+                _user.Profil.TrancheRevenu = u.TrancheRevenu;
                 await _notifHist.AddNotificationAsync("Dossier KYC soumis — en attente de validation", "INFO", "KYC");
                 _logger.LogInformation("Dossier KYC soumis pour {Email}", PiiMasker.MaskEmail(_user.Profil.Email));
                 return true;
@@ -776,6 +799,43 @@ namespace ADN_pay.Services
             _logger.LogInformation("Préférences notifications mises à jour pour {Email}",
                 PiiMasker.MaskEmail(_user.Profil.Email));
             return (true, "Préférences enregistrées");
+        }
+
+        // --- DESIGN DE CARTE ---
+        // Applique un design de la galerie. Garde-fou serveur : le design doit
+        // exister au catalogue ET être débloqué par le statut réel (en base) de
+        // l'utilisateur — déblocage cumulatif (Premium voit Standard+Premium, VIP tout).
+        public async Task<(bool Success, string Message)> ChangerCarteDesignAsync(string designId)
+        {
+            var design = CarteDesigns.Tous.FirstOrDefault(d => d.Id == designId);
+            if (design == null) return (false, "Design inconnu");
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
+            if (u == null) return (false, "Utilisateur introuvable");
+            if (!CarteDesigns.EstDebloque(design, u.Statut))
+                return (false, $"Design réservé au statut {design.StatutMin} — améliorez votre statut pour le débloquer.");
+
+            u.CarteDesign = design.Id;
+            await ctx.SaveChangesAsync();
+            _user.Profil.CarteDesign = design.Id;
+            _logger.LogInformation("Design de carte « {Design} » appliqué pour {Email}",
+                design.Id, PiiMasker.MaskEmail(_user.Profil.Email));
+            return (true, $"Design « {design.Nom} » appliqué");
+        }
+
+        // Recharge le solde en session depuis la base : le solde peut évoluer hors
+        // session (ex. dépôt par virement validé par l'admin). Appelé à chaque
+        // navigation pour que le badge du header reste exact.
+        public async Task RefreshSoldeAsync()
+        {
+            if (!_user.EstConnecte) return;
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var solde = await ctx.UserProfiles
+                .Where(u => u.Id == _user.Profil.Id)
+                .Select(u => (long?)u.Solde)
+                .FirstOrDefaultAsync();
+            if (solde.HasValue) _user.Profil.Solde = solde.Value;
         }
 
         // --- RÉVOCATION SESSIONS ---

@@ -142,6 +142,12 @@ builder.Services.AddScoped<BankService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NotificationHistoryService>();
 builder.Services.AddScoped<TwoFactorService>();
+// État d'affichage de la devise (DH/EUR/FCFA) + conversion du solde.
+var devEur = Environment.GetEnvironmentVariable("DEVISE_DH_PAR_EUR");
+var devXaf = Environment.GetEnvironmentVariable("DEVISE_XAF_PAR_DH");
+if (!string.IsNullOrEmpty(devEur)) builder.Configuration["Devises:DhParEur"] = devEur;
+if (!string.IsNullOrEmpty(devXaf)) builder.Configuration["Devises:XafParDh"] = devXaf;
+builder.Services.AddScoped<CurrencyState>();
 // Crédit idempotent des dépôts externes (Stripe, Flutterwave, virement) — sans UserContext,
 // utilisable depuis les webhooks/callbacks serveur→serveur.
 builder.Services.AddScoped<ExternalDepositService>();
@@ -213,6 +219,18 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailChangeCodeExpiry datetime"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Design de carte choisi dans la galerie (slug du catalogue CarteDesigns, validé serveur).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN CarteDesign TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Champs KYC premium adaptés au statut Travailleur/Étudiant (refonte UI).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN StatutKyc TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN UrgenceNom TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN UrgenceTelephone TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN SourceFonds TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN SelfieUrl TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Profession TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Employeur TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Secteur TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN TrancheRevenu TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("UPDATE UserProfiles SET Role = '' WHERE Role IS NULL"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN TuteurVisible INTEGER NOT NULL DEFAULT 0"); } catch { }
     // Idempotence des dépôts externes (Stripe/Flutterwave/virement) : référence unique.

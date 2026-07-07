@@ -1,6 +1,7 @@
 @page "/"
 @attribute [Authorize]
 @inject BankService BankService
+@inject CurrencyState Currency
 @inject NavigationManager NavManager
 
 <div class="content-area" style="max-width: 700px;">
@@ -14,13 +15,17 @@
         <div class="balance-card">
             <div class="balance-label">SOLDE TOTAL</div>
             <div class="balance-value">@((balance / 100m).ToString("N2")) <span class="currency">DH</span></div>
+            <div class="balance-value-alt">@Currency.Formater(balance, Devise.XAF)</div>
         </div>
 
-        <div class="bank-card">
+        <div class="bank-card @(carteDesign.FondClair ? "bank-card-clair" : "")" style="@CarteStyle">
             <div class="bank-card-top">
                 <div style="display: flex; align-items: center;">
                     <div class="card-chip"></div>
                     <div class="card-contactless"></div>
+                    <button class="card-palette-btn" title="Personnaliser le design de la carte" @onclick="OuvrirGalerie">
+                        <i class="bi bi-palette-fill"></i>
+                    </button>
                 </div>
                 <div class="card-status">
                     <div class="card-status-label">STATUT</div>
@@ -31,34 +36,96 @@
                     }
                 </div>
             </div>
-            <div class="card-number">
-                **** **** **** @BankService.Profil.Id.ToString("D4")
-            </div>
             <div class="card-footer">
                 <div>
                     <div class="card-footer-label">TITULAIRE</div>
                     <div class="card-footer-value">@BankService.Profil.Prenom?.ToUpper() @BankService.Profil.Nom?.ToUpper()</div>
                 </div>
-                <div style="text-align: right;">
-                    <div class="card-footer-label">SOLDE</div>
-                    <div class="card-balance">@((BankService.Profil.Solde / 100m).ToString("N2")) DH</div>
-                </div>
             </div>
-            <div class="card-network"><span>ADN / VISA</span></div>
+            <div class="card-network"><span>ADN</span></div>
             <div class="card-disclaimer">Carte virtuelle · sans valeur bancaire réelle</div>
         </div>
 
-        @* ─── STATS MENSUELLES ─── *@
+        @* ─── GALERIE DE DESIGNS DE CARTE ─── *@
+        @if (showGallery)
+        {
+            <div class="carte-gallery-overlay" @onclick="FermerGalerie"></div>
+            <div class="carte-gallery">
+                <div class="carte-gallery-head">
+                    <h6 class="section-title" style="margin: 0;">DESIGN DE CARTE</h6>
+                    <button class="carte-gallery-close" @onclick="FermerGalerie" title="Fermer">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="carte-gallery-grid">
+                    @foreach (var d in designsDebloques)
+                    {
+                        <button class="carte-swatch @(d.Id == carteDesign.Id ? "carte-swatch-active" : "")"
+                                style="background: @d.Gradient; color: @d.Texte;@(d.Bord is null ? "" : $" box-shadow: inset 0 0 0 1.5px {d.Bord};")"
+                                @onclick="() => ChoisirDesign(d)">
+                            <span class="carte-swatch-nom">@d.Nom</span>
+                            @if (d.Id == carteDesign.Id)
+                            {
+                                <i class="bi bi-check-circle-fill carte-swatch-check"></i>
+                            }
+                        </button>
+                    }
+                </div>
+                @if (nbVerrouilles > 0)
+                {
+                    <div class="carte-gallery-hint">
+                        <i class="bi bi-lock-fill"></i>
+                        @if (BankService.Profil.Statut == UserStatus.PREMIUM)
+                        {
+                            <span>@nbVerrouilles designs exclusifs à débloquer en VIP</span>
+                        }
+                        else
+                        {
+                            <span>+@nbPremium designs en Premium · +@nbVip de plus en VIP</span>
+                        }
+                    </div>
+                }
+                @if (galleryErreur != null)
+                {
+                    <div class="carte-gallery-erreur">@galleryErreur</div>
+                }
+            </div>
+        }
+
+        @* ─── ACTIONS RAPIDES (fonctionnalités) ─── *@
+        <div class="action-grid">
+            <button class="action-btn" @onclick="HandleAddMoney">
+                <i class="bi bi-plus-lg icon-gold"></i>
+                Dépôt
+            </button>
+            <button class="action-btn" @onclick="HandleTransfer">
+                <i class="bi bi-arrow-up-right icon-green"></i>
+                Virement
+            </button>
+            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/retrait")'>
+                <i class="bi bi-cash-stack icon-blue"></i>
+                Retrait
+            </button>
+            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/epargne")'>
+                <i class="bi bi-piggy-bank icon-gold"></i>
+                Épargne
+            </button>
+        </div>
+
+        @* ─── STATS MENSUELLES (cliquables → historique filtré) ─── *@
         <div class="form-row" style="margin-bottom: 16px;">
-            <div class="stat-card">
+            <div class="stat-card stat-card-clickable" title="Voir les entrées des 30 derniers jours"
+                 @onclick='() => NavManager.NavigateTo("/historique?type=entrees&periode=30j")'>
                 <div class="stat-label">REVENUS (CE MOIS)</div>
                 <div class="stat-value green">+@((revenusMois / 100m).ToString("N2")) DH</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-clickable" title="Voir les sorties des 30 derniers jours"
+                 @onclick='() => NavManager.NavigateTo("/historique?type=sorties&periode=30j")'>
                 <div class="stat-label">DÉPENSES (CE MOIS)</div>
                 <div class="stat-value" style="color: var(--danger);">-@((depensesMois / 100m).ToString("N2")) DH</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-clickable" title="Voir les mouvements d'épargne"
+                 @onclick='() => NavManager.NavigateTo("/historique?q=épargne")'>
                 <div class="stat-label">ÉPARGNE TOTALE</div>
                 <div class="stat-value" style="color: var(--blue-500);">@((totalEpargne / 100m).ToString("N2")) DH</div>
             </div>
@@ -73,28 +140,6 @@
             </div>
         }
 
-        @* Alerte crédit en attente retirée avec le module Crédit (MVP) *@
-
-        @* ─── ACTIONS RAPIDES ─── *@
-        <div class="action-grid">
-            <button class="action-btn" @onclick="HandleAddMoney">
-                <i class="bi bi-plus-lg icon-gold"></i>
-                Dépôt
-            </button>
-            <button class="action-btn" @onclick="HandleTransfer">
-                <i class="bi bi-arrow-up-right icon-green"></i>
-                Virement
-            </button>
-            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/courant")'>
-                <i class="bi bi-wallet2 icon-blue"></i>
-                Courant
-            </button>
-            <button class="action-btn" @onclick='() => NavManager.NavigateTo("/epargne")'>
-                <i class="bi bi-piggy-bank icon-gold"></i>
-                Épargne
-            </button>
-        </div>
-
         @* ─── RÉSUMÉ ÉPARGNE ─── *@
         @if (savingsPockets.Any())
         {
@@ -103,13 +148,17 @@
                 @foreach (var p in savingsPockets)
                 {
                     var pct = p.Progression;
-                    <div class="card" style="border-left: 3px solid var(--blue-500); padding: 12px;">
+                    <div class="card pocket-mini-clickable" style="border-left: 3px solid var(--blue-500); padding: 12px;"
+                         title="Gérer cette épargne" @onclick='() => NavManager.NavigateTo("/epargne")'>
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <span style="font-weight: 600; font-size: 0.8rem;">@p.Objectif.ToUpper()</span>
-                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--success);">@((p.MontantActuel / 100m).ToString("N2")) / @((p.MontantCible / 100m).ToString("N2")) DH</span>
+                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--success);">
+                                @((p.MontantActuel / 100m).ToString("N2")) / @((p.MontantCible / 100m).ToString("N2")) DH
+                                <i class="bi bi-chevron-right" style="font-size: 0.65rem; color: var(--text-muted); margin-left: 4px;"></i>
+                            </span>
                         </div>
-                        <div style="height: 6px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden;">
-                            <div style="height: 100%; width: @pct%; background: linear-gradient(90deg, var(--success), var(--blue-500)); border-radius: 4px; transition: width 0.5s;"></div>
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill" style="width: @((int)Math.Min(pct, 100))%;"></div>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-top: 4px;">
                             <span style="font-size: 0.55rem; color: var(--text-muted);">@pct% atteint</span>
@@ -126,15 +175,35 @@
         {
             @foreach (var tr in recentTransactions)
             {
-                <div class="transaction-item">
+                <div class="transaction-item tx-clickable" title="Voir le détail" @onclick="() => ToggleDetailTx(tr.Id)">
                     <div class="transaction-info">
                         <div class="tx-type">@tr.Type</div>
                         <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
                     </div>
-                    <div class="transaction-amount @(tr.IsEntree ? "tx-positive" : "tx-negative")">
-                        @(tr.IsEntree ? "+" : "-") @((tr.Montant / 100m).ToString("N2"))
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="transaction-amount @(tr.IsEntree ? "tx-positive" : "tx-negative")">
+                            @(tr.IsEntree ? "+" : "-") @((tr.Montant / 100m).ToString("N2"))
+                        </div>
+                        <i class="bi bi-chevron-down tx-chevron @(detailTxId == tr.Id ? "open" : "")"></i>
                     </div>
                 </div>
+                @if (detailTxId == tr.Id)
+                {
+                    <div class="tx-detail">
+                        <div><span>Libellé</span><strong>@(string.IsNullOrEmpty(tr.Libelle) ? tr.Type : tr.Libelle)</strong></div>
+                        @if (!string.IsNullOrEmpty(tr.Motif))
+                        {
+                            <div><span>Motif</span><strong>@tr.Motif</strong></div>
+                        }
+                        <div><span>Date</span><strong>@tr.Date.ToString("dd/MM/yyyy à HH:mm")</strong></div>
+                        @if (tr.Frais > 0)
+                        {
+                            <div><span>Frais</span><strong>@((tr.Frais / 100m).ToString("N2")) DH</strong></div>
+                        }
+                        <div><span>Solde après</span><strong>@((tr.SoldeApres / 100m).ToString("N2")) DH</strong></div>
+                        <a href="/historique">Voir tout l'historique →</a>
+                    </div>
+                }
             }
         }
         else
@@ -159,10 +228,23 @@
     private List<(DateTime Jour, long Solde)> balanceCurve = new();
     private string svgContent = "";
 
+    // Galerie de designs de carte (déblocage cumulatif selon le statut)
+    private CarteDesign carteDesign = CarteDesigns.ParId(null);
+    private List<CarteDesign> designsDebloques = new();
+    private bool showGallery;
+    private string? galleryErreur;
+    private int nbVerrouilles, nbPremium, nbVip;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            carteDesign = CarteDesigns.ParId(BankService.Profil.CarteDesign);
+            designsDebloques = CarteDesigns.Debloques(BankService.Profil.Statut);
+            nbVerrouilles = CarteDesigns.Tous.Count - designsDebloques.Count;
+            nbPremium = CarteDesigns.Tous.Count(d => d.StatutMin == UserStatus.PREMIUM);
+            nbVip = CarteDesigns.Tous.Count(d => d.StatutMin == UserStatus.VIP);
+
             balance = await BankService.GetBalanceAsync();
             recentTransactions = await BankService.GetRecentTransactionsAsync(5);
             savingsPockets = await BankService.GetPocketsAsync();
@@ -250,4 +332,37 @@
 
     private void HandleAddMoney() => NavManager.NavigateTo("/depot");
     private void HandleTransfer() => NavManager.NavigateTo("/virement");
+
+    // Détail de transaction déplié en place (clic sur une ligne)
+    private int? detailTxId;
+    private void ToggleDetailTx(int id) => detailTxId = detailTxId == id ? null : id;
+
+    // --- Galerie de designs de carte ---
+    private string CarteStyle =>
+        $"background: {carteDesign.Gradient}; color: {carteDesign.Texte};"
+        + (carteDesign.Bord is null ? "" : $" border: 1.5px solid {carteDesign.Bord};");
+
+    private void OuvrirGalerie()
+    {
+        galleryErreur = null;
+        showGallery = true;
+    }
+
+    private void FermerGalerie() => showGallery = false;
+
+    // Applique le design immédiatement (persisté serveur) ; la galerie reste
+    // ouverte pour essayer plusieurs designs.
+    private async Task ChoisirDesign(CarteDesign d)
+    {
+        var (ok, msg) = await BankService.ChangerCarteDesignAsync(d.Id);
+        if (ok)
+        {
+            carteDesign = d;
+            galleryErreur = null;
+        }
+        else
+        {
+            galleryErreur = msg;
+        }
+    }
 }

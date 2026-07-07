@@ -1,0 +1,144 @@
+@page "/retrait"
+@attribute [Authorize]
+@inject BankService Bank
+@inject NotificationService Notif
+
+@* Page issue de la suppression du module Compte courant (refonte UI) :
+   seul le retrait en est extrait, le reste faisait doublon avec le dashboard. *@
+<div class="cyber-panel" style="max-width: 700px; margin: auto;">
+    <h3>RETRAIT</h3>
+
+    <div class="warning-box">
+        DISPONIBLE : <span class="highlight">@((Bank.Profil.Solde / 100m).ToString("N2")) DH</span>
+    </div>
+
+    @if (step == Step.Confirm)
+    {
+        @* Écran de confirmation (même modèle que le virement) *@
+        <div style="margin-top: 24px;">
+            <div style="border-left: 4px solid var(--danger); background: var(--bg-secondary);
+                        border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+                <div style="font-size: 0.65rem; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 14px;">
+                    RÉCAPITULATIF DU RETRAIT
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">MONTANT</span>
+                    <span style="font-weight: 800; font-size: 1.5rem; color: var(--danger);">
+                        -@((montantCentimes / 100m).ToString("N2")) <span style="font-size: 0.8rem;">DH</span>
+                    </span>
+                </div>
+                <div style="border-top: 1px solid var(--border-color); margin-top: 8px; padding-top: 12px;
+                            display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">SOLDE APRÈS</span>
+                    <span style="font-weight: 700; color: var(--success);">
+                        @(((Bank.Profil.Solde - montantCentimes) / 100m).ToString("N2")) DH
+                    </span>
+                </div>
+            </div>
+            <div class="form-row">
+                <button class="btn btn-block" style="background: var(--bg-secondary); color: var(--text-muted);
+                        border: 1px solid var(--border-color);" @onclick="() => step = Step.Form">
+                    <i class="bi bi-arrow-left"></i> MODIFIER
+                </button>
+                <button class="btn btn-primary btn-block" @onclick="ConfirmerRetrait" disabled="@isProcessing">
+                    <i class="bi bi-check-lg"></i> @(isProcessing ? "TRAITEMENT..." : "CONFIRMER")
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div style="margin-top: 24px;">
+            <div class="form-group">
+                <label>MONTANT A RETIRER (DH)</label>
+                <input type="number" @bind="montantSaisie" class="form-input" placeholder="0.00" />
+            </div>
+            @if (!string.IsNullOrEmpty(erreur))
+            {
+                <div class="error-box" style="margin-bottom: 12px;">@erreur</div>
+            }
+            <button class="btn btn-primary btn-block" @onclick="AllerConfirmation"
+                    disabled="@(montantSaisie is null or <= 0)">
+                <i class="bi bi-cash-stack"></i> RETIRER
+            </button>
+        </div>
+    }
+
+    <div style="margin-top: 32px;">
+        <h5 class="section-title">DERNIERS RETRAITS</h5>
+        @if (derniersRetraits.Any())
+        {
+            @foreach (var tr in derniersRetraits)
+            {
+                <div class="transaction-item">
+                    <div class="transaction-info">
+                        <div class="tx-type">@tr.Type</div>
+                        <div class="tx-date">@tr.Date.ToString("dd/MM HH:mm")</div>
+                    </div>
+                    <div class="transaction-amount tx-negative">
+                        - @((tr.Montant / 100m).ToString("N2"))
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-state"><p>AUCUN RETRAIT RECENT</p></div>
+        }
+    </div>
+
+    <div style="margin-top: 24px; text-align: center;">
+        <a href="/" style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">&larr; RETOUR DASHBOARD</a>
+    </div>
+</div>
+
+@code {
+    private enum Step { Form, Confirm }
+    private Step step = Step.Form;
+
+    private decimal? montantSaisie;
+    private long montantCentimes;
+    private string erreur = "";
+    private List<Transaction> derniersRetraits = new();
+    private bool isProcessing;
+
+    protected override async Task OnInitializedAsync() => await ChargerRetraits();
+
+    private async Task ChargerRetraits()
+    {
+        var historique = await Bank.GetHistoriqueAsync();
+        derniersRetraits = historique.Where(t => t.Type == "RETRAIT").Take(5).ToList();
+    }
+
+    private void AllerConfirmation()
+    {
+        erreur = "";
+        montantCentimes = (long)((montantSaisie ?? 0) * 100);
+        if (montantCentimes <= 0) { erreur = "Montant invalide."; return; }
+        if (Bank.Profil.Solde < montantCentimes) { erreur = "Solde insuffisant."; return; }
+        step = Step.Confirm;
+    }
+
+    private async Task ConfirmerRetrait()
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            var success = await Bank.ExecuterOperationAsync(montantCentimes, "", "RETRAIT");
+            if (success)
+            {
+                Notif.Success("RETRAIT EFFECTUE");
+                montantSaisie = null;
+                step = Step.Form;
+                await ChargerRetraits();
+            }
+            else
+            {
+                Notif.Error("FONDS INSUFFISANTS");
+                step = Step.Form;
+            }
+        }
+        finally { isProcessing = false; }
+    }
+}

@@ -126,6 +126,106 @@ public class AccountServiceTests : IDisposable
         Assert.True(vip.Mensuel > std.Mensuel);
     }
 
+    // --- DESIGN DE CARTE (galerie, déblocage cumulatif) ---
+
+    private string GetCarteDesign(int userId)
+    {
+        _db.ChangeTracker.Clear();
+        return _db.UserProfiles.Find(userId)!.CarteDesign;
+    }
+
+    [Fact]
+    public async Task ChangerCarteDesignAsync_DesignStandard_Persiste()
+    {
+        var (ok, _) = await _service.ChangerCarteDesignAsync("menthe-vif");
+
+        Assert.True(ok);
+        Assert.Equal("menthe-vif", GetCarteDesign(1));
+        Assert.Equal("menthe-vif", _user.Profil.CarteDesign); // session à jour
+    }
+
+    [Fact]
+    public async Task ChangerCarteDesignAsync_DesignPremium_RefusePourStandard()
+    {
+        // User 1 = STANDARD → "gold" (Premium) verrouillé
+        var (ok, _) = await _service.ChangerCarteDesignAsync("gold");
+
+        Assert.False(ok);
+        Assert.Equal("", GetCarteDesign(1)); // inchangé
+    }
+
+    [Fact]
+    public async Task ChangerCarteDesignAsync_DesignInconnu_Refuse()
+    {
+        var (ok, _) = await _service.ChangerCarteDesignAsync("licorne");
+
+        Assert.False(ok);
+        Assert.Equal("", GetCarteDesign(1));
+    }
+
+    [Fact]
+    public async Task ChangerCarteDesignAsync_DeblocageCumulatif_VipAccedeATout()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.VIP;
+        _db.SaveChanges();
+
+        var (okStd, _)  = await _service.ChangerCarteDesignAsync("cuivre");  // Standard
+        var (okPrem, _) = await _service.ChangerCarteDesignAsync("gold");    // Premium
+        var (okVip, _)  = await _service.ChangerCarteDesignAsync("noir-or"); // VIP
+
+        Assert.True(okStd);
+        Assert.True(okPrem);
+        Assert.True(okVip);
+        Assert.Equal("noir-or", GetCarteDesign(1)); // dernier appliqué
+    }
+
+    // --- KYC PREMIUM ADAPTÉ AU STATUT (Travailleur/Étudiant) ---
+
+    [Fact]
+    public async Task SoumettreDossierKYC_PersisteChampsStatut_EtPreserveDomicileAnterieur()
+    {
+        var u0 = _db.UserProfiles.Find(1)!;
+        u0.DocDomicileUrl = "docs/ancien-domicile.pdf"; // justificatif d'un dossier antérieur
+        _db.SaveChanges();
+
+        var kyc = new UserProfile
+        {
+            Nom = "Sender", Prenom = "Test",
+            PassportOuCIN = "AB123456",
+            AdresseCasablanca = "12 rue Test",
+            Telephone = "0612345678",
+            SituationMatrimoniale = "CELIBATAIRE",
+            StatutKyc = "TRAVAILLEUR",
+            Profession = "Développeur",
+            Employeur = "ADN Corp",
+            Secteur = "TECH",
+            TrancheRevenu = "3000-6000 DH",
+            SourceFonds = "SALAIRE",
+            UrgenceNom = "Contact Test",
+            UrgenceTelephone = "0698765432",
+            DocIdentiteUrl = "docs/cin.pdf",
+            SelfieUrl = "docs/selfie.jpg",
+            CguAcceptees = true
+        };
+
+        var ok = await _service.SoumettreDossierKYC(kyc);
+
+        Assert.True(ok);
+        _db.ChangeTracker.Clear();
+        var u = _db.UserProfiles.Find(1)!;
+        Assert.Equal("TRAVAILLEUR", u.StatutKyc);
+        Assert.Equal("SALAIRE", u.SourceFonds);
+        Assert.Equal("ADN Corp", u.Employeur);
+        Assert.Equal("3000-6000 DH", u.TrancheRevenu);
+        Assert.Equal("Contact Test", u.UrgenceNom);
+        Assert.Equal("0698765432", u.UrgenceTelephone);
+        Assert.Equal("docs/selfie.jpg", u.SelfieUrl);
+        Assert.Equal("docs/ancien-domicile.pdf", u.DocDomicileUrl); // non écrasé
+        Assert.True(u.PendingPremiumUpgrade);
+        Assert.Equal(40_000L, u.Solde); // 100 DH prélevés
+    }
+
     public void Dispose()
     {
         _db.Dispose();

@@ -1,10 +1,12 @@
 ﻿@implements IDisposable
 @inherits LayoutComponentBase
 @inject ADN_pay.Services.BankService Bank
+@inject ADN_pay.Services.CurrencyState Currency
 @inject NavigationManager Nav
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 @using ADN_pay.Models
+@using Microsoft.AspNetCore.Components.Routing
 
 <div class="page">
     @if (isCheckingSession)
@@ -55,6 +57,10 @@
                 </div>
 
                 <div class="user-info">
+                    <div class="solde-badge" title="Solde disponible (équivalent en euros)">
+                        <i class="bi bi-wallet2"></i>
+                        <span class="solde-badge-value">@Currency.Formater(Bank.Profil.Solde, Devise.EUR)</span>
+                    </div>
                     <button class="theme-toggle-btn" @onclick="ToggleTheme" title="Changer le thème">
                         <i id="theme-icon" class="bi bi-sun-fill"></i>
                     </button>
@@ -105,9 +111,6 @@
                         <div class="rank">STUDENT</div>
                         <div class="name">@Bank.Profil.Prenom?.ToUpper() @Bank.Profil.Nom?.ToUpper()</div>
                     </div>
-                    <button class="btn-logout" @onclick="HandleLogout" title="DECONNEXION">
-                        <i class="bi bi-power"></i>
-                    </button>
                 </div>
             </div>
 
@@ -196,23 +199,32 @@
             StateHasChanged();
         };
         Bank.NotifCountChanged += _notifHandler;
+
+        // Solde affiché dans la barre : rechargé depuis la base à chaque changement
+        // de page (couvre aussi les crédits hors session, ex. dépôt validé par l'admin).
+        Nav.LocationChanged += OnLocationChanged;
     }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+        => _ = InvokeAsync(async () =>
+        {
+            if (Bank.EstConnecte)
+            {
+                try { await Bank.RefreshSoldeAsync(); } catch { }
+            }
+            StateHasChanged();
+        });
 
     public void Dispose()
     {
         if (_notifHandler != null)
             Bank.NotifCountChanged -= _notifHandler;
+        Nav.LocationChanged -= OnLocationChanged;
     }
 
     private void ToggleSidebar()
     {
         sidebarOpen = !sidebarOpen;
-    }
-
-    private async Task HandleLogout()
-    {
-        Bank.Deconnexion();
-        Nav.NavigateTo("/api/auth/logout", forceLoad: true);
     }
 
     private async Task ToggleNotifDropdown()
@@ -230,7 +242,8 @@
     private void GoToNotifPage()
     {
         showNotifDropdown = false;
-        Nav.NavigateTo("/notifications");
+        // La liste des notifications vit dans Paramètres > onglet Notifications.
+        Nav.NavigateTo("/parametres/notifications");
     }
     private void NaviguerNotification(NotificationHistory n)
     {
@@ -238,14 +251,15 @@
         var cat = n.Categorie;
         var route = cat switch
         {
-            "CONNEXION" or "SECURITE" or "PARAMETRES" or "PLAFOND" or "TUTEUR" => "/parametres",
+            "CONNEXION" or "SECURITE" => "/parametres/securite",
+            "PARAMETRES" or "PLAFOND" or "TUTEUR" => "/parametres",
             "PROFIL" or "COMPTE" or "KYC" => "/profil",
             "EPARGNE" => "/epargne",
             "VIREMENT" or "BENEFICIAIRE" => "/virement",
             "DÉPÔT" or "DEPOT" => "/depot",
-            "RETRAIT" => "/courant",
+            "RETRAIT" => "/retrait",
             "CRÉDIT" => "/credits",
-            _ => "/notifications"
+            _ => "/parametres/notifications"
         };
         Nav.NavigateTo(route);
     }

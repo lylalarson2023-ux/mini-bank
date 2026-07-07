@@ -4,6 +4,16 @@
 @inject NotificationService Notif
 
 <div class="content-area" style="max-width: 800px;">
+    @* Dégradé de marque réutilisé par les anneaux de progression *@
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0099CC" />
+                <stop offset="100%" stop-color="#30B880" />
+            </linearGradient>
+        </defs>
+    </svg>
+
     <div class="page-header">
         <h3>Épargne</h3>
         <span class="page-header-badge">@mesPoches.Count poche(s) · Total : @((totalEpargne / 100m).ToString("N2")) DH</span>
@@ -15,7 +25,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label>Nom de l'objectif</label>
-                <input type="text" @bind="nouvelObjectif" class="form-input" placeholder="Ex: Voyage, Frais scolaires" />
+                <input type="text" @bind="nouvelObjectif" class="form-input" placeholder="Ex: Voyage, Frais scolaires" @ref="objectifInputRef" />
             </div>
             <div class="form-group">
                 <label>Montant initial (min 100 DH)</label>
@@ -87,40 +97,37 @@
                 if (atteint) cardClass = "pocket-atteint";
 
                 <div class="pocket-card @cardClass">
-                    <div class="pocket-header">
-                        <div>
+                    @* Anneau de progression circulaire (remplace l'ancienne barre) *@
+                    <div class="pocket-main">
+                        <div class="pocket-ring @(atteint ? "done" : "")">
+                            <svg viewBox="0 0 36 36">
+                                <circle class="ring-bg" cx="18" cy="18" r="15.9155" />
+                                <circle class="ring-val" cx="18" cy="18" r="15.9155"
+                                        stroke-dasharray="@((int)Math.Min(pct, 100)) 100" />
+                            </svg>
+                            <div class="pocket-ring-label">@((int)pct)<span>%</span></div>
+                        </div>
+                        <div class="pocket-details">
                             <div class="pocket-name">@p.Objectif.ToUpper()</div>
+                            <div class="pocket-amount">
+                                @((p.MontantActuel / 100m).ToString("N2")) DH
+                                <span class="pocket-target">/ @((p.MontantCible / 100m).ToString("N2")) DH</span>
+                            </div>
+                            @if (atteint)
+                            {
+                                <span class="pocket-badge success">🎉 Objectif atteint</span>
+                            }
+                            else
+                            {
+                                <span class="pocket-remain">Reste @(((p.MontantCible - p.MontantActuel) / 100m).ToString("N2")) DH</span>
+                            }
                             <div class="pocket-meta">
-                                <span>Créée le @p.DateCreation.ToShortDateString()</span>
-                                <span>·</span>
                                 <span>Échéance @p.DateCible.ToShortDateString()</span>
                                 @if (estTuteur)
                                 {
                                     <span class="locked">Surveillée</span>
                                 }
                             </div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div class="pocket-amount">@((p.MontantActuel / 100m).ToString("N2")) DH</div>
-                            <div style="font-size: 0.6rem; color: var(--text-muted);">Objectif: @((p.MontantCible / 100m).ToString("N2")) DH</div>
-                        </div>
-                    </div>
-
-                    @* Progress bar *@
-                    <div class="pocket-progress">
-                        <div class="pocket-progress-row">
-                            <span class="pocket-pct">@pct% atteint</span>
-                            @if (atteint)
-                            {
-                                <span class="pocket-badge success">Objectif atteint</span>
-                            }
-                            else
-                            {
-                                <span class="pocket-remain">Reste : @(((p.MontantCible - p.MontantActuel) / 100m).ToString("N2")) DH</span>
-                            }
-                        </div>
-                        <div class="progress-track">
-                            <div class="progress-fill" style="width: @(Math.Min(pct, 100))%; background: linear-gradient(90deg, @(estTuteur ? "var(--blue-500)" : "var(--gold-500)"), @(atteint ? "var(--success)" : "var(--success)"));"></div>
                         </div>
                     </div>
 
@@ -176,9 +183,17 @@
     }
     else
     {
-        <div class="empty-state" style="margin-top: 8px;">
-            <p>Aucune poche d'épargne créée</p>
-            <span style="font-size: 0.7rem; color: var(--text-muted);">Utilisez le formulaire ci-dessus pour commencer à épargner</span>
+        @* État vide engageant : icône de marque + bénéfice + CTA vers le formulaire *@
+        <div class="epargne-empty">
+            <div class="epargne-empty-icon"><i class="bi bi-piggy-bank"></i></div>
+            <h5>Commencez votre première épargne</h5>
+            <p>
+                Fixez-vous un objectif — voyage, frais scolaires, projet perso — et mettez de
+                côté à votre rythme. Votre argent reste récupérable à tout moment.
+            </p>
+            <button class="btn btn-primary" style="width: auto;" @onclick="FocusCreation">
+                <i class="bi bi-plus-lg"></i> Créer mon premier objectif
+            </button>
         </div>
     }
 </div>
@@ -200,6 +215,13 @@
     private string actionType = "";
     private decimal? actionMontant;
     private ElementReference actionInputRef;
+
+    // CTA de l'état vide → focus sur le champ « Nom de l'objectif »
+    private ElementReference objectifInputRef;
+    private async Task FocusCreation()
+    {
+        try { await objectifInputRef.FocusAsync(); } catch { }
+    }
 
     protected override async Task OnInitializedAsync()
     {

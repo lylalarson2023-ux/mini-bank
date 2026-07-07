@@ -435,6 +435,36 @@ h1, h2, h3, h4, h5, h6,
   gap: 16px;
 }
 
+/* Badge de solde dans la barre — visible sur tous les modules,
+   affiche l'équivalent en euros (indicatif, non cliquable) */
+.solde-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(0, 153, 204, 0.16), rgba(48, 184, 128, 0.16));
+  border: 1px solid rgba(48, 184, 128, 0.35);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.solde-badge i {
+  color: var(--success);
+  font-size: 0.9rem;
+}
+.solde-badge-value {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .solde-badge {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+  .solde-badge i { display: none; }
+}
+
 .user-badge {
   text-align: right;
 }
@@ -452,25 +482,20 @@ h1, h2, h3, h4, h5, h6,
   font-weight: 600;
 }
 
-.btn-logout {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--danger);
-  background: var(--danger-bg);
-  color: var(--danger);
-  display: flex;
+/* Compteur de notifications non lues dans un onglet (Paramètres) */
+.tab-badge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: 0.2s;
-  font-size: 0.9rem;
-}
-
-.btn-logout:hover {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 6px;
+  border-radius: 999px;
   background: var(--danger);
   color: white;
-  box-shadow: 0 0 12px var(--danger-glow);
+  font-size: 0.6rem;
+  font-weight: 700;
 }
 
 .notif-bell {
@@ -1225,6 +1250,14 @@ h1, h2, h3, h4, h5, h6,
   color: var(--text-muted);
 }
 
+.balance-value-alt {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── BANK CARD ─── */
 .bank-card {
   background: linear-gradient(135deg, #0c1f3f 0%, #005f7a 40%, #007a5e 100%);
@@ -1302,6 +1335,26 @@ h1, h2, h3, h4, h5, h6,
   font-size: 1.3rem;
   letter-spacing: 3px;
   word-spacing: 8px;
+}
+
+/* Logo ADN_pay incrusté en filigrane à l'arrière-plan de la carte */
+.bank-card::after {
+  content: '';
+  position: absolute;
+  right: -18px;
+  bottom: -12px;
+  width: 210px;
+  height: 210px;
+  background: url('/images/logo_adn_pay_blanc.png') no-repeat center center;
+  background-size: contain;
+  opacity: 0.10;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Le contenu de la carte passe au-dessus du filigrane */
+.bank-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .card-footer {
@@ -1951,6 +2004,91 @@ h1, h2, h3, h4, h5, h6,
   border-radius: 3px;
 }
 
+/* ─── ANNEAU DE PROGRESSION (poches d'épargne) ─── */
+.pocket-main {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.pocket-ring {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  flex: none;
+}
+.pocket-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.pocket-ring .ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 3;
+}
+.pocket-ring .ring-val {
+  fill: none;
+  stroke: url(#ringGrad);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pocket-ring.done .ring-val {
+  stroke: var(--success);
+  filter: drop-shadow(0 0 5px rgba(57, 255, 20, 0.5));
+}
+.pocket-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display, inherit);
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+.pocket-ring-label span {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 1px;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.pocket-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pocket-details .pocket-amount {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.pocket-target {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Mini-barre du résumé épargne (dashboard) — dégradé de marque */
+.mini-progress {
+  height: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mini-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0099CC, #30B880);
+  box-shadow: 0 0 8px rgba(48, 184, 128, 0.4);
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* ─── UPLOAD CARD ─── */
 .upload-card {
   background: var(--bg-input);
@@ -2331,12 +2469,6 @@ h1, h2, h3, h4, h5, h6,
 
   .user-badge .name {
     font-size: 0.75rem;
-  }
-
-  .btn-logout {
-    width: 30px;
-    height: 30px;
-    font-size: 0.8rem;
   }
 
   /* Menu notifications : ancré au viewport, plein largeur (évite le débordement gauche) */
@@ -3280,7 +3412,7 @@ h1, h2, h3, h4, h5, h6,
   content: '~';
   font-size: 1.4rem;
   font-weight: 700;
-  color: white;
+  color: currentColor; /* suit la couleur du design de carte */
   opacity: 0.6;
 }
 
@@ -3293,7 +3425,8 @@ h1, h2, h3, h4, h5, h6,
 }
 .card-network span {
   font-size: 0.55rem;
-  color: rgba(255,255,255,0.4);
+  color: currentColor; /* suit la couleur du design de carte */
+  opacity: 0.4;
   letter-spacing: 1px;
   font-family: var(--font-mono);
 }
@@ -3412,7 +3545,7 @@ h1, h2, h3, h4, h5, h6,
 .card-disclaimer {
   text-align: center;
   font-size: 0.55rem;
-  color: var(--text-muted);
+  color: currentColor; /* suit la couleur du design de carte */
   opacity: 0.5;
   margin-top: 4px;
   letter-spacing: 1px;
@@ -3520,6 +3653,209 @@ h1, h2, h3, h4, h5, h6,
 .card-status-upgrade:hover {
   opacity: 0.8;
   text-decoration: underline;
+}
+
+/* ─── PERSONNALISATION CARTE : bouton palette + galerie de designs ─── */
+.card-palette-btn {
+  width: 30px;
+  height: 30px;
+  margin-left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit; /* suit la couleur du design de carte */
+  font-size: 0.85rem;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.card-palette-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Designs à fond pastel : filigrane blanc → silhouette sombre */
+.bank-card-clair::after {
+  filter: brightness(0);
+  opacity: 0.06;
+}
+
+.carte-gallery-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1200;
+}
+.carte-gallery {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1201;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  box-shadow: var(--shadow-lg);
+}
+.carte-gallery-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.carte-gallery-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.carte-gallery-close:hover {
+  color: var(--text-primary);
+}
+.carte-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.carte-swatch {
+  position: relative;
+  aspect-ratio: 1.586; /* ratio carte bancaire */
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px;
+  transition: transform 0.2s;
+}
+.carte-swatch:hover {
+  transform: translateY(-2px);
+}
+.carte-swatch-active {
+  outline: 2px solid var(--success);
+  outline-offset: 2px;
+}
+.carte-swatch-nom {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: left;
+}
+.carte-swatch-check {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 0.85rem;
+}
+.carte-gallery-hint {
+  margin-top: 12px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.carte-gallery-erreur {
+  margin-top: 10px;
+  font-size: 0.7rem;
+  color: var(--danger);
+}
+
+/* ─── UX CLIQUABLE (dashboard) : stats, poches, transactions ─── */
+.stat-card-clickable {
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.stat-card-clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--blue-500);
+  box-shadow: 0 4px 14px rgba(0, 153, 204, 0.15);
+}
+.pocket-mini-clickable {
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.pocket-mini-clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--blue-500);
+}
+.tx-clickable {
+  cursor: pointer;
+}
+.tx-clickable:hover {
+  background: rgba(0, 153, 204, 0.06);
+}
+.tx-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.tx-chevron.open {
+  transform: rotate(180deg);
+}
+.tx-detail {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin: -4px 0 8px;
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tx-detail > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tx-detail span {
+  color: var(--text-muted);
+}
+.tx-detail a {
+  font-size: 0.7rem;
+  color: var(--blue-500);
+  text-align: right;
+  text-decoration: none;
+}
+.tx-detail a:hover {
+  text-decoration: underline;
+}
+
+/* ─── ÉTAT VIDE ENGAGEANT (épargne) ─── */
+.epargne-empty {
+  text-align: center;
+  padding: 40px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(0, 153, 204, 0.05), rgba(48, 184, 128, 0.05));
+}
+.epargne-empty-icon {
+  font-size: 2.6rem;
+  background: linear-gradient(135deg, #0099CC, #30B880);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 8px;
+}
+.epargne-empty h5 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+.epargne-empty p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  max-width: 420px;
+  margin: 0 auto 16px;
 }
 
 /* ─── RECONNEXION BLAZOR ─── */

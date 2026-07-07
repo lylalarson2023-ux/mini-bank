@@ -1,4 +1,5 @@
 @page "/parametres"
+@page "/parametres/{TabParam?}"
 @attribute [Authorize]
 @using Microsoft.AspNetCore.Components.Forms
 @using System.Text.Json
@@ -9,28 +10,29 @@
 @inject IJSRuntime JS
 
 <div class="cyber-panel" style="max-width: 900px; margin: auto;">
+    @* Paramètres = point central en 4 onglets (refonte UI) :
+       Profil (infos + apparence), Notifications (liste + préférences),
+       Sécurité (mot de passe + 2FA + connexions), Légal. *@
     <div class="admin-tabs">
-        <button class='admin-tab @(activeTab == "profile" ? "active" : "")' @onclick="GoProfile">
+        <button class='admin-tab @(activeTab == "profil" ? "active" : "")' @onclick='() => SetTab("profil")'>
             <i class="bi bi-person-gear"></i> PROFIL
         </button>
-        <button class='admin-tab @(activeTab == "password" ? "active" : "")' @onclick="GoPassword">
-            <i class="bi bi-shield-lock"></i> MOT DE PASSE
+        <button class='admin-tab @(activeTab == "notifications" ? "active" : "")' @onclick='() => SetTab("notifications")'>
+            <i class="bi bi-bell"></i> NOTIFICATIONS
+            @if (notifications.Any(n => !n.Lu))
+            {
+                <span class="tab-badge">@notifications.Count(n => !n.Lu)</span>
+            }
         </button>
-        <button class='admin-tab @(activeTab == "security" ? "active" : "")' @onclick="GoSecurity">
+        <button class='admin-tab @(activeTab == "securite" ? "active" : "")' @onclick='() => SetTab("securite")'>
             <i class="bi bi-shield-lock-fill"></i> SÉCURITÉ
         </button>
-        <button class='admin-tab @(activeTab == "legal" ? "active" : "")' @onclick="GoLegal">
+        <button class='admin-tab @(activeTab == "legal" ? "active" : "")' @onclick='() => SetTab("legal")'>
             <i class="bi bi-incognito"></i> LÉGAL
-        </button>
-        <button class='admin-tab @(activeTab == "connexions" ? "active" : "")' @onclick="GoConnexions">
-            <i class="bi bi-clock-history"></i> CONNEXIONS
-        </button>
-        <button class='admin-tab @(activeTab == "notifs" ? "active" : "")' @onclick="GoNotifs">
-            <i class="bi bi-sliders2"></i> PRÉFÉRENCES
         </button>
     </div>
 
-    @if (activeTab == "profile")
+    @if (activeTab == "profil")
     {
         <div class="form-section">
             <h6><i class="bi bi-person-gear"></i> INFORMATIONS PERSONNELLES</h6>
@@ -95,9 +97,25 @@
                 </div>
             }
         </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-palette"></i> APPARENCE</h6>
+            <div class="setting-row">
+                <div>
+                    <strong style="color: var(--text-primary);">Thème</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        Passer entre le thème sombre et clair
+                    </p>
+                </div>
+                <button class="btn btn-ghost btn-sm" @onclick="ToggleTheme">
+                    <i class="bi @(currentTheme == "light" ? "bi-moon-stars" : "bi-sun")"></i>
+                    @(currentTheme == "light" ? "SOMBRE" : "CLAIR")
+                </button>
+            </div>
+        </div>
     }
 
-    @if (activeTab == "password")
+    @if (activeTab == "securite")
     {
         <div class="form-section">
             <h6><i class="bi bi-shield-lock"></i> CHANGER LE MOT DE PASSE</h6>
@@ -145,7 +163,7 @@
         </div>
     }
 
-    @if (activeTab == "security")
+    @if (activeTab == "securite")
     {
         <div class="form-section">
             <h6><i class="bi bi-shield-lock-fill"></i> AUTHENTIFICATION À DEUX FACTEURS</h6>
@@ -386,7 +404,7 @@
         </div>
     }
 
-    @if (activeTab == "connexions")
+    @if (activeTab == "securite")
     {
         <div class="form-section">
             <h6><i class="bi bi-clock-history"></i> HISTORIQUE DES CONNEXIONS</h6>
@@ -439,22 +457,65 @@
         </div>
     }
 
-    @if (activeTab == "notifs")
+    @if (activeTab == "notifications")
     {
         <div class="form-section">
-            <h6><i class="bi bi-palette"></i> APPARENCE</h6>
-            <div class="setting-row">
-                <div>
-                    <strong style="color: var(--text-primary);">Thème</strong>
-                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
-                        Passer entre le thème sombre et clair
-                    </p>
-                </div>
-                <button class="btn btn-ghost btn-sm" @onclick="ToggleTheme">
-                    <i class="bi @(currentTheme == "light" ? "bi-moon-stars" : "bi-sun")"></i>
-                    @(currentTheme == "light" ? "SOMBRE" : "CLAIR")
-                </button>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h6 style="margin: 0;"><i class="bi bi-bell-fill"></i> MES NOTIFICATIONS</h6>
+                @if (notifications.Any(n => !n.Lu))
+                {
+                    <button class="btn btn-ghost btn-sm" @onclick="ToutMarquerLu" disabled="@notifProcessing">
+                        @(notifProcessing ? "..." : "TOUT MARQUER LU")
+                    </button>
+                }
             </div>
+
+            @if (!notifications.Any())
+            {
+                <div class="empty-state">
+                    <i class="bi bi-bell-slash" style="font-size: 2rem; color: var(--text-muted);"></i>
+                    <p>AUCUNE NOTIFICATION</p>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    @foreach (var n in notifications)
+                    {
+                        <div class="transaction-item notif-clickable @(!n.Lu ? "notif-unread-bg" : "")"
+                             @onclick="() => NaviguerNotifItem(n)"
+                             style="cursor: pointer;">
+                            <div class="transaction-info">
+                                <div class="tx-type">
+                                    @if (n.Type == "SUCCESS") { <i class="bi bi-check-circle-fill" style="color: var(--success);"></i> }
+                                    else if (n.Type == "ERROR") { <i class="bi bi-exclamation-circle-fill" style="color: var(--danger);"></i> }
+                                    else { <i class="bi bi-info-circle-fill" style="color: var(--blue-500);"></i> }
+                                    @n.Categorie
+                                </div>
+                                <div class="tx-date">@n.Date.ToString("dd/MM/yyyy HH:mm")</div>
+                                <div style="font-size: 0.75rem; margin-top: 4px;">@n.Message</div>
+                            </div>
+                            <div class="transaction-amount" @onclick:stopPropagation>
+                                @if (!n.Lu)
+                                {
+                                    <button class="btn btn-ghost btn-sm" @onclick="() => MarquerLu(n.Id)" disabled="@notifProcessing" title="Marquer comme lu">
+                                        <i class="bi bi-envelope-open"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (notifications.Count >= 20)
+                {
+                    <div style="text-align: center; margin-top: 16px;">
+                        <button class="btn btn-ghost btn-sm" @onclick="SupprimerAnciennes" disabled="@notifProcessing">
+                            @(notifProcessing ? "..." : "NETTOYER LES ANCIENNES (30+ JOURS)")
+                        </button>
+                    </div>
+                }
+            }
         </div>
 
         <div class="form-section">
@@ -485,10 +546,29 @@
             }
         </div>
     }
+
+    @* Déconnexion — déplacée du header vers Paramètres (refonte UI), visible sur tous les onglets *@
+    <div class="form-section" style="margin-top: 8px;">
+        <div class="setting-row">
+            <div>
+                <strong style="color: var(--text-primary);">Session</strong>
+                <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                    Connecté en tant que <strong>@Bank.Profil.Email</strong>
+                </p>
+            </div>
+            <button class="btn btn-danger" @onclick="HandleLogout">
+                <i class="bi bi-power"></i> SE DÉCONNECTER
+            </button>
+        </div>
+    </div>
 </div>
 
 @code {
-    private string activeTab = "profile";
+    // Onglet ciblé par l'URL (/parametres/notifications, /parametres/securite…)
+    // pour les liens profonds (cloche du header notamment).
+    [Parameter] public string? TabParam { get; set; }
+
+    private string activeTab = "profil";
     private string currentTheme = "dark";
     private bool saving;
     private string profileMsg = "";
@@ -525,6 +605,10 @@
     // Connexions
     private List<UserLogin> loginHistory = new();
 
+    // Liste des notifications (intégrée depuis l'ancienne page /notifications)
+    private List<NotificationHistory> notifications = new();
+    private bool notifProcessing;
+
     // Notifications
     private Dictionary<string, bool> notifPrefs = new();
     private string notifMsg = "";
@@ -540,12 +624,19 @@
         ("promo", "Offres promotionnelles", "bi-megaphone"),
     };
 
-    private void GoProfile() { activeTab = "profile"; }
-    private void GoPassword() { activeTab = "password"; }
-    private void GoSecurity() { activeTab = "security"; }
-    private void GoLegal() { activeTab = "legal"; }
-    private void GoConnexions() { activeTab = "connexions"; }
-    private void GoNotifs() { activeTab = "notifs"; }
+    private void SetTab(string tab) => activeTab = tab;
+
+    protected override void OnParametersSet()
+    {
+        activeTab = TabParam?.ToLowerInvariant() switch
+        {
+            "notifications" => "notifications",
+            "securite" => "securite",
+            "legal" => "legal",
+            "profil" => "profil",
+            _ => activeTab // pas de segment ou inconnu → onglet courant (défaut profil)
+        };
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -563,6 +654,73 @@
         notifPrefs["promo"] = Bank.Profil.NotifPromo;
         try { loginHistory = await Bank.GetLoginHistoryAsync(20); } catch { }
         try { epargneTotale = (await Bank.GetPocketsAsync()).Sum(p => p.MontantActuel); } catch { }
+        try { notifications = await Bank.GetNotificationsAsync(50); } catch { }
+    }
+
+    // --- Liste des notifications (ancienne page /notifications) ---
+
+    private async Task MarquerLu(int id)
+    {
+        if (notifProcessing) return;
+        notifProcessing = true;
+        try
+        {
+            await Bank.MarkAsReadAsync(id);
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { notifProcessing = false; }
+    }
+
+    private async Task ToutMarquerLu()
+    {
+        if (notifProcessing) return;
+        notifProcessing = true;
+        try
+        {
+            await Bank.MarkAllAsReadAsync();
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { notifProcessing = false; }
+    }
+
+    private async Task SupprimerAnciennes()
+    {
+        if (notifProcessing) return;
+        notifProcessing = true;
+        try
+        {
+            var count = await Bank.DeleteOldNotificationsAsync(30);
+            Notif.Notify($"{count} notification(s) supprimée(s)", NotificationType.INFO);
+            notifications = await Bank.GetNotificationsAsync(50);
+        }
+        finally { notifProcessing = false; }
+    }
+
+    // Clic sur une notification : les catégories gérées dans Paramètres changent
+    // d'onglet sur place, les autres naviguent vers leur module.
+    private void NaviguerNotifItem(NotificationHistory n)
+    {
+        switch (n.Categorie)
+        {
+            case "CONNEXION" or "SECURITE":
+                SetTab("securite"); break;
+            case "PARAMETRES" or "PLAFOND" or "TUTEUR":
+                SetTab("profil"); break;
+            case "PROFIL" or "COMPTE" or "KYC":
+                Nav.NavigateTo("/profil"); break;
+            case "EPARGNE":
+                Nav.NavigateTo("/epargne"); break;
+            case "VIREMENT" or "BENEFICIAIRE":
+                Nav.NavigateTo("/virement"); break;
+            case "DÉPÔT" or "DEPOT":
+                Nav.NavigateTo("/depot"); break;
+            case "RETRAIT":
+                Nav.NavigateTo("/retrait"); break;
+            case "CRÉDIT":
+                Nav.NavigateTo("/credits"); break;
+            default:
+                break; // reste sur la liste
+        }
     }
 
     private async Task ToggleTheme()

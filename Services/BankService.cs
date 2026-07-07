@@ -49,6 +49,7 @@ namespace ADN_pay.Services
             => _account.ExecuterOperationAsync(montantCentimes, motif, type);
         public Task<List<Transaction>> GetHistoriqueAsync() => _account.GetHistoriqueAsync();
         public Task<long> GetBalanceAsync() => _account.GetBalanceAsync();
+        public Task RefreshSoldeAsync() => _account.RefreshSoldeAsync();
         public Task<List<Transaction>> GetRecentTransactionsAsync(int count) => _account.GetRecentTransactionsAsync(count);
         public Task<(long RevenusMois, long DepensesMois, long TotalEpargne,
             List<(DateTime Jour, long Entrees, long Sorties)> DailyBreakdown)> GetDashboardStatsAsync()
@@ -74,6 +75,7 @@ namespace ADN_pay.Services
             => _account.ChangerMotDePasseAsync(currentPassword, newPassword);
         public Task<string> ExportPersonalDataAsync() => _account.ExportPersonalDataAsync();
         public Task<(bool Success, string Message)> SupprimerCompteAsync() => _account.SupprimerCompteAsync();
+        public Task<(bool Success, string Message)> ChangerCarteDesignAsync(string designId) => _account.ChangerCarteDesignAsync(designId);
 
         // --- ÉPARGNE --- ADR-001 : montants en centimes (long)
         public Task<List<SavingsPocket>> GetPocketsAsync() => _savings.GetPocketsAsync();

@@ -41,13 +41,34 @@
         </div>
 
         <div class="form-section">
-            <h6><i class="bi bi-info-circle"></i> COORDONNEES & CURSUS</h6>
+            <h6><i class="bi bi-info-circle"></i> COORDONNEES</h6>
             <div class="form-grid">
                 <div class="form-group full-width"><label>Adresse</label><div class="review-value">@targetUser.AdresseCasablanca</div></div>
-                <div class="form-group"><label>Niveau d'etude</label><div class="review-value">@targetUser.NiveauEtude</div></div>
                 <div class="form-group"><label>Telephone</label><div class="review-value">@targetUser.Telephone</div></div>
                 <div class="form-group"><label>Reseau social</label><div class="review-value">@targetUser.ReseauPrincipal</div></div>
+                <div class="form-group"><label>Contact d'urgence</label><div class="review-value">@(string.IsNullOrEmpty(targetUser.UrgenceNom) ? "—" : $"{targetUser.UrgenceNom} · {targetUser.UrgenceTelephone}")</div></div>
                 <div class="form-group"><label>Inscription</label><div class="review-value">@targetUser.DateInscription.ToString("dd/MM/yyyy HH:mm")</div></div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-person-badge"></i> PROFIL DU DEMANDEUR</h6>
+            <div class="form-grid">
+                <div class="form-group"><label>Statut</label><div class="review-value">@(string.IsNullOrEmpty(targetUser.StatutKyc) ? "— (dossier antérieur)" : targetUser.StatutKyc)</div></div>
+                <div class="form-group"><label>Source des fonds</label><div class="review-value">@(string.IsNullOrEmpty(targetUser.SourceFonds) ? "—" : targetUser.SourceFonds)</div></div>
+                @if (targetUser.StatutKyc == "TRAVAILLEUR")
+                {
+                    <div class="form-group"><label>Profession</label><div class="review-value">@targetUser.Profession</div></div>
+                    <div class="form-group"><label>Employeur</label><div class="review-value">@targetUser.Employeur</div></div>
+                    <div class="form-group"><label>Secteur</label><div class="review-value">@targetUser.Secteur</div></div>
+                    <div class="form-group"><label>Tranche de revenu</label><div class="review-value">@targetUser.TrancheRevenu</div></div>
+                }
+                else
+                {
+                    <div class="form-group"><label>Niveau d'etude</label><div class="review-value">@targetUser.NiveauEtude</div></div>
+                    <div class="form-group"><label>Etablissement</label><div class="review-value">@targetUser.Etablissement</div></div>
+                    <div class="form-group"><label>Filiere</label><div class="review-value">@targetUser.Filiere</div></div>
+                }
             </div>
         </div>
 
@@ -69,14 +90,14 @@
                         <span class="badge badge-danger">MANQUANT</span>
                     }
                 </div>
-                <div class="upload-card @(string.IsNullOrEmpty(targetUser.DocDomicileUrl) ? "" : "has-file")">
-                    <div class="upload-icon"><i class="bi bi-house-check"></i></div>
-                    <label>JUSTIFICATIF DOMICILE</label>
-                    @if (!string.IsNullOrEmpty(targetUser.DocDomicileUrl))
+                <div class="upload-card @(string.IsNullOrEmpty(targetUser.SelfieUrl) ? "" : "has-file")">
+                    <div class="upload-icon"><i class="bi bi-person-bounding-box"></i></div>
+                    <label>SELFIE DE VERIFICATION</label>
+                    @if (!string.IsNullOrEmpty(targetUser.SelfieUrl))
                     {
                         <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
                             <span class="badge badge-success">PRET</span>
-                            <a href="@targetUser.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">VOIR LE DOCUMENT</a>
+                            <a href="@targetUser.SelfieUrl" target="_blank" class="btn btn-ghost btn-sm">VOIR LE DOCUMENT</a>
                         </div>
                     }
                     else
@@ -84,6 +105,19 @@
                         <span class="badge badge-danger">MANQUANT</span>
                     }
                 </div>
+                @* Justificatif de domicile : plus collecté (refonte KYC) — affiché
+                   seulement s'il existe sur un dossier antérieur. *@
+                @if (!string.IsNullOrEmpty(targetUser.DocDomicileUrl))
+                {
+                    <div class="upload-card has-file">
+                        <div class="upload-icon"><i class="bi bi-house-check"></i></div>
+                        <label>JUSTIFICATIF DOMICILE (ANTERIEUR)</label>
+                        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 10px;">
+                            <span class="badge badge-success">PRET</span>
+                            <a href="@targetUser.DocDomicileUrl" target="_blank" class="btn btn-ghost btn-sm">VOIR LE DOCUMENT</a>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
 
@@ -158,7 +192,7 @@
             </div>
 
             <div class="form-section">
-                <h6><i class="bi bi-info-circle"></i> COORDONNEES & CURSUS</h6>
+                <h6><i class="bi bi-info-circle"></i> COORDONNEES</h6>
                 <div class="form-grid">
                     <div class="form-group full-width">
                         <label>Adresse de residence (Casablanca)</label>
@@ -169,15 +203,6 @@
                         <select @bind="kyc.SituationMatrimoniale" class="form-select">
                             <option value="CELIBATAIRE">CELIBATAIRE</option>
                             <option value="MARIE(E)">MARIE(E)</option>
-                            <option value="ETUDIANT">ETUDIANT</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Niveau d'etude</label>
-                        <select @bind="kyc.NiveauEtude" class="form-select">
-                            <option value="1ERE ANNEE DEV">1ERE ANNEE DEVELOPPEMENT</option>
-                            <option value="2EME ANNEE DEV">2EME ANNEE DEVELOPPEMENT</option>
-                            <option value="MASTER">MASTER / BAC+5</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -188,7 +213,103 @@
                         <label>Reseau Social Principal</label>
                         <input type="text" @bind-value="kyc.ReseauPrincipal" @bind-value:event="oninput" placeholder="Optionnel (LinkedIn, TikTok...)" class="form-input" />
                     </div>
+                    <div class="form-group">
+                        <label>Contact d'urgence — nom</label>
+                        <input type="text" @bind-value="kyc.UrgenceNom" @bind-value:event="oninput" placeholder="Nom et prenom" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label>Contact d'urgence — telephone</label>
+                        <input type="text" @bind-value="kyc.UrgenceTelephone" @bind-value:event="oninput" placeholder="+212... ou +241..." class="form-input" />
+                    </div>
                 </div>
+            </div>
+
+            @* ─── STATUT : les champs du dossier s'adaptent (Étudiant / Travailleur) ─── *@
+            <div class="form-section">
+                <h6><i class="bi bi-person-badge"></i> STATUT DU DEMANDEUR</h6>
+                <div class="admin-tabs" style="margin-bottom: 16px;">
+                    <button type="button" class='admin-tab @(kyc.StatutKyc == "ETUDIANT" ? "active" : "")' @onclick='() => ChangerStatut("ETUDIANT")'>
+                        <i class="bi bi-mortarboard"></i> ÉTUDIANT
+                    </button>
+                    <button type="button" class='admin-tab @(kyc.StatutKyc == "TRAVAILLEUR" ? "active" : "")' @onclick='() => ChangerStatut("TRAVAILLEUR")'>
+                        <i class="bi bi-briefcase"></i> TRAVAILLEUR
+                    </button>
+                </div>
+
+                @if (kyc.StatutKyc == "ETUDIANT")
+                {
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Niveau d'etude</label>
+                            <select @bind="kyc.NiveauEtude" class="form-select">
+                                <option value="1ERE ANNEE DEV">1ERE ANNEE DEVELOPPEMENT</option>
+                                <option value="2EME ANNEE DEV">2EME ANNEE DEVELOPPEMENT</option>
+                                <option value="MASTER">MASTER / BAC+5</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Etablissement</label>
+                            <input type="text" @bind-value="kyc.Etablissement" @bind-value:event="oninput" placeholder="Nom de l'ecole / universite" class="form-input" />
+                        </div>
+                        <div class="form-group">
+                            <label>Filiere</label>
+                            <input type="text" @bind-value="kyc.Filiere" @bind-value:event="oninput" placeholder="Developpement, gestion..." class="form-input" />
+                        </div>
+                        <div class="form-group">
+                            <label>Source des fonds</label>
+                            <select @bind="kyc.SourceFonds" class="form-select">
+                                <option value="">— SELECTIONNER —</option>
+                                <option value="BOURSE">BOURSE</option>
+                                <option value="FAMILLE">FAMILLE</option>
+                                <option value="JOB ETUDIANT">JOB ETUDIANT</option>
+                                <option value="AUTRE">AUTRE</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Profession</label>
+                            <input type="text" @bind-value="kyc.Profession" @bind-value:event="oninput" placeholder="Votre metier" class="form-input" />
+                        </div>
+                        <div class="form-group">
+                            <label>Employeur</label>
+                            <input type="text" @bind-value="kyc.Employeur" @bind-value:event="oninput" placeholder="Nom de l'entreprise" class="form-input" />
+                        </div>
+                        <div class="form-group">
+                            <label>Secteur</label>
+                            <select @bind="kyc.Secteur" class="form-select">
+                                <option value="">— SELECTIONNER —</option>
+                                <option value="TECH">TECH</option>
+                                <option value="COMMERCE">COMMERCE</option>
+                                <option value="SANTE">SANTE</option>
+                                <option value="EDUCATION">EDUCATION</option>
+                                <option value="AUTRE">AUTRE</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Tranche de revenu mensuel</label>
+                            <select @bind="kyc.TrancheRevenu" class="form-select">
+                                <option value="">— SELECTIONNER —</option>
+                                <option value="< 3000 DH">MOINS DE 3 000 DH</option>
+                                <option value="3000-6000 DH">3 000 – 6 000 DH</option>
+                                <option value="6000-10000 DH">6 000 – 10 000 DH</option>
+                                <option value="> 10000 DH">PLUS DE 10 000 DH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Source des fonds</label>
+                            <select @bind="kyc.SourceFonds" class="form-select">
+                                <option value="">— SELECTIONNER —</option>
+                                <option value="SALAIRE">SALAIRE</option>
+                                <option value="INDEPENDANT">INDEPENDANT</option>
+                                <option value="AUTRE">AUTRE</option>
+                            </select>
+                        </div>
+                    </div>
+                }
             </div>
 
             <div class="form-section">
@@ -198,10 +319,10 @@
                                 IconClass="bi bi-card-image"
                                 CurrentUrl="@kyc.DocIdentiteUrl"
                                 OnFileUploaded="@(url => { kyc.DocIdentiteUrl = url; UserCtx.KycFormState = kyc; })" />
-                    <UploadCard Label="JUSTIFICATIF DOMICILE"
-                                IconClass="bi bi-house-check"
-                                CurrentUrl="@kyc.DocDomicileUrl"
-                                OnFileUploaded="@(url => { kyc.DocDomicileUrl = url; UserCtx.KycFormState = kyc; })" />
+                    <UploadCard Label="SELFIE DE VERIFICATION"
+                                IconClass="bi bi-person-bounding-box"
+                                CurrentUrl="@kyc.SelfieUrl"
+                                OnFileUploaded="@(url => { kyc.SelfieUrl = url; UserCtx.KycFormState = kyc; })" />
                 </div>
             </div>
 
@@ -260,6 +381,36 @@
         {
             kyc = UserCtx.KycFormState;
         }
+
+        if (!isAdminReview)
+        {
+            // Statut par défaut : public cible étudiant.
+            if (string.IsNullOrEmpty(kyc.StatutKyc)) kyc.StatutKyc = "ETUDIANT";
+            // Résidu « ETUDIANT » dans la situation matrimoniale (ancienne option) :
+            // on retombe sur CELIBATAIRE, seules Célibataire/Marié(e) sont valides.
+            if (string.IsNullOrEmpty(kyc.SituationMatrimoniale) || kyc.SituationMatrimoniale == "ETUDIANT")
+                kyc.SituationMatrimoniale = "CELIBATAIRE";
+            if (string.IsNullOrEmpty(kyc.NiveauEtude)) kyc.NiveauEtude = "1ERE ANNEE DEV";
+        }
+    }
+
+    // Bascule Étudiant/Travailleur : on vide les champs de l'autre volet et la
+    // source des fonds (les options diffèrent) pour ne pas soumettre de résidus.
+    private void ChangerStatut(string statut)
+    {
+        if (kyc.StatutKyc == statut) return;
+        kyc.StatutKyc = statut;
+        kyc.SourceFonds = "";
+        if (statut == "ETUDIANT")
+        {
+            kyc.Profession = kyc.Employeur = kyc.Secteur = kyc.TrancheRevenu = "";
+            if (string.IsNullOrEmpty(kyc.NiveauEtude)) kyc.NiveauEtude = "1ERE ANNEE DEV";
+        }
+        else
+        {
+            kyc.Etablissement = kyc.Filiere = "";
+        }
+        UserCtx.KycFormState = kyc;
     }
 
     private bool PeutSoumettre => ChampsManquants.Count == 0;
@@ -274,8 +425,23 @@
             if (string.IsNullOrWhiteSpace(kyc.PassportOuCIN)) m.Add("N° Passeport / CIN");
             if (string.IsNullOrWhiteSpace(kyc.AdresseCasablanca)) m.Add("Adresse");
             if (string.IsNullOrWhiteSpace(kyc.Telephone)) m.Add("Téléphone");
+            if (string.IsNullOrWhiteSpace(kyc.UrgenceNom)) m.Add("Contact d'urgence (nom)");
+            if (string.IsNullOrWhiteSpace(kyc.UrgenceTelephone)) m.Add("Contact d'urgence (téléphone)");
+            if (kyc.StatutKyc == "TRAVAILLEUR")
+            {
+                if (string.IsNullOrWhiteSpace(kyc.Profession)) m.Add("Profession");
+                if (string.IsNullOrWhiteSpace(kyc.Employeur)) m.Add("Employeur");
+                if (string.IsNullOrWhiteSpace(kyc.Secteur)) m.Add("Secteur");
+                if (string.IsNullOrWhiteSpace(kyc.TrancheRevenu)) m.Add("Tranche de revenu");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(kyc.Etablissement)) m.Add("Établissement");
+                if (string.IsNullOrWhiteSpace(kyc.Filiere)) m.Add("Filière");
+            }
+            if (string.IsNullOrWhiteSpace(kyc.SourceFonds)) m.Add("Source des fonds");
             if (string.IsNullOrEmpty(kyc.DocIdentiteUrl)) m.Add("Scan pièce d'identité");
-            if (string.IsNullOrEmpty(kyc.DocDomicileUrl)) m.Add("Justificatif de domicile");
+            if (string.IsNullOrEmpty(kyc.SelfieUrl)) m.Add("Selfie de vérification");
             if (!kyc.CguAcceptees) m.Add("Acceptation des conditions");
             return m;
         }

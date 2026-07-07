@@ -145,6 +145,12 @@
     private enum Periode  { Tout, J7, J30, M3 }
     private enum FiltreType { Tout, Entrees, Sorties }
 
+    // Filtres adressables par l'URL (liens profonds depuis les cartes de stats
+    // du dashboard) : /historique?type=entrees|sorties&periode=7j|30j|3m&q=texte
+    [SupplyParameterFromQuery(Name = "type")]    public string? TypeParam { get; set; }
+    [SupplyParameterFromQuery(Name = "periode")] public string? PeriodeParam { get; set; }
+    [SupplyParameterFromQuery(Name = "q")]       public string? RechercheParam { get; set; }
+
     private List<Transaction> transactions = new();
     private string recherche = "";
     private Periode    periode    = Periode.Tout;
@@ -153,6 +159,27 @@
     protected override async Task OnInitializedAsync()
     {
         transactions = await Bank.GetHistoriqueAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(TypeParam))
+            filtreType = TypeParam.ToLowerInvariant() switch
+            {
+                "entrees" => FiltreType.Entrees,
+                "sorties" => FiltreType.Sorties,
+                _ => filtreType
+            };
+        if (!string.IsNullOrEmpty(PeriodeParam))
+            periode = PeriodeParam.ToLowerInvariant() switch
+            {
+                "7j"  => Periode.J7,
+                "30j" => Periode.J30,
+                "3m"  => Periode.M3,
+                _ => periode
+            };
+        if (!string.IsNullOrEmpty(RechercheParam))
+            recherche = RechercheParam;
     }
 
     private IReadOnlyList<Transaction> TransactionsFiltrees
