@@ -102,15 +102,18 @@ if (!string.IsNullOrEmpty(virRib)) builder.Configuration["Virement:Rib"] = virRi
 if (!string.IsNullOrEmpty(virBanque)) builder.Configuration["Virement:Banque"] = virBanque;
 if (!string.IsNullOrEmpty(virTitulaire)) builder.Configuration["Virement:Titulaire"] = virTitulaire;
 
-// --- MOBILE MONEY MANUEL (phase pilote : envoi direct sur le numéro du fondateur,
-//     référence en motif, validation admin — plafonds gérés par BankTransferService) ---
+// --- MOBILE MONEY MANUEL (phase pilote : dépôt sur le numéro d'Alex, retrait payé
+//     par Alex au bénéficiaire — référence en motif, validation admin, plafonds
+//     gérés par BankTransferService/MobileMoneyWithdrawalService) ---
 var mmNumero = Environment.GetEnvironmentVariable("MOBILEMONEY_NUMERO");
 var mmOperateur = Environment.GetEnvironmentVariable("MOBILEMONEY_OPERATEUR");
 var mmTitulaire = Environment.GetEnvironmentVariable("MOBILEMONEY_TITULAIRE");
+var mmCodeAgent = Environment.GetEnvironmentVariable("MOBILEMONEY_CODE_AGENT");
 var mmXafParDh = Environment.GetEnvironmentVariable("MOBILEMONEY_XAF_PAR_DH");
 if (!string.IsNullOrEmpty(mmNumero)) builder.Configuration["MobileMoney:Numero"] = mmNumero;
 if (!string.IsNullOrEmpty(mmOperateur)) builder.Configuration["MobileMoney:Operateur"] = mmOperateur;
 if (!string.IsNullOrEmpty(mmTitulaire)) builder.Configuration["MobileMoney:Titulaire"] = mmTitulaire;
+if (!string.IsNullOrEmpty(mmCodeAgent)) builder.Configuration["MobileMoney:CodeAgent"] = mmCodeAgent;
 if (!string.IsNullOrEmpty(mmXafParDh)) builder.Configuration["MobileMoney:XafParDh"] = mmXafParDh;
 
 // --- ALERTING (ADR-007) ---
@@ -152,6 +155,7 @@ builder.Services.AddScoped<CurrencyState>();
 // utilisable depuis les webhooks/callbacks serveur→serveur.
 builder.Services.AddScoped<ExternalDepositService>();
 builder.Services.AddScoped<BankTransferService>();
+builder.Services.AddScoped<MobileMoneyWithdrawalService>();
 
 // --- AUTHENTIFICATION AVEC COOKIE ---
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -255,6 +259,26 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN Canal TEXT NOT NULL DEFAULT 'VIREMENT'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN MontantConverti INTEGER"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN DeviseConvertie TEXT"); } catch { }
+    // Demandes de retrait par Mobile Money (canal Alex, avance de cash) — symétrique
+    // de BankTransferRequests, sens inversé (débit au moment de la validation admin).
+    try { db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS MobileMoneyWithdrawalRequests (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserId INTEGER NOT NULL,
+            MontantCentimes INTEGER NOT NULL,
+            Reference TEXT NOT NULL,
+            Statut TEXT NOT NULL DEFAULT 'EN_ATTENTE',
+            MontantAEnvoyer INTEGER,
+            DeviseEnvoi TEXT,
+            NumeroBeneficiaire TEXT NOT NULL DEFAULT '',
+            NomBeneficiaire TEXT NOT NULL DEFAULT '',
+            MotifRejet TEXT,
+            DateCreation TEXT NOT NULL,
+            DateTraitement TEXT,
+            TraitePar TEXT,
+            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
+        )"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_MobileMoneyWithdrawalRequests_Reference ON MobileMoneyWithdrawalRequests(Reference)"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 

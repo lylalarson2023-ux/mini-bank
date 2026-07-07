@@ -1,0 +1,136 @@
+@page "/retraits-mobilemoney"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+@using ADN_pay.Models
+@inject MobileMoneyWithdrawalService Retraits
+@inject ADN_pay.Admin.Services.ToastService Toasts
+
+<PageTitle>Retraits Mobile Money — ADN_pay Admin</PageTitle>
+
+<div class="page">
+    <h1 class="page-title">Retraits Mobile Money</h1>
+    <div class="page-sub">Valider une fois l'envoi Mobile Money réellement effectué au bénéficiaire (canal Alex)</div>
+
+    <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><i class="bi bi-phone"></i> Demandes en attente</div>
+        <div class="panel-body">
+            @if (loading)
+            {
+                <div class="empty">Chargement…</div>
+            }
+            else if (pending.Count == 0)
+            {
+                <div class="empty">Aucune demande de retrait en attente</div>
+            }
+            else
+            {
+                @foreach (var d in pending)
+                {
+                    <div class="req-row" @key="d.Id">
+                        <div>
+                            <div class="rr-name">
+                                @d.User?.Prenom @d.User?.Nom <span class="muted">· réf</span> <strong>@d.Reference</strong>
+                            </div>
+                            <div class="muted">
+                                #@d.UserId · @d.User?.Email · demandé le @d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </div>
+                            <div class="muted">
+                                Bénéficiaire : <strong>@d.NomBeneficiaire</strong> · <strong>@d.NumeroBeneficiaire</strong>
+                                @if (d.MontantAEnvoyer is not null)
+                                {
+                                    <text> · à envoyer : <strong>@d.MontantAEnvoyer @d.DeviseEnvoi</strong></text>
+                                }
+                            </div>
+                        </div>
+                        <div class="req-amount">-@Money(d.MontantCentimes) MAD</div>
+                        <div class="actions">
+                            <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="() => Valider(d.Id)">Envoi effectué — débiter</button>
+                            <button class="btn btn-ghost btn-sm danger" disabled="@busy" @onclick="() => OpenReject(d.Id)">Rejeter</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+        <div class="panel-body muted" style="font-size:.85rem">
+            <i class="bi bi-info-circle"></i>
+            Validez uniquement après avoir réellement envoyé le Mobile Money au numéro du
+            bénéficiaire indiqué. Le débit du solde client n'a lieu qu'à cette validation —
+            jamais avant, pour ne jamais débiter un client qui n'a pas reçu l'argent.
+        </div>
+    </div>
+</div>
+
+@if (rejectId > 0)
+{
+    <div class="modal-overlay" @onclick="() => rejectId = 0">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head"><i class="bi bi-x-circle-fill" style="color:var(--danger)"></i> Rejeter la demande de retrait</div>
+            <div class="modal-body">
+                <p class="muted">Demande #@rejectId</p>
+                <div class="field">
+                    <label>Motif du rejet</label>
+                    <textarea class="input" rows="3" @bind="rejectMotif" placeholder="Visible par l'utilisateur (ex. bénéficiaire injoignable, numéro invalide…)"></textarea>
+                </div>
+                <div class="actions" style="margin-top:14px">
+                    <button class="btn btn-primary danger btn-block" disabled="@(busy || string.IsNullOrWhiteSpace(rejectMotif))" @onclick="ConfirmReject">@(busy ? "…" : "Rejeter la demande")</button>
+                    <button class="btn btn-ghost btn-block" @onclick="() => rejectId = 0">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool loading = true;
+    private bool busy;
+    private List<MobileMoneyWithdrawalRequest> pending = new();
+    private int rejectId;
+    private string rejectMotif = "";
+
+    private static string Money(long c) => (c / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        loading = true;
+        pending = await Retraits.GetDemandesEnAttenteAsync();
+        loading = false;
+    }
+
+    private async Task Valider(int id)
+    {
+        busy = true;
+        try
+        {
+            if (await Retraits.ValiderAsync(id))
+            {
+                Toasts.Success("Retrait validé, compte débité.");
+                await Reload();
+            }
+            else Toasts.Error("Échec : demande introuvable, déjà traitée ou solde insuffisant.");
+        }
+        finally { busy = false; }
+    }
+
+    private void OpenReject(int id) { rejectId = id; rejectMotif = ""; }
+
+    private async Task ConfirmReject()
+    {
+        busy = true;
+        try
+        {
+            if (await Retraits.RejeterAsync(rejectId, rejectMotif))
+            {
+                Toasts.Success("Demande rejetée, l'utilisateur est notifié.");
+                rejectId = 0;
+                await Reload();
+            }
+            else Toasts.Error("Échec du rejet.");
+        }
+        finally { busy = false; }
+    }
+}

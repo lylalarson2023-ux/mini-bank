@@ -14,11 +14,13 @@ namespace ADN_pay.Services
         private readonly UserContext _user;
         private readonly NotificationHistoryService _notifHist;
         private readonly TwoFactorService _twoFactor;
+        private readonly MobileMoneyWithdrawalService _mmWithdrawal;
 
         public BankService(
             AuthService auth, AccountService account, SavingsService savings,
             CreditService credit, AdminService admin, FileService file, UserContext user,
-            NotificationHistoryService notifHist, TwoFactorService twoFactor)
+            NotificationHistoryService notifHist, TwoFactorService twoFactor,
+            MobileMoneyWithdrawalService mmWithdrawal)
         {
             _auth = auth;
             _account = account;
@@ -29,6 +31,7 @@ namespace ADN_pay.Services
             _user = user;
             _notifHist = notifHist;
             _twoFactor = twoFactor;
+            _mmWithdrawal = mmWithdrawal;
         }
 
         // --- ÉTAT PARTAGÉ ---
@@ -61,6 +64,14 @@ namespace ADN_pay.Services
         public Task<string?> TrouverNomDestinataireAsync(string email)
             => _account.TrouverNomDestinataireAsync(email);
         public Task<bool> DefinirTuteur(string email) => _account.DefinirTuteur(email);
+
+        // --- RETRAIT MOBILE MONEY (canal Alex, avance de cash) ---
+        public Task<(bool Success, string Message, MobileMoneyWithdrawalRequest? Demande)> CreerDemandeRetraitMobileMoneyAsync(
+            long montantCentimes, string numeroBeneficiaire, string nomBeneficiaire, decimal? tauxConversion = null)
+            => _mmWithdrawal.CreerDemandeAsync(montantCentimes, numeroBeneficiaire, nomBeneficiaire, tauxConversion);
+        public Task<List<MobileMoneyWithdrawalRequest>> GetMesDemandesRetraitMobileMoneyAsync(int max = 10)
+            => _mmWithdrawal.GetMesDemandesAsync(max);
+        public Task<bool> AnnulerDemandeRetraitMobileMoneyAsync(int demandeId) => _mmWithdrawal.AnnulerDemandeAsync(demandeId);
         public Task<bool> RevoquerTuteur() => _account.RevoquerTuteur();
         public Task<bool> SoumettreDossierKYC(UserProfile kyc) => _account.SoumettreDossierKYC(kyc);
 

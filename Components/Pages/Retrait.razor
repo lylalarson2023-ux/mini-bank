@@ -1,10 +1,14 @@
 @page "/retrait"
 @attribute [Authorize]
+@using ADN_pay.Models
 @inject BankService Bank
 @inject NotificationService Notif
+@inject IConfiguration Config
 
 @* Page issue de la suppression du module Compte courant (refonte UI) :
-   seul le retrait en est extrait, le reste faisait doublon avec le dashboard. *@
+   seul le retrait en est extrait, le reste faisait doublon avec le dashboard.
+   Deux canaux : instant (débit immédiat, comme avant) et Mobile Money (canal
+   Alex — avance de cash, débit uniquement à la validation admin). *@
 <div class="cyber-panel" style="max-width: 700px; margin: auto;">
     <h3>RETRAIT</h3>
 
@@ -14,7 +18,7 @@
 
     @if (step == Step.Confirm)
     {
-        @* Écran de confirmation (même modèle que le virement) *@
+        @* Écran de confirmation du retrait instant (même modèle que le virement) *@
         <div style="margin-top: 24px;">
             <div style="border-left: 4px solid var(--danger); background: var(--bg-secondary);
                         border-radius: 10px; padding: 20px; margin-bottom: 20px;">
@@ -40,10 +44,44 @@
                         border: 1px solid var(--border-color);" @onclick="() => step = Step.Form">
                     <i class="bi bi-arrow-left"></i> MODIFIER
                 </button>
-                <button class="btn btn-primary btn-block" @onclick="ConfirmerRetrait" disabled="@isProcessing">
+                <button class="btn btn-primary btn-block" @onclick="ConfirmerRetraitInstant" disabled="@isProcessing">
                     <i class="bi bi-check-lg"></i> @(isProcessing ? "TRAITEMENT..." : "CONFIRMER")
                 </button>
             </div>
+        </div>
+    }
+    else if (step == Step.MobileMoneyInfo && demandeMobileMoney is not null)
+    {
+        @* Instructions après création d'une demande de retrait Mobile Money *@
+        <div class="depot-step" style="margin-top: 16px;">
+            <div class="depot-step-label">VOTRE DEMANDE EST ENREGISTRÉE</div>
+            <div class="warning-box" style="text-align:center; margin-top: 10px;">
+                RÉFÉRENCE : <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demandeMobileMoney.Reference</span><br />
+                @if (demandeMobileMoney.MontantAEnvoyer is not null)
+                {
+                    <span>MONTANT ENVOYÉ AU BÉNÉFICIAIRE : <span class="highlight">@demandeMobileMoney.MontantAEnvoyer @demandeMobileMoney.DeviseEnvoi</span></span>
+                }
+            </div>
+            <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
+                <div><strong>Vous serez contacté par :</strong></div>
+                <div>Nom : <strong>@mmTitulaire</strong></div>
+                <div>Numéro : <strong style="letter-spacing:1px">@mmNumero</strong></div>
+                @if (!string.IsNullOrEmpty(mmCodeAgent))
+                {
+                    <div>Code agent : <strong>@mmCodeAgent</strong></div>
+                }
+            </div>
+            <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
+                <li>Vous recevrez l'envoi Mobile Money au numéro indiqué (référence <strong>@demandeMobileMoney.Reference</strong>).</li>
+                <li>Votre solde ADN_pay est débité uniquement après confirmation de l'envoi réel.</li>
+            </ol>
+            <div style="margin-top: 10px; font-size: .7rem; color: var(--text-muted);">
+                Service en phase pilote : retrait limité à @((MobileMoneyWithdrawalService.MontantMax / 100m).ToString("N0")) DH,
+                plafond de @((MobileMoneyWithdrawalService.PlafondMensuel / 100m).ToString("N0")) DH par mois.
+            </div>
+            <button class="btn btn-primary btn-block" style="margin-top: 10px;" @onclick="() => { demandeMobileMoney = null; step = Step.Form; }">
+                J'AI NOTÉ LES INSTRUCTIONS
+            </button>
         </div>
     }
     else
@@ -53,14 +91,74 @@
                 <label>MONTANT A RETIRER (DH)</label>
                 <input type="number" @bind="montantSaisie" class="form-input" placeholder="0.00" />
             </div>
+
+            <div class="depot-step">
+                <div class="depot-step-label">CANAL DE RETRAIT</div>
+                <div class="depot-choices">
+                    <button class="depot-choice @(canal == "instant" ? "active" : "")" @onclick='@(() => canal = "instant")' disabled="@(montantSaisie is null or <= 0)">
+                        <span class="depot-choice-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+                        <span class="depot-choice-label">RETRAIT INSTANT</span>
+                        <span class="depot-choice-sub">Débit immédiat</span>
+                    </button>
+                    <button class="depot-choice @(canal == "mobilemoney" ? "active" : "")" @onclick='@(() => canal = "mobilemoney")' disabled="@(montantSaisie is null or <= 0 || !mobileMoneyConfigured)">
+                        <span class="depot-choice-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <rect x="5" y="2" width="14" height="20" rx="2" />
+                                <line x1="12" y1="18" x2="12.01" y2="18" />
+                                <path d="M8 8h8v3H8z" />
+                            </svg>
+                        </span>
+                        <span class="depot-choice-label">MOBILE MONEY</span>
+                        <span class="depot-choice-sub">@(mobileMoneyConfigured ? $"max {MobileMoneyWithdrawalService.MontantMax / 100m:N0} DH (pilote)" : "Bientôt disponible")</span>
+                    </button>
+                </div>
+            </div>
+
+            @if (canal == "mobilemoney")
+            {
+                <div class="form-group">
+                    <label>NUMÉRO MOBILE MONEY DU BÉNÉFICIAIRE</label>
+                    <input type="text" @bind="numeroBeneficiaire" class="form-input" placeholder="Ex: 074XXXXXX" />
+                </div>
+                <div class="form-group">
+                    <label>NOM DU BÉNÉFICIAIRE</label>
+                    <input type="text" @bind="nomBeneficiaire" class="form-input" placeholder="Vous-même ou un proche" />
+                </div>
+            }
+
             @if (!string.IsNullOrEmpty(erreur))
             {
                 <div class="error-box" style="margin-bottom: 12px;">@erreur</div>
             }
-            <button class="btn btn-primary btn-block" @onclick="AllerConfirmation"
-                    disabled="@(montantSaisie is null or <= 0)">
-                <i class="bi bi-cash-stack"></i> RETIRER
+
+            <button class="btn btn-primary btn-block" @onclick="Continuer" disabled="@(!canContinuer)">
+                @(isProcessing ? "TRAITEMENT..." : "RETIRER")
             </button>
+        </div>
+    }
+
+    @if (mesDemandesMobileMoney.Count > 0)
+    {
+        <div class="depot-step" style="margin-top: 20px;">
+            <div class="depot-step-label">MES DEMANDES MOBILE MONEY</div>
+            @foreach (var d in mesDemandesMobileMoney)
+            {
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); font-size:.8rem;">
+                    <div>
+                        <strong>@d.Reference</strong> · @((d.MontantCentimes / 100m).ToString("N2")) DH
+                        <div style="color:var(--text-muted); font-size:.7rem;">
+                            @d.NomBeneficiaire (@d.NumeroBeneficiaire) · @d.DateCreation.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="highlight" style="font-size:.7rem;">@StatutLabel(d)</span>
+                        @if (d.Statut == MobileMoneyWithdrawalRequest.EnAttente)
+                        {
+                            <button class="btn btn-block" style="width:auto; padding:2px 8px; font-size:.65rem;" @onclick="() => AnnulerDemande(d.Id)">ANNULER</button>
+                        }
+                    </div>
+                </div>
+            }
         </div>
     }
 
@@ -93,16 +191,42 @@
 </div>
 
 @code {
-    private enum Step { Form, Confirm }
+    private enum Step { Form, Confirm, MobileMoneyInfo }
     private Step step = Step.Form;
 
     private decimal? montantSaisie;
     private long montantCentimes;
+    private string canal = "instant";
+    private string numeroBeneficiaire = "";
+    private string nomBeneficiaire = "";
     private string erreur = "";
-    private List<Transaction> derniersRetraits = new();
     private bool isProcessing;
 
-    protected override async Task OnInitializedAsync() => await ChargerRetraits();
+    private bool mobileMoneyConfigured;
+    private string mmNumero = "", mmOperateur = "", mmTitulaire = "", mmCodeAgent = "";
+    private decimal mmXafParDh;
+
+    private List<Transaction> derniersRetraits = new();
+    private MobileMoneyWithdrawalRequest? demandeMobileMoney;
+    private List<MobileMoneyWithdrawalRequest> mesDemandesMobileMoney = new();
+
+    private bool canContinuer => montantSaisie is > 0 && !isProcessing
+        && (canal != "mobilemoney" || !string.IsNullOrWhiteSpace(numeroBeneficiaire));
+
+    protected override async Task OnInitializedAsync()
+    {
+        mmNumero = Config["MobileMoney:Numero"] ?? "";
+        mmOperateur = Config["MobileMoney:Operateur"] ?? "Mobile Money";
+        mmTitulaire = Config["MobileMoney:Titulaire"] ?? "";
+        mmCodeAgent = Config["MobileMoney:CodeAgent"] ?? "";
+        mmXafParDh = decimal.TryParse(Config["MobileMoney:XafParDh"],
+            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var taux) && taux > 0
+            ? taux : 60m;
+        mobileMoneyConfigured = !string.IsNullOrEmpty(mmNumero);
+
+        await ChargerRetraits();
+        mesDemandesMobileMoney = await Bank.GetMesDemandesRetraitMobileMoneyAsync();
+    }
 
     private async Task ChargerRetraits()
     {
@@ -110,16 +234,64 @@
         derniersRetraits = historique.Where(t => t.Type == "RETRAIT").Take(5).ToList();
     }
 
-    private void AllerConfirmation()
+    private static string StatutLabel(MobileMoneyWithdrawalRequest d) => d.Statut switch
+    {
+        MobileMoneyWithdrawalRequest.EnAttente => "EN ATTENTE",
+        MobileMoneyWithdrawalRequest.Valide => "VALIDÉ ✓",
+        MobileMoneyWithdrawalRequest.Rejete => $"REJETÉ — {d.MotifRejet}",
+        MobileMoneyWithdrawalRequest.Annule => "ANNULÉE",
+        _ => d.Statut
+    };
+
+    private void Continuer()
     {
         erreur = "";
         montantCentimes = (long)((montantSaisie ?? 0) * 100);
         if (montantCentimes <= 0) { erreur = "Montant invalide."; return; }
         if (Bank.Profil.Solde < montantCentimes) { erreur = "Solde insuffisant."; return; }
-        step = Step.Confirm;
+
+        if (canal == "mobilemoney")
+        {
+            _ = CreerDemandeMobileMoney();
+        }
+        else
+        {
+            step = Step.Confirm;
+        }
     }
 
-    private async Task ConfirmerRetrait()
+    private async Task CreerDemandeMobileMoney()
+    {
+        if (isProcessing) return;
+        isProcessing = true;
+        try
+        {
+            var (ok, message, demande) = await Bank.CreerDemandeRetraitMobileMoneyAsync(
+                montantCentimes, numeroBeneficiaire, nomBeneficiaire, mmXafParDh);
+            if (ok && demande is not null)
+            {
+                demandeMobileMoney = demande;
+                step = Step.MobileMoneyInfo;
+                montantSaisie = null;
+                numeroBeneficiaire = "";
+                nomBeneficiaire = "";
+                mesDemandesMobileMoney = await Bank.GetMesDemandesRetraitMobileMoneyAsync();
+            }
+            else
+            {
+                erreur = message;
+            }
+        }
+        finally { isProcessing = false; }
+    }
+
+    private async Task AnnulerDemande(int id)
+    {
+        if (await Bank.AnnulerDemandeRetraitMobileMoneyAsync(id))
+            mesDemandesMobileMoney = await Bank.GetMesDemandesRetraitMobileMoneyAsync();
+    }
+
+    private async Task ConfirmerRetraitInstant()
     {
         if (isProcessing) return;
         isProcessing = true;

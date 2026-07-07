@@ -20,6 +20,7 @@ namespace ADN_pay.Data
         public DbSet<NotificationHistory> NotificationHistories { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<BankTransferRequest> BankTransferRequests { get; set; }
+        public DbSet<MobileMoneyWithdrawalRequest> MobileMoneyWithdrawalRequests { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -33,6 +34,10 @@ namespace ADN_pay.Data
 
             // La référence de virement est communiquée au client : jamais deux identiques.
             modelBuilder.Entity<BankTransferRequest>()
+                .HasIndex(r => r.Reference)
+                .IsUnique();
+
+            modelBuilder.Entity<MobileMoneyWithdrawalRequest>()
                 .HasIndex(r => r.Reference)
                 .IsUnique();
 

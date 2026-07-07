@@ -139,6 +139,7 @@ builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<ADN_pay.Admin.Services.ToastService>();
 builder.Services.AddScoped<ExternalDepositService>();
 builder.Services.AddScoped<BankTransferService>();
+builder.Services.AddScoped<MobileMoneyWithdrawalService>();
 builder.Services.AddScoped<UserContextMiddleware>();
 // E-mail : Brevo en prod (clé dispo + hors dev ou forçage), sinon log dev.
 var brevoKeyAdmin = Environment.GetEnvironmentVariable("BREVO_API_KEY");
@@ -230,6 +231,26 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN Canal TEXT NOT NULL DEFAULT 'VIREMENT'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN MontantConverti INTEGER"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN DeviseConvertie TEXT"); } catch { }
+    // Demandes de retrait par Mobile Money (canal Alex, avance de cash) — idempotent,
+    // l'app web la crée aussi.
+    try { db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS MobileMoneyWithdrawalRequests (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserId INTEGER NOT NULL,
+            MontantCentimes INTEGER NOT NULL,
+            Reference TEXT NOT NULL,
+            Statut TEXT NOT NULL DEFAULT 'EN_ATTENTE',
+            MontantAEnvoyer INTEGER,
+            DeviseEnvoi TEXT,
+            NumeroBeneficiaire TEXT NOT NULL DEFAULT '',
+            NomBeneficiaire TEXT NOT NULL DEFAULT '',
+            MotifRejet TEXT,
+            DateCreation TEXT NOT NULL,
+            DateTraitement TEXT,
+            TraitePar TEXT,
+            FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
+        )"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_MobileMoneyWithdrawalRequests_Reference ON MobileMoneyWithdrawalRequests(Reference)"); } catch { }
 
     // Pratique de dev : si ADMIN_EMAIL + ADMIN_PASSWORD sont fournis, on garantit
     // que ce compte existe en tant qu'admin (création ou MAJ). Sinon on ne touche à rien.
