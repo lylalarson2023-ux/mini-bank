@@ -223,7 +223,7 @@ public class AccountServiceTests : IDisposable
         Assert.Equal("docs/selfie.jpg", u.SelfieUrl);
         Assert.Equal("docs/ancien-domicile.pdf", u.DocDomicileUrl); // non écrasé
         Assert.True(u.PendingPremiumUpgrade);
-        Assert.Equal(40_000L, u.Solde); // 100 DH prélevés
+        Assert.Equal(45_000L, u.Solde); // 50 DH prélevés
     }
 
     public void Dispose()

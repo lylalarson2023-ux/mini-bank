@@ -541,10 +541,10 @@ namespace ADN_pay.Services
             return (true, "Votre compte a été clôturé et vos données personnelles anonymisées. Vous allez être déconnecté.");
         }
 
-        // --- KYC --- frais = 100 DH = 10 000 centimes
+        // --- KYC --- frais = 50 DH = 5 000 centimes
         public async Task<bool> SoumettreDossierKYC(UserProfile kyc)
         {
-            if (_user.Profil.Solde < 10_000L) return false;
+            if (_user.Profil.Solde < 5_000L) return false;
             await using var ctx = await _factory.CreateDbContextAsync();
             await using var tx = await ctx.Database.BeginTransactionAsync();
             try
@@ -579,7 +579,7 @@ namespace ADN_pay.Services
                 u.Secteur = kyc.Secteur;
                 u.TrancheRevenu = kyc.TrancheRevenu;
                 u.PendingPremiumUpgrade = true;
-                u.Solde -= 10_000L; // 100 DH en centimes
+                u.Solde -= 5_000L; // 50 DH en centimes
                 await ctx.SaveChangesAsync();
                 await tx.CommitAsync();
                 _user.Profil.Solde = u.Solde;

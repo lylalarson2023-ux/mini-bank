@@ -329,7 +329,7 @@
             <div class="form-group" style="margin-top: 24px; text-align: center;">
                 <label class="checkbox-container" style="justify-content: center; font-size: 0.8rem; color: var(--text-secondary);">
                     <input type="checkbox" @bind="kyc.CguAcceptees" />
-                    J'accepte les conditions d'utilisation et le prelevement de 100 DH pour le passage en Premium.
+                    J'accepte les conditions d'utilisation et le prelevement de 50 DH pour le passage en Premium.
                 </label>
             </div>
 
@@ -463,9 +463,9 @@
             }
         }
 
-        if (Bank.Profil.Solde < 10_000L)
+        if (Bank.Profil.Solde < 5_000L)
         {
-            Notif.Notify("SOLDE INSUFFISANT (100 DH REQUIS)", NotificationType.ERROR);
+            Notif.Notify("SOLDE INSUFFISANT (50 DH REQUIS)", NotificationType.ERROR);
             return;
         }
 
@@ -476,7 +476,7 @@
             if (success)
             {
                 UserCtx.KycFormState = null;   // dossier transmis : on vide le brouillon
-                Notif.Notify("DOSSIER TRANSMIS AVEC SUCCÈS (100 DH PRÉLEVÉS)", NotificationType.SUCCESS);
+                Notif.Notify("DOSSIER TRANSMIS AVEC SUCCÈS (50 DH PRÉLEVÉS)", NotificationType.SUCCESS);
                 // Bank.Profil.PendingPremiumUpgrade est désormais true → bascule sur la bannière d'attente
             }
             else

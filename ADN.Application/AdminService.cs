@@ -366,7 +366,7 @@ namespace ADN_pay.Services
                 .ToListAsync();
         }
 
-        // Remboursement KYC rejet : 100 DH = 10 000 centimes
+        // Remboursement KYC rejet : 50 DH = 5 000 centimes
         public async Task<(bool Success, string Message)> RejeterDossierKycAsync(int userId, string? motif = null)
         {
             if (!_user.Profil.IsAdmin) return (false, "Accès refusé");
@@ -378,20 +378,20 @@ namespace ADN_pay.Services
             u.PendingPremiumUpgrade = false;
             u.PremiumRejectedAt = DateTime.UtcNow;
             u.KycRejetMotif = motif;
-            u.Solde += 10_000L; // remboursement 100 DH
+            u.Solde += 5_000L; // remboursement 50 DH
             ctx.AdminLogs.Add(new AdminLog
             {
                 Action = "REJET_KYC",
                 Cible = u.Email,
-                Details = motif != null ? $"Dossier KYC rejeté : {motif}" : "Dossier KYC rejeté, 100 DH remboursés"
+                Details = motif != null ? $"Dossier KYC rejeté : {motif}" : "Dossier KYC rejeté, 50 DH remboursés"
             });
             await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationForUserAsync(u.Id,
-                motif != null ? $"Votre dossier KYC a été rejeté : {motif}" : "Votre dossier KYC a été rejeté. 100 DH remboursés.",
+                motif != null ? $"Votre dossier KYC a été rejeté : {motif}" : "Votre dossier KYC a été rejeté. 50 DH remboursés.",
                 "ERROR", "KYC");
             _logger.LogInformation("Dossier KYC rejeté pour {Email} par admin {AdminEmail} : {Motif}",
                 PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email), motif);
-            return (true, $"Dossier KYC rejeté pour {u.Email}, 100 DH remboursés");
+            return (true, $"Dossier KYC rejeté pour {u.Email}, 50 DH remboursés");
         }
 
         public async Task<(bool Success, string Message)> RevoquerTuteurParAdminAsync(int studentId)
