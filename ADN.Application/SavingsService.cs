@@ -236,6 +236,93 @@ namespace ADN_pay.Services
             }
         }
 
+        // ─────────────────────────── Arrondi épargne (opt-in) ───────────────────────────
+
+        // Nom affiché de la poche auto-créée par l'arrondi.
+        public const string ObjectifPocheArrondi = "Arrondis automatiques";
+
+        public async Task<(bool Success, string Message)> SetArrondiEpargneAsync(bool actif, long pasCentimes)
+        {
+            if (pasCentimes is not (100L or 500L or 1_000L))
+                return (false, "Pas d'arrondi invalide (1, 5 ou 10 DH).");
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
+            if (u == null) return (false, "Utilisateur introuvable");
+            u.ArrondiEpargneActif = actif;
+            u.ArrondiEpargnePas = pasCentimes;
+            await ctx.SaveChangesAsync();
+            _user.Profil.ArrondiEpargneActif = actif;
+            _user.Profil.ArrondiEpargnePas = pasCentimes;
+            _logger.LogInformation("Arrondi épargne {Etat} (pas {Pas}) pour {Email}",
+                actif ? "activé" : "désactivé", pasCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
+            return (true, actif ? $"Arrondi activé (au multiple de {pasCentimes.ToDh()})" : "Arrondi désactivé");
+        }
+
+        // Applique l'arrondi après une opération sortante réussie : transfère
+        // l'excès (pas − montant % pas) vers la poche spéciale, auto-créée au
+        // premier arrondi. BEST-EFFORT : ne lève jamais, ne bloque jamais
+        // l'opération principale (déjà commise) ; skip silencieux si solde
+        // insuffisant ou montant déjà rond. Retourne l'excès épargné (0 si rien).
+        public async Task<long> AppliquerArrondiAsync(long montantOperationCentimes)
+        {
+            try
+            {
+                if (!_user.EstConnecte || _user.Profil is null || !_user.Profil.ArrondiEpargneActif) return 0L;
+                var pas = _user.Profil.ArrondiEpargnePas;
+                if (pas <= 0 || montantOperationCentimes <= 0) return 0L;
+                var reste = montantOperationCentimes % pas;
+                if (reste == 0) return 0L;
+                var exces = pas - reste;
+
+                await using var ctx = await _factory.CreateDbContextAsync();
+                await using var tx = await ctx.Database.BeginTransactionAsync();
+                var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
+                if (u == null || u.Solde < exces) return 0L;
+
+                var poche = await ctx.SavingsPockets
+                    .FirstOrDefaultAsync(p => p.UserId == u.Id && p.EstPocheArrondi);
+                if (poche == null)
+                {
+                    poche = new SavingsPocket
+                    {
+                        UserId = u.Id,
+                        Objectif = ObjectifPocheArrondi,
+                        EstPocheArrondi = true,
+                        // Cible symbolique (500 DH) pour que l'anneau de progression
+                        // vive ; ajustable/cassable comme n'importe quelle poche.
+                        MontantCible = 50_000L,
+                        Cible = DateTime.UtcNow.AddYears(1)
+                    };
+                    ctx.SavingsPockets.Add(poche);
+                }
+
+                u.Solde -= exces;
+                poche.MontantActuel += exces;
+                ctx.Transactions.Add(new Transaction
+                {
+                    UserId = u.Id,
+                    Type = "ÉPARGNE",
+                    Montant = exces,
+                    SoldeApres = u.Solde,
+                    Libelle = "Arrondi épargne",
+                    Motif = $"Arrondi automatique ({montantOperationCentimes.ToDh()} → multiple de {pas.ToDh()})"
+                });
+                await ctx.SaveChangesAsync();
+                await tx.CommitAsync();
+                _user.Profil.Solde = u.Solde;
+                // Pas de notification par arrondi (une par opération = spam) : la trace
+                // vit dans l'historique des transactions.
+                _logger.LogInformation("Arrondi épargne de {Exces} appliqué pour {Email}",
+                    exces.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
+                return exces;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Arrondi épargne ignoré (l'opération principale n'est pas affectée)");
+                return 0L;
+            }
+        }
+
         public async Task<List<TuteurPocketView>> GetPocketsForTuteurAsync()
         {
             await using var ctx = await _factory.CreateDbContextAsync();

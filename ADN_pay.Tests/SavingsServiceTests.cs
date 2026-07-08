@@ -130,6 +130,87 @@ public class SavingsServiceTests : IDisposable
         Assert.False(result);
     }
 
+    // ─────────────────────────── Arrondi épargne (opt-in) ───────────────────────────
+
+    [Fact]
+    public async Task Arrondi_Desactive_NeFaitRien()
+    {
+        var exces = await _service.AppliquerArrondiAsync(4_730L); // 47,30 DH
+
+        Assert.Equal(0L, exces);
+        Assert.Equal(100_000L, GetSolde(1));
+        Assert.Equal(0, PocketCount());
+    }
+
+    [Fact]
+    public async Task Arrondi_MontantDejaRond_NeFaitRien()
+    {
+        await _service.SetArrondiEpargneAsync(true, 500L); // pas de 5 DH
+
+        var exces = await _service.AppliquerArrondiAsync(5_000L); // 50 DH pile
+
+        Assert.Equal(0L, exces);
+        Assert.Equal(0, PocketCount());
+    }
+
+    [Fact]
+    public async Task Arrondi_CreeLaPocheSpecialeEtCrediteLExces()
+    {
+        await _service.SetArrondiEpargneAsync(true, 500L);
+
+        var exces = await _service.AppliquerArrondiAsync(4_730L); // 47,30 → 50 DH
+
+        Assert.Equal(270L, exces); // 2,70 DH
+        Assert.Equal(99_730L, GetSolde(1));
+        var poche = FirstPocket();
+        Assert.NotNull(poche);
+        Assert.True(poche!.EstPocheArrondi);
+        Assert.Equal(SavingsService.ObjectifPocheArrondi, poche.Objectif);
+        Assert.Equal(270L, poche.MontantActuel);
+        _db.ChangeTracker.Clear();
+        var tx = Assert.Single(_db.Transactions.Where(t => t.UserId == 1 && t.Libelle == "Arrondi épargne").ToList());
+        Assert.Equal("ÉPARGNE", tx.Type);
+        Assert.Equal(270L, tx.Montant);
+    }
+
+    [Fact]
+    public async Task Arrondi_Cumule_ReutiliseLaMemePoche()
+    {
+        await _service.SetArrondiEpargneAsync(true, 500L);
+
+        await _service.AppliquerArrondiAsync(4_730L);  // excès 270
+        await _service.AppliquerArrondiAsync(12_320L); // 123,20 → 125 DH : excès 180
+
+        Assert.Equal(1, PocketCount()); // une seule poche arrondi
+        Assert.Equal(450L, FirstPocket()!.MontantActuel);
+        Assert.Equal(99_550L, GetSolde(1));
+    }
+
+    [Fact]
+    public async Task Arrondi_SoldeInsuffisantPourLExces_SkipSansErreur()
+    {
+        await _service.SetArrondiEpargneAsync(true, 500L);
+        var u = _db.UserProfiles.Find(1)!;
+        u.Solde = 50L; // 0,50 DH restants après l'opération principale
+        _db.SaveChanges();
+
+        var exces = await _service.AppliquerArrondiAsync(4_730L); // excès requis : 270
+
+        Assert.Equal(0L, exces);
+        Assert.Equal(50L, GetSolde(1)); // rien débité
+        Assert.Equal(0, PocketCount());
+    }
+
+    [Fact]
+    public async Task SetArrondi_PasInvalide_Refuse()
+    {
+        var (ok, _) = await _service.SetArrondiEpargneAsync(true, 300L); // ni 1, ni 5, ni 10 DH
+
+        Assert.False(ok);
+        _db.ChangeTracker.Clear();
+        Assert.False(_db.UserProfiles.Find(1)!.ArrondiEpargneActif);
+    }
+
     public void Dispose()
     {
         _db.Dispose();

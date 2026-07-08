@@ -130,6 +130,12 @@ namespace ADN_pay.Models
         // Vide = design par défaut. Déblocage cumulatif selon le statut (validé serveur).
         public string CarteDesign { get; set; } = "";
 
+        // --- ARRONDI ÉPARGNE (opt-in) ---
+        // Chaque virement/retrait instant est arrondi au multiple supérieur de
+        // ArrondiEpargnePas ; l'excès part dans la poche spéciale (EstPocheArrondi).
+        public bool ArrondiEpargneActif { get; set; } = false;
+        public long ArrondiEpargnePas { get; set; } = 500L; // centimes (ADR-001) : 5 DH
+
         // --- RELATIONS ---
         public List<Transaction> Transactions { get; set; } = new();
         public List<SavingsPocket> SavingsPockets { get; set; } = new();

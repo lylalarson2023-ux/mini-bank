@@ -67,8 +67,8 @@ namespace ADN_pay.Services
 
         // --- RETRAIT MOBILE MONEY (canal Alex, avance de cash) ---
         public Task<(bool Success, string Message, MobileMoneyWithdrawalRequest? Demande)> CreerDemandeRetraitMobileMoneyAsync(
-            long montantCentimes, string numeroBeneficiaire, string nomBeneficiaire, decimal? tauxConversion = null)
-            => _mmWithdrawal.CreerDemandeAsync(montantCentimes, numeroBeneficiaire, nomBeneficiaire, tauxConversion);
+            long montantCentimes, string numeroBeneficiaire, string nomBeneficiaire, decimal? tauxDhParFcfa = null, decimal? margePct = null)
+            => _mmWithdrawal.CreerDemandeAsync(montantCentimes, numeroBeneficiaire, nomBeneficiaire, tauxDhParFcfa, margePct);
         public Task<List<MobileMoneyWithdrawalRequest>> GetMesDemandesRetraitMobileMoneyAsync(int max = 10)
             => _mmWithdrawal.GetMesDemandesAsync(max);
         public Task<bool> AnnulerDemandeRetraitMobileMoneyAsync(int demandeId) => _mmWithdrawal.AnnulerDemandeAsync(demandeId);
@@ -99,6 +99,8 @@ namespace ADN_pay.Services
             => _savings.BoosterPocheCommeTuteurAsync(pocketId, montantCentimes);
         public Task<List<TuteurPocketView>> GetPocketsForTuteurAsync() => _savings.GetPocketsForTuteurAsync();
         public Task<long> GetTotalInvestiThisMonthAsync() => _savings.GetTotalInvestiThisMonthAsync();
+        public Task<(bool Success, string Message)> SetArrondiEpargneAsync(bool actif, long pasCentimes)
+            => _savings.SetArrondiEpargneAsync(actif, pasCentimes);
         public Task<List<Transaction>> GetRecentActivityForTuteurAsync(int count = 20) => _savings.GetRecentActivityForTuteurAsync(count);
 
         // --- CRÉDIT --- ADR-001 : montant en centimes (long)

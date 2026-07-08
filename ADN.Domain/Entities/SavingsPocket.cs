@@ -17,6 +17,10 @@ namespace ADN_pay.Models
 
         public bool TuteurVisible { get; set; } = false;
 
+        // Poche alimentée automatiquement par l'arrondi des transactions (une seule
+        // par utilisateur, auto-créée au premier arrondi — cf. SavingsService).
+        public bool EstPocheArrondi { get; set; } = false;
+
         // ADR-001 : centimes (long)
         public long MontantActuel { get; set; }
         public long MontantCible { get; set; }

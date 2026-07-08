@@ -1688,6 +1688,15 @@ h1, h2, h3, h4, h5, h6,
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+/* Poche alimentée automatiquement par l'arrondi des transactions */
+.pocket-badge.auto {
+  background: rgba(0, 153, 204, 0.12);
+  color: var(--blue-500);
+  border: 1px solid rgba(0, 153, 204, 0.3);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 .epargne-summary {
   display: flex;
   gap: 12px;

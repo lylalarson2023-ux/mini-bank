@@ -209,6 +209,10 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Employeur TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Secteur TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN TrancheRevenu TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Arrondi épargne (idempotent — l'app web les crée aussi).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN ArrondiEpargneActif INTEGER NOT NULL DEFAULT 0"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN ArrondiEpargnePas INTEGER NOT NULL DEFAULT 500"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN EstPocheArrondi INTEGER NOT NULL DEFAULT 0"); } catch { }
     // Idempotence des dépôts externes (Stripe/Flutterwave/virement) — l'app web la crée aussi.
     try { db.Database.ExecuteSqlRaw("ALTER TABLE Transactions ADD COLUMN ReferenceExterne TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_Transactions_ReferenceExterne ON Transactions(ReferenceExterne) WHERE ReferenceExterne IS NOT NULL"); } catch { }

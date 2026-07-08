@@ -103,10 +103,13 @@ public class MobileMoneyWithdrawalServiceTests : IDisposable
     [Fact]
     public async Task Creer_FigeLaConversionEnFcfa()
     {
-        var (ok, _, demande) = await _service.CreerDemandeAsync(10_000L, "074000000", "Proche", tauxConversion: 60m); // 100 DH
+        // 177,62 DH débités, taux 0,0166 DH/FCFA, marge 7% ajoutée au débité :
+        // taux effectif 0,017762 DH/FCFA → 177,62 / 0,017762 = 10 000 FCFA reçus.
+        var (ok, _, demande) = await _service.CreerDemandeAsync(
+            17_762L, "074000000", "Proche", tauxDhParFcfa: 0.0166m, margePct: 0.07m);
 
         Assert.True(ok);
-        Assert.Equal(6_000L, demande!.MontantAEnvoyer); // 100 × 60 = 6 000 FCFA
+        Assert.Equal(10_000L, demande!.MontantAEnvoyer);
         Assert.Equal("FCFA", demande.DeviseEnvoi);
     }
 

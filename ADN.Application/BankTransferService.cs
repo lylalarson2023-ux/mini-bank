@@ -45,10 +45,12 @@ namespace ADN_pay.Services
 
         // ─────────────────────────── Côté client ───────────────────────────
 
-        // tauxConversion : pour le Mobile Money, taux FCFA par DH — le montant à
-        // envoyer est figé sur la demande (arrondi au FCFA supérieur).
+        // tauxDhParFcfa/margePct : tarification du corridor Gabon->Maroc (Mobile
+        // Money uniquement) — voir TransfertInternationalPricing. Le montant à
+        // envoyer par le proche est figé sur la demande.
         public async Task<(bool Success, string Message, BankTransferRequest? Demande)> CreerDemandeAsync(
-            long montantCentimes, string canal = BankTransferRequest.CanalVirement, decimal? tauxConversion = null)
+            long montantCentimes, string canal = BankTransferRequest.CanalVirement,
+            decimal? tauxDhParFcfa = null, decimal? margePct = null)
         {
             if (!_user.EstConnecte || _user.Profil is null)
                 return (false, "Session expirée. Reconnectez-vous.", null);
@@ -90,10 +92,10 @@ namespace ADN_pay.Services
                 Canal = canal,
                 Reference = await GenererReferenceUniqueAsync(ctx),
             };
-            if (canal == BankTransferRequest.CanalMobileMoney && tauxConversion is > 0)
+            if (canal == BankTransferRequest.CanalMobileMoney && tauxDhParFcfa is > 0)
             {
-                // Le FCFA n'a pas de décimales : arrondi supérieur, jamais moins que l'équivalent.
-                demande.MontantConverti = (long)Math.Ceiling(montantCentimes / 100m * tauxConversion.Value);
+                demande.MontantConverti = TransfertInternationalPricing.DepotFcfaAEnvoyer(
+                    montantCentimes, tauxDhParFcfa.Value, margePct ?? 0m);
                 demande.DeviseConvertie = "FCFA";
             }
             ctx.BankTransferRequests.Add(demande);

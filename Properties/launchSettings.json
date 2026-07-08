@@ -15,8 +15,7 @@
           "MOBILEMONEY_NUMERO": "000 00 00 00",
           "MOBILEMONEY_OPERATEUR": "Opérateur de test (dev)",
           "MOBILEMONEY_TITULAIRE": "Compte de test (dev)",
-          "MOBILEMONEY_CODE_AGENT": "AG-TEST-000",
-          "MOBILEMONEY_XAF_PAR_DH": "60"
+          "MOBILEMONEY_CODE_AGENT": "AG-TEST-000"
         }
       },
       "http": {

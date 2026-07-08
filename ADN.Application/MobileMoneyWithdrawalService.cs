@@ -40,10 +40,12 @@ namespace ADN_pay.Services
 
         // ─────────────────────────── Côté client ───────────────────────────
 
-        // tauxConversion : FCFA par DH — le montant à envoyer par Alex est figé sur
-        // la demande (arrondi au FCFA supérieur, jamais moins que l'équivalent).
+        // tauxDhParFcfa/margePct : tarification du corridor Maroc->Gabon — voir
+        // TransfertInternationalPricing. Le montant envoyé par Alex au
+        // bénéficiaire est figé sur la demande.
         public async Task<(bool Success, string Message, MobileMoneyWithdrawalRequest? Demande)> CreerDemandeAsync(
-            long montantCentimes, string numeroBeneficiaire, string nomBeneficiaire, decimal? tauxConversion = null)
+            long montantCentimes, string numeroBeneficiaire, string nomBeneficiaire,
+            decimal? tauxDhParFcfa = null, decimal? margePct = null)
         {
             if (!_user.EstConnecte || _user.Profil is null)
                 return (false, "Session expirée. Reconnectez-vous.", null);
@@ -89,9 +91,10 @@ namespace ADN_pay.Services
                 NomBeneficiaire = nomBeneficiaire?.Trim() ?? "",
                 Reference = await GenererReferenceUniqueAsync(ctx),
             };
-            if (tauxConversion is > 0)
+            if (tauxDhParFcfa is > 0)
             {
-                demande.MontantAEnvoyer = (long)Math.Ceiling(montantCentimes / 100m * tauxConversion.Value);
+                demande.MontantAEnvoyer = TransfertInternationalPricing.RetraitFcfaARecevoir(
+                    montantCentimes, tauxDhParFcfa.Value, margePct ?? 0m);
                 demande.DeviseEnvoi = "FCFA";
             }
             ctx.MobileMoneyWithdrawalRequests.Add(demande);

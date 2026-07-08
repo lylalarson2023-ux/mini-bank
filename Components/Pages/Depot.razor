@@ -8,6 +8,7 @@
 @inject NotificationService Notif
 @inject NavigationManager Nav
 @inject IConfiguration Config
+@inject IJSRuntime JS
 
 <div class="cyber-panel" style="max-width: 480px;">
     <h3>MODULE DE DÉPÔT</h3>
@@ -172,7 +173,7 @@
     private string? configError;
     private string virRib = "", virBanque = "", virTitulaire = "";
     private string mmNumero = "", mmOperateur = "", mmTitulaire = "";
-    private decimal mmXafParDh;
+    private decimal transfertTaux, transfertMarge;
     private BankTransferRequest? demandeVirement;
     private List<BankTransferRequest> mesDemandes = new();
 
@@ -196,9 +197,8 @@
         mmNumero = Config["MobileMoney:Numero"] ?? "";
         mmOperateur = Config["MobileMoney:Operateur"] ?? "Mobile Money";
         mmTitulaire = Config["MobileMoney:Titulaire"] ?? "";
-        mmXafParDh = decimal.TryParse(Config["MobileMoney:XafParDh"],
-            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var taux) && taux > 0
-            ? taux : 60m;
+        transfertTaux = ParseDecimalInvariant(Config["Transfert:GabonMaroc:Taux"], 0.0156m);
+        transfertMarge = ParseDecimalInvariant(Config["Transfert:GabonMaroc:Marge"], 0.10m);
         mobileMoneyConfigured = !string.IsNullOrEmpty(mmNumero);
 
         if (!stripeConfigured && !virementConfigured && !mobileMoneyConfigured)
@@ -206,6 +206,28 @@
 
         mesDemandes = await Virements.GetMesDemandesAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !mobileMoneyConfigured || selectedMethod is not null) return;
+        // Présélection best-effort : si l'étudiant est détecté au Gabon (ex. de
+        // passage), le Mobile Money est le canal pertinent sur place. Aucun effet
+        // si la géolocalisation est refusée/indisponible — comportement inchangé.
+        try
+        {
+            var pays = await JS.InvokeAsync<string?>("adnGeoloc.detecterPays");
+            if (pays == "GABON")
+            {
+                selectedMethod = "mobilemoney";
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private static decimal ParseDecimalInvariant(string? s, decimal fallback) =>
+        decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0
+            ? v : fallback;
 
     private static string StatutLabel(BankTransferRequest d) => d.Statut switch
     {
@@ -246,7 +268,8 @@
                     ? BankTransferRequest.CanalMobileMoney : BankTransferRequest.CanalVirement;
                 var (ok, message, demande) = await Virements.CreerDemandeAsync(
                     (long)(montant.Value * 100), canal,
-                    canal == BankTransferRequest.CanalMobileMoney ? mmXafParDh : null);
+                    canal == BankTransferRequest.CanalMobileMoney ? transfertTaux : null,
+                    canal == BankTransferRequest.CanalMobileMoney ? transfertMarge : null);
                 if (ok && demande is not null)
                 {
                     demandeVirement = demande;

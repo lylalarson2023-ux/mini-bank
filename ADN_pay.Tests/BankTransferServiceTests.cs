@@ -91,23 +91,26 @@ public class BankTransferServiceTests : IDisposable
     [Fact]
     public async Task CreerMobileMoney_FigeLaConversionEnFcfa()
     {
+        // 140,40 DH voulus, taux 0,0156 DH/FCFA, marge 10% déduite du crédité :
+        // taux effectif 0,01404 DH/FCFA → 140,40 / 0,01404 = 10 000 FCFA à envoyer.
         var (ok, _, demande) = await _service.CreerDemandeAsync(
-            20_000L, BankTransferRequest.CanalMobileMoney, tauxConversion: 60m); // 200 DH
+            14_040L, BankTransferRequest.CanalMobileMoney, tauxDhParFcfa: 0.0156m, margePct: 0.10m);
 
         Assert.True(ok);
         Assert.Equal(BankTransferRequest.CanalMobileMoney, demande!.Canal);
-        Assert.Equal(12_000L, demande.MontantConverti); // 200 × 60 = 12 000 FCFA
+        Assert.Equal(10_000L, demande.MontantConverti);
         Assert.Equal("FCFA", demande.DeviseConvertie);
     }
 
     [Fact]
     public async Task CreerMobileMoney_ArrondiAuFcfaSuperieur()
     {
-        // 50,01 DH × 60 = 3 000,6 → 3 001 FCFA (jamais moins que l'équivalent)
+        // 140,41 DH (1 centime de plus) → 10 000,71... → arrondi à 10 001 FCFA
+        // (jamais moins que l'équivalent exact, protège la marge côté demande).
         var (_, _, demande) = await _service.CreerDemandeAsync(
-            5_001L, BankTransferRequest.CanalMobileMoney, tauxConversion: 60m);
+            14_041L, BankTransferRequest.CanalMobileMoney, tauxDhParFcfa: 0.0156m, margePct: 0.10m);
 
-        Assert.Equal(3_001L, demande!.MontantConverti);
+        Assert.Equal(10_001L, demande!.MontantConverti);
     }
 
     [Fact]

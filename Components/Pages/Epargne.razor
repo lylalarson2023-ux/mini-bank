@@ -50,6 +50,36 @@
         <button class="btn btn-primary" @onclick="CreerPoche" disabled="@isProcessing" style="width: auto;">@(isProcessing ? "Création..." : "Créer l'objectif")</button>
     </div>
 
+    @* ─── ARRONDI AUTOMATIQUE (opt-in) ─── *@
+    <div class="form-section">
+        <h6>Arrondi automatique</h6>
+        <div class="setting-row">
+            <div>
+                <strong style="color: var(--text-primary);">Épargner la petite monnaie de chaque opération</strong>
+                <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                    Vos virements et retraits sont arrondis au multiple supérieur ; la différence part
+                    automatiquement dans la poche « @SavingsService.ObjectifPocheArrondi ».
+                    Ex. avec un pas de 5 DH : un virement de 47,30 DH épargne 2,70 DH.
+                </p>
+            </div>
+            <label class="switch">
+                <input type="checkbox" checked="@arrondiActif" @onchange="ToggleArrondi" />
+                <span class="switch-slider"></span>
+            </label>
+        </div>
+        @if (arrondiActif)
+        {
+            <div class="setting-row">
+                <div><strong style="color: var(--text-primary);">Arrondir au multiple de</strong></div>
+                <select class="form-select" style="width: auto;" @bind="arrondiPas" @bind:after="ChangerPasArrondi">
+                    <option value="100">1 DH</option>
+                    <option value="500">5 DH</option>
+                    <option value="1000">10 DH</option>
+                </select>
+            </div>
+        }
+    </div>
+
     @* ─── STATUT TUTEUR — section retirée avec le module Tuteur (MVP).
        Réintégration : décommenter ce bloc (méthodes ValiderTuteur/RevoquerTuteur intactes).
     <div class="card" style="margin-bottom: 20px;">
@@ -108,7 +138,13 @@
                             <div class="pocket-ring-label">@((int)pct)<span>%</span></div>
                         </div>
                         <div class="pocket-details">
-                            <div class="pocket-name">@p.Objectif.ToUpper()</div>
+                            <div class="pocket-name">
+                                @p.Objectif.ToUpper()
+                                @if (p.EstPocheArrondi)
+                                {
+                                    <span class="pocket-badge auto" title="Alimentée automatiquement par l'arrondi de vos opérations">AUTO</span>
+                                }
+                            </div>
                             <div class="pocket-amount">
                                 @((p.MontantActuel / 100m).ToString("N2")) DH
                                 <span class="pocket-target">/ @((p.MontantCible / 100m).ToString("N2")) DH</span>
@@ -223,10 +259,35 @@
         try { await objectifInputRef.FocusAsync(); } catch { }
     }
 
+    // Arrondi automatique (opt-in)
+    private bool arrondiActif;
+    private long arrondiPas = 500L;
+
     protected override async Task OnInitializedAsync()
     {
         await ChargerPoches();
         emailTuteur = Bank.Profil.TuteurEmail;
+        arrondiActif = Bank.Profil.ArrondiEpargneActif;
+        arrondiPas = Bank.Profil.ArrondiEpargnePas > 0 ? Bank.Profil.ArrondiEpargnePas : 500L;
+    }
+
+    private async Task ToggleArrondi(ChangeEventArgs e)
+    {
+        var actif = e.Value is bool b && b;
+        var (ok, message) = await Bank.SetArrondiEpargneAsync(actif, arrondiPas);
+        if (ok)
+        {
+            arrondiActif = actif;
+            Notif.Notify(message, NotificationType.SUCCESS);
+        }
+        else
+            Notif.Notify(message, NotificationType.ERROR);
+    }
+
+    private async Task ChangerPasArrondi()
+    {
+        var (ok, message) = await Bank.SetArrondiEpargneAsync(arrondiActif, arrondiPas);
+        Notif.Notify(message, ok ? NotificationType.SUCCESS : NotificationType.ERROR);
     }
 
     private async Task ChargerPoches()

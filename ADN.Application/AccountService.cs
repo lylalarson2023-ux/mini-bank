@@ -12,15 +12,17 @@ namespace ADN_pay.Services
         private readonly ILogger<AccountService> _logger;
         private readonly NotificationHistoryService _notifHist;
         private readonly IEmailSender _email;
+        private readonly SavingsService _savings;
 
         public AccountService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AccountService> logger,
-            NotificationHistoryService notifHist, IEmailSender email)
+            NotificationHistoryService notifHist, IEmailSender email, SavingsService savings)
         {
             _factory = factory;
             _user = user;
             _logger = logger;
             _notifHist = notifHist;
             _email = email;
+            _savings = savings;
         }
 
         // ADR-001 : montantCentimes en long
@@ -96,6 +98,11 @@ namespace ADN_pay.Services
 
             _logger.LogInformation("{Type} de {Montant} effectué par {Email}",
                 type, montantCentimes.ToDh(), PiiMasker.MaskEmail(_user.Profil.Email));
+
+            // Arrondi épargne (opt-in, best-effort) : uniquement les sorties immédiates.
+            if (type is "RETRAIT" or "VIREMENT")
+                await _savings.AppliquerArrondiAsync(montantCentimes);
+
             return true;
         }
 
@@ -238,6 +245,9 @@ namespace ADN_pay.Services
 
                 await _notifHist.AddNotificationForUserAsync(recipient.Id,
                     $"Virement reçu de {sender.Email} : {montantCentimes.ToDh()}", "SUCCESS", "VIREMENT");
+
+                // Arrondi épargne (opt-in, best-effort) — après commit du virement.
+                await _savings.AppliquerArrondiAsync(montantCentimes);
 
                 return true;
             }

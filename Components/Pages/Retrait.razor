@@ -4,6 +4,7 @@
 @inject BankService Bank
 @inject NotificationService Notif
 @inject IConfiguration Config
+@inject IJSRuntime JS
 
 @* Page issue de la suppression du module Compte courant (refonte UI) :
    seul le retrait en est extrait, le reste faisait doublon avec le dashboard.
@@ -204,7 +205,8 @@
 
     private bool mobileMoneyConfigured;
     private string mmNumero = "", mmOperateur = "", mmTitulaire = "", mmCodeAgent = "";
-    private decimal mmXafParDh;
+    private decimal transfertTaux, transfertMarge;
+    private bool canalPreselectionne;
 
     private List<Transaction> derniersRetraits = new();
     private MobileMoneyWithdrawalRequest? demandeMobileMoney;
@@ -219,14 +221,36 @@
         mmOperateur = Config["MobileMoney:Operateur"] ?? "Mobile Money";
         mmTitulaire = Config["MobileMoney:Titulaire"] ?? "";
         mmCodeAgent = Config["MobileMoney:CodeAgent"] ?? "";
-        mmXafParDh = decimal.TryParse(Config["MobileMoney:XafParDh"],
-            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var taux) && taux > 0
-            ? taux : 60m;
+        transfertTaux = ParseDecimalInvariant(Config["Transfert:MarocGabon:Taux"], 0.0166m);
+        transfertMarge = ParseDecimalInvariant(Config["Transfert:MarocGabon:Marge"], 0.07m);
         mobileMoneyConfigured = !string.IsNullOrEmpty(mmNumero);
 
         await ChargerRetraits();
         mesDemandesMobileMoney = await Bank.GetMesDemandesRetraitMobileMoneyAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !mobileMoneyConfigured || canalPreselectionne) return;
+        canalPreselectionne = true;
+        // Présélection best-effort : le Mobile Money est le seul canal avec une
+        // contrepartie réelle si l'étudiant est détecté au Gabon (ex. de passage).
+        // Aucun effet si la géolocalisation est refusée/indisponible.
+        try
+        {
+            var pays = await JS.InvokeAsync<string?>("adnGeoloc.detecterPays");
+            if (pays == "GABON")
+            {
+                canal = "mobilemoney";
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private static decimal ParseDecimalInvariant(string? s, decimal fallback) =>
+        decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0
+            ? v : fallback;
 
     private async Task ChargerRetraits()
     {
@@ -267,7 +291,7 @@
         try
         {
             var (ok, message, demande) = await Bank.CreerDemandeRetraitMobileMoneyAsync(
-                montantCentimes, numeroBeneficiaire, nomBeneficiaire, mmXafParDh);
+                montantCentimes, numeroBeneficiaire, nomBeneficiaire, transfertTaux, transfertMarge);
             if (ok && demande is not null)
             {
                 demandeMobileMoney = demande;

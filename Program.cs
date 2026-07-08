@@ -109,12 +109,23 @@ var mmNumero = Environment.GetEnvironmentVariable("MOBILEMONEY_NUMERO");
 var mmOperateur = Environment.GetEnvironmentVariable("MOBILEMONEY_OPERATEUR");
 var mmTitulaire = Environment.GetEnvironmentVariable("MOBILEMONEY_TITULAIRE");
 var mmCodeAgent = Environment.GetEnvironmentVariable("MOBILEMONEY_CODE_AGENT");
-var mmXafParDh = Environment.GetEnvironmentVariable("MOBILEMONEY_XAF_PAR_DH");
 if (!string.IsNullOrEmpty(mmNumero)) builder.Configuration["MobileMoney:Numero"] = mmNumero;
 if (!string.IsNullOrEmpty(mmOperateur)) builder.Configuration["MobileMoney:Operateur"] = mmOperateur;
 if (!string.IsNullOrEmpty(mmTitulaire)) builder.Configuration["MobileMoney:Titulaire"] = mmTitulaire;
 if (!string.IsNullOrEmpty(mmCodeAgent)) builder.Configuration["MobileMoney:CodeAgent"] = mmCodeAgent;
-if (!string.IsNullOrEmpty(mmXafParDh)) builder.Configuration["MobileMoney:XafParDh"] = mmXafParDh;
+
+// --- TARIFICATION TRANSFERT INTERNATIONAL GABON<->MAROC (TransfertInternationalPricing) ---
+// Taux = DH par 1 FCFA, marge = fraction. Dépôt (Gabon->Maroc) : marge déduite du
+// crédit. Retrait (Maroc->Gabon) : marge ajoutée au débit. Défauts = valeurs actées
+// (non sensibles, pas de coordonnées personnelles) ; ajustables sans redéploiement.
+var transfertGaboMarocTaux = Environment.GetEnvironmentVariable("TRANSFERT_GABON_MAROC_TAUX");
+var transfertGaboMarocMarge = Environment.GetEnvironmentVariable("TRANSFERT_GABON_MAROC_MARGE");
+var transfertMarocGabonTaux = Environment.GetEnvironmentVariable("TRANSFERT_MAROC_GABON_TAUX");
+var transfertMarocGabonMarge = Environment.GetEnvironmentVariable("TRANSFERT_MAROC_GABON_MARGE");
+builder.Configuration["Transfert:GabonMaroc:Taux"] = string.IsNullOrEmpty(transfertGaboMarocTaux) ? "0.0156" : transfertGaboMarocTaux;
+builder.Configuration["Transfert:GabonMaroc:Marge"] = string.IsNullOrEmpty(transfertGaboMarocMarge) ? "0.10" : transfertGaboMarocMarge;
+builder.Configuration["Transfert:MarocGabon:Taux"] = string.IsNullOrEmpty(transfertMarocGabonTaux) ? "0.0166" : transfertMarocGabonTaux;
+builder.Configuration["Transfert:MarocGabon:Marge"] = string.IsNullOrEmpty(transfertMarocGabonMarge) ? "0.07" : transfertMarocGabonMarge;
 
 // --- ALERTING (ADR-007) ---
 builder.Services.AddHttpClient<IAlertingService, AlertingService>();
@@ -235,6 +246,10 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Employeur TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Secteur TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN TrancheRevenu TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Arrondi épargne (opt-in) : pas en centimes, poche spéciale marquée.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN ArrondiEpargneActif INTEGER NOT NULL DEFAULT 0"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN ArrondiEpargnePas INTEGER NOT NULL DEFAULT 500"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN EstPocheArrondi INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("UPDATE UserProfiles SET Role = '' WHERE Role IS NULL"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE SavingsPockets ADD COLUMN TuteurVisible INTEGER NOT NULL DEFAULT 0"); } catch { }
     // Idempotence des dépôts externes (Stripe/Flutterwave/virement) : référence unique.

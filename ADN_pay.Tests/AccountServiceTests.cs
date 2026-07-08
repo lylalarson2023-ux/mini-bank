@@ -31,7 +31,8 @@ public class AccountServiceTests : IDisposable
         _user = new UserContext();
         var notifHist = new NotificationHistoryService(_factory, _user);
         var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
-        _service = new AccountService(_factory, _user, NullLogger<AccountService>.Instance, notifHist, email);
+        var savings = new SavingsService(_factory, _user, NullLogger<SavingsService>.Instance, notifHist);
+        _service = new AccountService(_factory, _user, NullLogger<AccountService>.Instance, notifHist, email, savings);
 
         // Seed : 2 users — montants en centimes (ADR-001)
         _db.UserProfiles.AddRange(
@@ -178,6 +179,60 @@ public class AccountServiceTests : IDisposable
         Assert.True(okPrem);
         Assert.True(okVip);
         Assert.Equal("noir-or", GetCarteDesign(1)); // dernier appliqué
+    }
+
+    // --- ARRONDI ÉPARGNE (hooks virement + retrait) ---
+
+    [Fact]
+    public async Task EffectuerVirement_AvecArrondiActif_EpargneLExcesSansToucherLePlafond()
+    {
+        // Le réglage vit sur le profil de session (persisté par SetArrondiEpargneAsync
+        // en usage réel) — on l'active directement ici.
+        _user.Profil.ArrondiEpargneActif = true;
+        _user.Profil.ArrondiEpargnePas = 500L; // 5 DH
+
+        var ok = await _service.EffectuerVirementAsync("recipient@test.ma", 4_730L, "Test"); // 47,30 DH
+
+        Assert.True(ok);
+        // 500 - 47,30 (virement) - 2,70 (arrondi) = 450,00 DH
+        Assert.Equal(45_000L, GetSolde(1));
+        Assert.Equal(24_730L, GetSolde(2)); // le destinataire reçoit le montant exact
+        _db.ChangeTracker.Clear();
+        var poche = Assert.Single(_db.SavingsPockets.Where(p => p.UserId == 1).ToList());
+        Assert.True(poche.EstPocheArrondi);
+        Assert.Equal(270L, poche.MontantActuel);
+        // L'arrondi est une épargne interne : il ne consomme PAS le plafond de virement.
+        Assert.Equal(4_730L, _db.UserProfiles.Find(1)!.MontantJournalierUtilise);
+    }
+
+    [Fact]
+    public async Task Retrait_AvecArrondiActif_EpargneLExces()
+    {
+        _user.Profil.ArrondiEpargneActif = true;
+        _user.Profil.ArrondiEpargnePas = 1_000L; // 10 DH
+
+        // 42,30 DH : discriminant (pas de 10 → 50 DH, excès 7,70 ; un pas de 5 aurait donné 2,70)
+        var ok = await _service.ExecuterOperationAsync(4_230L, "Test", "RETRAIT");
+
+        Assert.True(ok);
+        // 500 - 42,30 (retrait) - 7,70 (arrondi vers 50) = 450,00 DH
+        Assert.Equal(45_000L, GetSolde(1));
+        _db.ChangeTracker.Clear();
+        Assert.Equal(770L, _db.SavingsPockets.Single(p => p.UserId == 1).MontantActuel);
+    }
+
+    [Fact]
+    public async Task Depot_ArrondiActif_PasDArrondiSurLesEntrees()
+    {
+        _user.Profil.ArrondiEpargneActif = true;
+        _user.Profil.ArrondiEpargnePas = 500L;
+
+        var ok = await _service.ExecuterOperationAsync(4_730L, "Test dépôt", "DÉPÔT");
+
+        Assert.True(ok);
+        Assert.Equal(54_730L, GetSolde(1)); // crédité tel quel, aucun arrondi
+        _db.ChangeTracker.Clear();
+        Assert.Empty(_db.SavingsPockets.ToList());
     }
 
     // --- KYC PREMIUM ADAPTÉ AU STATUT (Travailleur/Étudiant) ---
