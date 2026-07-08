@@ -109,10 +109,14 @@ var mmNumero = Environment.GetEnvironmentVariable("MOBILEMONEY_NUMERO");
 var mmOperateur = Environment.GetEnvironmentVariable("MOBILEMONEY_OPERATEUR");
 var mmTitulaire = Environment.GetEnvironmentVariable("MOBILEMONEY_TITULAIRE");
 var mmCodeAgent = Environment.GetEnvironmentVariable("MOBILEMONEY_CODE_AGENT");
-if (!string.IsNullOrEmpty(mmNumero)) builder.Configuration["MobileMoney:Numero"] = mmNumero;
-if (!string.IsNullOrEmpty(mmOperateur)) builder.Configuration["MobileMoney:Operateur"] = mmOperateur;
-if (!string.IsNullOrEmpty(mmTitulaire)) builder.Configuration["MobileMoney:Titulaire"] = mmTitulaire;
-if (!string.IsNullOrEmpty(mmCodeAgent)) builder.Configuration["MobileMoney:CodeAgent"] = mmCodeAgent;
+// Coordonnées AFFICHÉES aux clients pour envoyer/recevoir via le canal Mobile Money
+// d'Alex : infos opérationnelles publiques (comme un RIB), PAS des secrets. Valeurs
+// réelles par défaut → toujours visibles ; surchargeables par variable d'environnement
+// si le numéro/l'agent change (ex. MOBILEMONEY_NUMERO).
+builder.Configuration["MobileMoney:Numero"] = string.IsNullOrEmpty(mmNumero) ? "074016270" : mmNumero;
+builder.Configuration["MobileMoney:Operateur"] = string.IsNullOrEmpty(mmOperateur) ? "Airtel Money" : mmOperateur;
+builder.Configuration["MobileMoney:Titulaire"] = string.IsNullOrEmpty(mmTitulaire) ? "Kah Joel ROMUALI" : mmTitulaire;
+builder.Configuration["MobileMoney:CodeAgent"] = string.IsNullOrEmpty(mmCodeAgent) ? "A29417" : mmCodeAgent;
 
 // --- TARIFICATION TRANSFERT INTERNATIONAL GABON<->MAROC (TransfertInternationalPricing) ---
 // Taux = DH par 1 FCFA, marge = fraction. Dépôt (Gabon->Maroc) : marge déduite du

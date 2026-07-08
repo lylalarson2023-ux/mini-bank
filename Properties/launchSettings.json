@@ -11,11 +11,7 @@
           "ADN_DB_PATH": "C:\\PROJETS\\MbankWeb\\ADN_pay\\AdnPayData.db",
           "VIREMENT_RIB": "007 810 0001234567890123 45",
           "VIREMENT_BANQUE": "Banque de test (dev)",
-          "VIREMENT_TITULAIRE": "Compte de test (dev)",
-          "MOBILEMONEY_NUMERO": "000 00 00 00",
-          "MOBILEMONEY_OPERATEUR": "Opérateur de test (dev)",
-          "MOBILEMONEY_TITULAIRE": "Compte de test (dev)",
-          "MOBILEMONEY_CODE_AGENT": "AG-TEST-000"
+          "VIREMENT_TITULAIRE": "Compte de test (dev)"
         }
       },
       "http": {

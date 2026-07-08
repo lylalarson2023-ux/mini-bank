@@ -35,6 +35,10 @@
                     <div>Opérateur : <strong>@mmOperateur</strong></div>
                     <div>Numéro : <strong style="letter-spacing:1px">@mmNumero</strong></div>
                     <div>Titulaire : <strong>@mmTitulaire</strong></div>
+                    @if (!string.IsNullOrEmpty(mmCodeAgent))
+                    {
+                        <div>Code agent : <strong>@mmCodeAgent</strong></div>
+                    }
                 </div>
                 <ol style="margin-top: 14px; font-size: .8rem; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
                     <li>Envoyez le montant exact (<strong>@demandeVirement.MontantConverti @demandeVirement.DeviseConvertie</strong>) au numéro ci-dessus.</li>
@@ -172,7 +176,7 @@
     private bool mobileMoneyConfigured;
     private string? configError;
     private string virRib = "", virBanque = "", virTitulaire = "";
-    private string mmNumero = "", mmOperateur = "", mmTitulaire = "";
+    private string mmNumero = "", mmOperateur = "", mmTitulaire = "", mmCodeAgent = "";
     private decimal transfertTaux, transfertMarge;
     private BankTransferRequest? demandeVirement;
     private List<BankTransferRequest> mesDemandes = new();
@@ -197,6 +201,7 @@
         mmNumero = Config["MobileMoney:Numero"] ?? "";
         mmOperateur = Config["MobileMoney:Operateur"] ?? "Mobile Money";
         mmTitulaire = Config["MobileMoney:Titulaire"] ?? "";
+        mmCodeAgent = Config["MobileMoney:CodeAgent"] ?? "";
         transfertTaux = ParseDecimalInvariant(Config["Transfert:GabonMaroc:Taux"], 0.0156m);
         transfertMarge = ParseDecimalInvariant(Config["Transfert:GabonMaroc:Marge"], 0.10m);
         mobileMoneyConfigured = !string.IsNullOrEmpty(mmNumero);
