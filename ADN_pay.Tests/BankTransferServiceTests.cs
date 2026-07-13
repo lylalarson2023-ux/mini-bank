@@ -35,7 +35,8 @@ public class BankTransferServiceTests : IDisposable
             Profil = new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test" }
         };
         var notifHist = new NotificationHistoryService(factory, _user);
-        var deposits = new ExternalDepositService(factory, notifHist, NullLogger<ExternalDepositService>.Instance);
+        var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
+        var deposits = new ExternalDepositService(factory, notifHist, email, NullLogger<ExternalDepositService>.Instance);
         _service = new BankTransferService(factory, _user, deposits, notifHist, NullLogger<BankTransferService>.Instance);
 
         _db.UserProfiles.Add(new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test", Solde = 10_000L }); // 100 DH

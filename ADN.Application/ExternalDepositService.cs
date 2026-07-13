@@ -17,15 +17,18 @@ namespace ADN_pay.Services
     {
         private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly NotificationHistoryService _notifHist;
+        private readonly IEmailSender _email;
         private readonly ILogger<ExternalDepositService> _logger;
 
         public ExternalDepositService(
             IDbContextFactory<BankDbContext> factory,
             NotificationHistoryService notifHist,
+            IEmailSender email,
             ILogger<ExternalDepositService> logger)
         {
             _factory = factory;
             _notifHist = notifHist;
+            _email = email;
             _logger = logger;
         }
 
@@ -82,8 +85,25 @@ namespace ADN_pay.Services
             }
 
             if (user.NotifDepot)
+            {
                 await _notifHist.AddNotificationForUserAsync(userId,
                     $"Dépôt de {montantCentimes.ToDh()} reçu — {motif}", "SUCCESS", "DÉPÔT");
+                // E-mail de marque (best-effort : n'affecte jamais le crédit déjà commis).
+                try
+                {
+                    var prenom = EmailTemplate.Escape(user.Prenom);
+                    var html = EmailTemplate.Wrap(
+                        "Dépôt crédité sur votre compte",
+                        EmailTemplate.Paragraphe($"Bonjour{(string.IsNullOrWhiteSpace(prenom) ? "" : " " + prenom)},")
+                        + EmailTemplate.Paragraphe($"Votre compte ADN_pay a été crédité de <strong>{montantCentimes.ToDh()}</strong>.")
+                        + EmailTemplate.Paragraphe($"Motif : {EmailTemplate.Escape(motif)}")
+                        + EmailTemplate.Note($"Nouveau solde : {user.Solde.ToDh()}."),
+                        preheader: $"Dépôt de {montantCentimes.ToDh()} crédité sur votre compte ADN_pay.");
+                    await _email.SendAsync(user.Email, "ADN_pay — Dépôt crédité", html,
+                        $"Votre compte ADN_pay a été crédité de {montantCentimes.ToDh()} ({motif}).");
+                }
+                catch (Exception exMail) { _logger.LogWarning(exMail, "E-mail de dépôt non envoyé (non bloquant)."); }
+            }
 
             _logger.LogInformation("Dépôt externe de {Montant} crédité sur le compte de {Email} — ref={Reference}",
                 montantCentimes.ToDh(), PiiMasker.MaskEmail(user.Email), reference);

@@ -36,7 +36,8 @@ public class MobileMoneyWithdrawalServiceTests : IDisposable
             Profil = new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test", Solde = 20_000L } // 200 DH
         };
         var notifHist = new NotificationHistoryService(factory, _user);
-        _service = new MobileMoneyWithdrawalService(factory, _user, notifHist, NullLogger<MobileMoneyWithdrawalService>.Instance);
+        var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
+        _service = new MobileMoneyWithdrawalService(factory, _user, notifHist, email, NullLogger<MobileMoneyWithdrawalService>.Instance);
 
         _db.UserProfiles.Add(new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test", Solde = 20_000L }); // 200 DH
         _db.SaveChanges();

@@ -13,18 +13,20 @@ namespace ADN_pay.Services
         private readonly UserContext _user;
         private readonly ILogger<AdminService> _logger;
         private readonly NotificationHistoryService _notifHist;
+        private readonly IEmailSender _email;
 
         // Fenêtre anti-double-clic / double-soumission pour les dépôts administratifs (secondes).
         // Un dépôt identique (même compte, même montant) déjà enregistré dans cette fenêtre est
         // considéré comme un doublon et ignoré, pour éviter de créditer deux fois.
         private const int DepotDoublonFenetreSecondes = 10;
 
-        public AdminService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AdminService> logger, NotificationHistoryService notifHist)
+        public AdminService(IDbContextFactory<BankDbContext> factory, UserContext user, ILogger<AdminService> logger, NotificationHistoryService notifHist, IEmailSender email)
         {
             _factory = factory;
             _user = user;
             _logger = logger;
             _notifHist = notifHist;
+            _email = email;
         }
 
         public async Task<List<UserProfile>> GetDossiersEnAttenteAsync()
@@ -124,6 +126,20 @@ namespace ADN_pay.Services
             await ctx.SaveChangesAsync();
             await _notifHist.AddNotificationForUserAsync(u.Id,
                 "Félicitations ! Votre dossier KYC a été validé. Vous êtes désormais Premium.", "SUCCESS", "KYC");
+            try
+            {
+                var prenom = EmailTemplate.Escape(u.Prenom);
+                var html = EmailTemplate.Wrap(
+                    "Votre compte est désormais Premium 🎉",
+                    EmailTemplate.Paragraphe($"Bonjour{(string.IsNullOrWhiteSpace(prenom) ? "" : " " + prenom)},")
+                    + EmailTemplate.Paragraphe("Bonne nouvelle : votre dossier KYC a été <strong>validé</strong>. Votre compte ADN_pay passe au statut <strong>Premium</strong>.")
+                    + EmailTemplate.Paragraphe("Vous bénéficiez désormais de plafonds relevés, de virements gratuits, de nouveaux designs de carte et des avantages Premium.")
+                    + EmailTemplate.Bouton("Découvrir mes avantages", "https://adnpay.net/profil"),
+                    preheader: "Votre dossier KYC est validé — vous êtes Premium.");
+                await _email.SendAsync(u.Email, "ADN_pay — Votre compte est passé Premium", html,
+                    "Votre dossier KYC a été validé : votre compte ADN_pay est désormais Premium.");
+            }
+            catch (Exception exMail) { _logger.LogWarning(exMail, "E-mail d'approbation KYC non envoyé (non bloquant)."); }
             _logger.LogInformation("Premium approuvé pour {Email} par admin {AdminEmail}",
                 PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
@@ -389,6 +405,24 @@ namespace ADN_pay.Services
             await _notifHist.AddNotificationForUserAsync(u.Id,
                 motif != null ? $"Votre dossier KYC a été rejeté : {motif}" : "Votre dossier KYC a été rejeté. 50 DH remboursés.",
                 "ERROR", "KYC");
+            try
+            {
+                var prenom = EmailTemplate.Escape(u.Prenom);
+                var motbefore = string.IsNullOrWhiteSpace(motif)
+                    ? EmailTemplate.Paragraphe("Votre dossier KYC n'a pas pu être validé.")
+                    : EmailTemplate.Paragraphe($"Votre dossier KYC n'a pas pu être validé pour la raison suivante :")
+                      + EmailTemplate.Paragraphe($"<em>{EmailTemplate.Escape(motif)}</em>");
+                var html = EmailTemplate.Wrap(
+                    "Votre dossier KYC n'a pas été validé",
+                    EmailTemplate.Paragraphe($"Bonjour{(string.IsNullOrWhiteSpace(prenom) ? "" : " " + prenom)},")
+                    + motbefore
+                    + EmailTemplate.Paragraphe("Les <strong>50 DH</strong> de frais de dossier vous ont été remboursés. Vous pouvez corriger et soumettre à nouveau votre dossier depuis votre profil.")
+                    + EmailTemplate.Bouton("Reprendre mon dossier", "https://adnpay.net/profil"),
+                    preheader: "Votre dossier KYC n'a pas été validé — 50 DH remboursés.");
+                await _email.SendAsync(u.Email, "ADN_pay — Dossier KYC non validé", html,
+                    (string.IsNullOrWhiteSpace(motif) ? "Votre dossier KYC a été rejeté." : $"Votre dossier KYC a été rejeté : {motif}.") + " 50 DH remboursés.");
+            }
+            catch (Exception exMail) { _logger.LogWarning(exMail, "E-mail de rejet KYC non envoyé (non bloquant)."); }
             _logger.LogInformation("Dossier KYC rejeté pour {Email} par admin {AdminEmail} : {Motif}",
                 PiiMasker.MaskEmail(u.Email), PiiMasker.MaskEmail(_user.Profil.Email), motif);
             return (true, $"Dossier KYC rejeté pour {u.Email}, 50 DH remboursés");

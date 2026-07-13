@@ -36,7 +36,8 @@ public class AdminServiceTests : IDisposable
             Profil = new UserProfile { Id = 99, Email = "admin@test.ma", Nom = "Root", Prenom = "Admin", IsAdmin = true }
         };
         var notifHist = new NotificationHistoryService(_factory, _user);
-        _service = new AdminService(_factory, _user, NullLogger<AdminService>.Instance, notifHist);
+        var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
+        _service = new AdminService(_factory, _user, NullLogger<AdminService>.Instance, notifHist, email);
 
         // Seed : 1 client standard — montants en centimes (ADR-001)
         _db.UserProfiles.Add(new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test", Solde = 10_000L }); // 100 DH

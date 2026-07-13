@@ -31,7 +31,8 @@ public class ExternalDepositServiceTests : IDisposable
         var factory = new TestDbContextFactory(options);
         var user = new UserContext(); // service indépendant de la session (webhooks)
         var notifHist = new NotificationHistoryService(factory, user);
-        _service = new ExternalDepositService(factory, notifHist, NullLogger<ExternalDepositService>.Instance);
+        var email = new LogEmailSender(NullLogger<LogEmailSender>.Instance);
+        _service = new ExternalDepositService(factory, notifHist, email, NullLogger<ExternalDepositService>.Instance);
 
         // Seed : 1 client — montants en centimes (ADR-001)
         _db.UserProfiles.Add(new UserProfile { Id = 1, Email = "client@test.ma", Nom = "Client", Prenom = "Test", Solde = 10_000L }); // 100 DH

@@ -24,17 +24,20 @@ namespace ADN_pay.Services
         private readonly IDbContextFactory<BankDbContext> _factory;
         private readonly UserContext _user;
         private readonly NotificationHistoryService _notifHist;
+        private readonly IEmailSender _email;
         private readonly ILogger<MobileMoneyWithdrawalService> _logger;
 
         public MobileMoneyWithdrawalService(
             IDbContextFactory<BankDbContext> factory,
             UserContext user,
             NotificationHistoryService notifHist,
+            IEmailSender email,
             ILogger<MobileMoneyWithdrawalService> logger)
         {
             _factory = factory;
             _user = user;
             _notifHist = notifHist;
+            _email = email;
             _logger = logger;
         }
 
@@ -194,6 +197,27 @@ namespace ADN_pay.Services
 
             await _notifHist.AddNotificationForUserAsync(demande.UserId,
                 $"Votre retrait Mobile Money {demande.Reference} a été effectué ({demande.MontantCentimes.ToDh()})", "SUCCESS", "RETRAIT");
+
+            // E-mail de marque (best-effort, respecte la préférence retrait ; n'affecte pas le débit commis).
+            if (u.NotifRetrait)
+            {
+                try
+                {
+                    var recu = demande.MontantAEnvoyer is not null
+                        ? $" Le bénéficiaire ({EmailTemplate.Escape(demande.NumeroBeneficiaire)}) a reçu {demande.MontantAEnvoyer} {EmailTemplate.Escape(demande.DeviseEnvoi ?? "")}."
+                        : "";
+                    var html = EmailTemplate.Wrap(
+                        "Retrait Mobile Money effectué",
+                        EmailTemplate.Paragraphe("Bonjour,")
+                        + EmailTemplate.Paragraphe($"Votre retrait Mobile Money <strong>{demande.Reference}</strong> de <strong>{demande.MontantCentimes.ToDh()}</strong> a été validé et envoyé.{recu}")
+                        + EmailTemplate.Note($"Nouveau solde : {u.Solde.ToDh()}."),
+                        preheader: $"Retrait Mobile Money de {demande.MontantCentimes.ToDh()} effectué.");
+                    await _email.SendAsync(u.Email, "ADN_pay — Retrait Mobile Money effectué", html,
+                        $"Votre retrait Mobile Money de {demande.MontantCentimes.ToDh()} a été effectué (réf {demande.Reference}).");
+                }
+                catch (Exception exMail) { _logger.LogWarning(exMail, "E-mail de retrait non envoyé (non bloquant)."); }
+            }
+
             _logger.LogInformation("Retrait Mobile Money {Reference} validé par {AdminEmail}",
                 demande.Reference, PiiMasker.MaskEmail(_user.Profil.Email));
             return true;
