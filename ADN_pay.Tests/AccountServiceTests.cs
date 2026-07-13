@@ -53,6 +53,11 @@ public class AccountServiceTests : IDisposable
     [Fact]
     public async Task EffectuerVirementAsync_DebiteEnvoyeur_CrediteDestinataire()
     {
+        // PREMIUM : virement gratuit, pour isoler la mécanique débit/crédit du calcul de frais
+        // (testé séparément ci-dessous).
+        _db.UserProfiles.Find(1)!.Statut = UserStatus.PREMIUM;
+        _db.SaveChanges();
+
         var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test"); // 100 DH
 
         Assert.True(result);
@@ -95,6 +100,77 @@ public class AccountServiceTests : IDisposable
 
         Assert.False(result);
         Assert.Equal(50_000L, GetSolde(1)); // inchangé (pas de création d'argent)
+        Assert.Equal(20_000L, GetSolde(2)); // inchangé
+    }
+
+    // --- FRAIS DE VIREMENT (gratuit Premium/VIP, 1% plafonné à 20 DH sinon) ---
+
+    [Fact]
+    public async Task EffectuerVirementAsync_Standard_PreleveUnPourcentDeFrais()
+    {
+        // User 1 = STANDARD (défaut du seed). 100 DH → 1% = 1 DH de frais, EN PLUS du montant.
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test");
+
+        Assert.True(result);
+        Assert.Equal(39_900L, GetSolde(1)); // 500 - 100 (virement) - 1 (frais) = 399 DH
+        Assert.Equal(30_000L, GetSolde(2)); // le destinataire reçoit le montant plein, jamais le frais
+        _db.ChangeTracker.Clear();
+        var tx = _db.Transactions.Single(t => t.UserId == 1 && t.Type == "VIREMENT");
+        Assert.Equal(100L, tx.Frais);
+    }
+
+    [Fact]
+    public async Task EffectuerVirementAsync_Standard_FraisPlafonneA20Dh()
+    {
+        // 3000 DH → 1% = 30 DH, mais le frais reste plafonné à 20 DH pour rester raisonnable.
+        var u = _db.UserProfiles.Find(1)!;
+        u.Solde = 400_000L; // 4000 DH : assez pour couvrir montant + frais plafonné
+        _db.SaveChanges();
+
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 300_000L, "Test"); // 3000 DH
+
+        Assert.True(result);
+        Assert.Equal(98_000L, GetSolde(1)); // 4000 - 3000 - 20 (frais plafonné) = 980 DH
+    }
+
+    [Fact]
+    public async Task EffectuerVirementAsync_Premium_Gratuit()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.PREMIUM;
+        _db.SaveChanges();
+
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test");
+
+        Assert.True(result);
+        Assert.Equal(40_000L, GetSolde(1)); // aucun frais prélevé
+    }
+
+    [Fact]
+    public async Task EffectuerVirementAsync_Vip_Gratuit()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.VIP;
+        _db.SaveChanges();
+
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test");
+
+        Assert.True(result);
+        Assert.Equal(40_000L, GetSolde(1)); // aucun frais prélevé
+    }
+
+    [Fact]
+    public async Task EffectuerVirementAsync_Standard_SoldeSuffisantPourMontantSeul_Refuse()
+    {
+        // Solde tout juste égal au montant : insuffisant une fois le frais ajouté.
+        var u = _db.UserProfiles.Find(1)!;
+        u.Solde = 10_000L;
+        _db.SaveChanges();
+
+        var result = await _service.EffectuerVirementAsync("recipient@test.ma", 10_000L, "Test");
+
+        Assert.False(result);
+        Assert.Equal(10_000L, GetSolde(1)); // inchangé
         Assert.Equal(20_000L, GetSolde(2)); // inchangé
     }
 
@@ -186,6 +262,10 @@ public class AccountServiceTests : IDisposable
     [Fact]
     public async Task EffectuerVirement_AvecArrondiActif_EpargneLExcesSansToucherLePlafond()
     {
+        // L'arrondi est réservé au statut VIP (qui est aussi gratuit en frais de
+        // virement — la mécanique d'arrondi reste donc isolée du calcul de frais).
+        _db.UserProfiles.Find(1)!.Statut = UserStatus.VIP;
+        _db.SaveChanges();
         // Le réglage vit sur le profil de session (persisté par SetArrondiEpargneAsync
         // en usage réel) — on l'active directement ici.
         _user.Profil.ArrondiEpargneActif = true;
@@ -208,6 +288,8 @@ public class AccountServiceTests : IDisposable
     [Fact]
     public async Task Retrait_AvecArrondiActif_EpargneLExces()
     {
+        _db.UserProfiles.Find(1)!.Statut = UserStatus.VIP; // arrondi réservé au VIP
+        _db.SaveChanges();
         _user.Profil.ArrondiEpargneActif = true;
         _user.Profil.ArrondiEpargnePas = 1_000L; // 10 DH
 
@@ -224,6 +306,10 @@ public class AccountServiceTests : IDisposable
     [Fact]
     public async Task Depot_ArrondiActif_PasDArrondiSurLesEntrees()
     {
+        // VIP + arrondi actif : prouve que c'est bien le type DÉPÔT qui est exclu
+        // (et non une rétrogradation de statut qui masquerait le résultat).
+        _db.UserProfiles.Find(1)!.Statut = UserStatus.VIP;
+        _db.SaveChanges();
         _user.Profil.ArrondiEpargneActif = true;
         _user.Profil.ArrondiEpargnePas = 500L;
 

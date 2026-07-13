@@ -33,8 +33,9 @@ public class SavingsServiceTests : IDisposable
         _service = new SavingsService(_factory, _user, NullLogger<SavingsService>.Instance, notifHist);
 
         // Seed — montants en centimes (ADR-001)
+        // User1 = VIP : l'arrondi épargne automatique est réservé à ce statut.
         _db.UserProfiles.AddRange(
-            new UserProfile { Id = 1, Email = "user1@test.ma", Nom = "User1", Prenom = "Test", Solde = 100_000L }, // 1000 DH
+            new UserProfile { Id = 1, Email = "user1@test.ma", Nom = "User1", Prenom = "Test", Solde = 100_000L, Statut = UserStatus.VIP }, // 1000 DH
             new UserProfile { Id = 2, Email = "user2@test.ma", Nom = "User2", Prenom = "Test", Solde = 100_000L }  // 1000 DH
         );
         _db.SaveChanges();
@@ -209,6 +210,51 @@ public class SavingsServiceTests : IDisposable
         Assert.False(ok);
         _db.ChangeTracker.Clear();
         Assert.False(_db.UserProfiles.Find(1)!.ArrondiEpargneActif);
+    }
+
+    [Fact]
+    public async Task SetArrondiEpargneAsync_NonVip_Refuse()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.STANDARD; // rétrograde le seed (VIP par défaut) pour ce test
+        _db.SaveChanges();
+
+        var (ok, message) = await _service.SetArrondiEpargneAsync(true, 500L);
+
+        Assert.False(ok);
+        Assert.Contains("VIP", message);
+        _db.ChangeTracker.Clear();
+        Assert.False(_db.UserProfiles.Find(1)!.ArrondiEpargneActif);
+    }
+
+    [Fact]
+    public async Task SetArrondiEpargneAsync_Desactivation_ToujoursPermiseMemeNonVip()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.STANDARD;
+        u.ArrondiEpargneActif = true; // était actif avant une rétrogradation
+        _db.SaveChanges();
+
+        var (ok, _) = await _service.SetArrondiEpargneAsync(false, 500L);
+
+        Assert.True(ok);
+        _db.ChangeTracker.Clear();
+        Assert.False(_db.UserProfiles.Find(1)!.ArrondiEpargneActif);
+    }
+
+    [Fact]
+    public async Task AppliquerArrondiAsync_RetrogradeDepuisVip_NArrondiPlus()
+    {
+        await _service.SetArrondiEpargneAsync(true, 500L); // user 1 = VIP (seed) → activation OK
+
+        var u = _db.UserProfiles.Find(1)!;
+        u.Statut = UserStatus.STANDARD; // rétrogradé après coup ; le flag local reste actif (best-effort)
+        _db.SaveChanges();
+
+        var exces = await _service.AppliquerArrondiAsync(4_730L);
+
+        Assert.Equal(0L, exces);
+        Assert.Equal(0, PocketCount());
     }
 
     public void Dispose()

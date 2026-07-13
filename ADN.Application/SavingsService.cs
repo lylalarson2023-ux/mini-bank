@@ -248,6 +248,10 @@ namespace ADN_pay.Services
             await using var ctx = await _factory.CreateDbContextAsync();
             var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
             if (u == null) return (false, "Utilisateur introuvable");
+            // Fonctionnalité réservée au statut VIP (statut DB, autoritaire) — la
+            // désactivation reste toujours permise (ex. après une rétrogradation).
+            if (actif && u.Statut != UserStatus.VIP)
+                return (false, "L'arrondi automatique est réservé aux membres VIP.");
             u.ArrondiEpargneActif = actif;
             u.ArrondiEpargnePas = pasCentimes;
             await ctx.SaveChangesAsync();
@@ -277,7 +281,10 @@ namespace ADN_pay.Services
                 await using var ctx = await _factory.CreateDbContextAsync();
                 await using var tx = await ctx.Database.BeginTransactionAsync();
                 var u = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
-                if (u == null || u.Solde < exces) return 0L;
+                // Re-vérification VIP sur le statut DB (autoritaire) : une
+                // rétrogradation ne doit pas laisser l'arrondi actif continuer à
+                // débiter silencieusement, même si le flag local est resté à true.
+                if (u == null || u.Statut != UserStatus.VIP || u.Solde < exces) return 0L;
 
                 var poche = await ctx.SavingsPockets
                     .FirstOrDefaultAsync(p => p.UserId == u.Id && p.EstPocheArrondi);

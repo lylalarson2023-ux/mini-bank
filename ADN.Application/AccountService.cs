@@ -192,7 +192,14 @@ namespace ADN_pay.Services
             try
             {
                 var sender = await ctx.UserProfiles.FindAsync(_user.Profil.Id);
-                if (sender == null || sender.Solde < montantCentimes) return false;
+                if (sender == null) return false;
+
+                // Frais de virement : gratuit pour PREMIUM/VIP, 1% plafonné à 20 DH
+                // sinon (calculé sur le statut DB, autoritaire). Débité EN PLUS du
+                // montant transféré, qui lui atteint le destinataire en entier.
+                var frais = FraisVirement.Calculer(montantCentimes, sender.Statut);
+                var totalDebit = montantCentimes + frais;
+                if (sender.Solde < totalDebit) return false;
 
                 var targetEmail = emailDestinataire.Trim().ToLower();
                 if (sender.Email.ToLower() == targetEmail) return false;
@@ -206,7 +213,7 @@ namespace ADN_pay.Services
                 sender.MontantMensuelUtilise = _user.Profil.MontantMensuelUtilise;
                 sender.DerniereReinitPlafond = _user.Profil.DerniereReinitPlafond;
 
-                sender.Solde -= montantCentimes;
+                sender.Solde -= totalDebit;
                 sender.MontantJournalierUtilise += montantCentimes;
                 sender.MontantMensuelUtilise += montantCentimes;
                 recipient.Solde += montantCentimes;
@@ -217,6 +224,7 @@ namespace ADN_pay.Services
                 {
                     UserId = sender.Id,
                     Montant = montantCentimes,
+                    Frais = frais,
                     Type = "VIREMENT",
                     Motif = motif,
                     SoldeApres = sender.Solde,
@@ -240,8 +248,8 @@ namespace ADN_pay.Services
                 _user.Profil.MontantJournalierUtilise = sender.MontantJournalierUtilise;
                 _user.Profil.MontantMensuelUtilise = sender.MontantMensuelUtilise;
                 _user.Profil.NombreTransactions = sender.NombreTransactions;
-                _logger.LogInformation("Virement de {Montant} de {Sender} vers {Recipient}",
-                    montantCentimes.ToDh(), PiiMasker.MaskEmail(sender.Email), PiiMasker.MaskEmail(recipient.Email));
+                _logger.LogInformation("Virement de {Montant} (frais {Frais}) de {Sender} vers {Recipient}",
+                    montantCentimes.ToDh(), frais.ToDh(), PiiMasker.MaskEmail(sender.Email), PiiMasker.MaskEmail(recipient.Email));
 
                 await _notifHist.AddNotificationForUserAsync(recipient.Id,
                     $"Virement reçu de {sender.Email} : {montantCentimes.ToDh()}", "SUCCESS", "VIREMENT");

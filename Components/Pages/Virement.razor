@@ -69,6 +69,20 @@
                     </span>
                 </div>
 
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">FRAIS DE VIREMENT</span>
+                    @if (frais > 0)
+                    {
+                        <span style="font-weight: 700; font-size: 0.9rem;">-@((frais / 100m).ToString("N2")) DH</span>
+                    }
+                    else
+                    {
+                        <span style="font-weight: 700; font-size: 0.8rem; color: var(--success);">
+                            <i class="bi bi-check-circle-fill"></i> GRATUIT
+                        </span>
+                    }
+                </div>
+
                 @if (!string.IsNullOrWhiteSpace(motif))
                 {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -178,6 +192,7 @@
     private string motif = "";
     private string erreur = "";
     private long soldeApres;
+    private long frais;
     private List<Beneficiaire> beneficiaires = new();
 
     private bool DejaFavori => beneficiaires.Any(b => string.Equals(b.Email, destinataire?.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -219,7 +234,10 @@
         var montantCentimes = (long)((montant ?? 0) * 100);
 
         if (montantCentimes <= 0) { erreur = "Montant invalide."; return; }
-        if (Bank.Profil.Solde < montantCentimes) { erreur = "Solde insuffisant."; return; }
+
+        frais = FraisVirement.Calculer(montantCentimes, Bank.Profil.Statut);
+        var totalDebit = montantCentimes + frais;
+        if (Bank.Profil.Solde < totalDebit) { erreur = "Solde insuffisant."; return; }
 
         var (allow, msg) = Bank.VerifierPlafond(montantCentimes);
         if (!allow) { erreur = msg; return; }
@@ -231,7 +249,7 @@
             nomDestinataire = b?.Nom ?? "";
         }
 
-        soldeApres = Bank.Profil.Solde - montantCentimes;
+        soldeApres = Bank.Profil.Solde - totalDebit;
         step = Step.Confirm;
     }
 

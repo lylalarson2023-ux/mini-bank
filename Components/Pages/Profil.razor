@@ -147,6 +147,54 @@
             </p>
         </div>
 
+        @* ─── AVANTAGES DES STATUTS (Standard / Premium / VIP) ─── *@
+        <div class="form-section">
+            <h6><i class="bi bi-stars"></i> AVANTAGES DES STATUTS</h6>
+            <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px;">
+                @foreach (var tier in TiersAffiches)
+                {
+                    var (j, m) = AccountService.PlafondsMaxPourStatut(tier);
+                    var estStatutActuel = Bank.Profil.Statut == tier
+                        || (Bank.Profil.Statut == UserStatus.PENDING && tier == UserStatus.STANDARD);
+                    <div style="flex: 1 1 220px; min-width: 220px; border-radius: 12px; padding: 16px;
+                                background: var(--bg-secondary);
+                                border: 1px solid @(estStatutActuel ? "var(--gold-500)" : "var(--border-color)");">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <strong style="font-size: 0.85rem; letter-spacing: 1px; color: @(tier == UserStatus.VIP ? "var(--gold-500)" : "var(--text-primary)");">
+                                @tier
+                            </strong>
+                            @if (estStatutActuel)
+                            {
+                                <span class="badge badge-success">VOTRE STATUT</span>
+                            }
+                        </div>
+                        <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.75rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px;">
+                            <li><i class="bi bi-arrow-left-right"></i> Virement : <strong style="color: var(--text-primary);">@(tier == UserStatus.STANDARD ? "1% (max 20 DH)" : "Gratuit")</strong></li>
+                            <li><i class="bi bi-calendar-day"></i> Plafond jour : <strong style="color: var(--text-primary);">@FormatDh(j)</strong></li>
+                            <li><i class="bi bi-calendar-month"></i> Plafond mois : <strong style="color: var(--text-primary);">@FormatDh(m)</strong></li>
+                            <li><i class="bi bi-credit-card-2-front"></i> Designs de carte : <strong style="color: var(--text-primary);">@CarteDesigns.Debloques(tier).Count / @CarteDesigns.Tous.Count</strong></li>
+                            <li><i class="bi bi-piggy-bank"></i> Arrondi épargne auto : <strong style="color: @(tier == UserStatus.VIP ? "var(--success)" : "var(--text-muted)");">@(tier == UserStatus.VIP ? "Inclus" : "—")</strong></li>
+                        </ul>
+                    </div>
+                }
+            </div>
+
+            <div style="border-radius: 10px; padding: 14px 16px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); margin-bottom: 12px;">
+                <strong style="font-size: 0.75rem; color: var(--gold-500);"><i class="bi bi-rocket-takeoff"></i> À VENIR POUR PREMIUM &amp; VIP</strong>
+                <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 6px 0 0;">
+                    Crédit étudiant à taux préférentiel (encore réduit pour les VIP) et tontine numérique
+                    entre pairs — modules en préparation, pas encore ouverts.
+                </p>
+            </div>
+
+            <p style="font-size: 0.72rem; color: var(--text-muted); margin: 0;">
+                <strong style="color: var(--text-secondary);">Passer Premium</strong> : complétez le dossier KYC ci-dessous
+                (50 DH, prélevés à la soumission, dossier validé par l'équipe ADN_pay).
+                &nbsp;·&nbsp;
+                <strong style="color: var(--text-secondary);">Passer VIP</strong> : statut attribué par l'équipe ADN_pay.
+            </p>
+        </div>
+
         @if (Bank.Profil.Statut == UserStatus.PREMIUM)
         {
             <div class="status-banner" style="background: var(--success-bg); border: 1px solid var(--success); color: var(--success);">
@@ -364,6 +412,10 @@
     private bool isAdminReview;
     private bool isProcessing;
     private string? reviewError;
+
+    // --- AVANTAGES DES STATUTS ---
+    private static readonly UserStatus[] TiersAffiches = { UserStatus.STANDARD, UserStatus.PREMIUM, UserStatus.VIP };
+    private static string FormatDh(long centimes) => $"{(centimes / 100m).ToString("N0")} DH";
 
     protected override async Task OnInitializedAsync()
     {

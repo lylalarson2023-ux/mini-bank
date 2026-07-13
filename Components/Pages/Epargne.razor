@@ -50,33 +50,52 @@
         <button class="btn btn-primary" @onclick="CreerPoche" disabled="@isProcessing" style="width: auto;">@(isProcessing ? "Création..." : "Créer l'objectif")</button>
     </div>
 
-    @* ─── ARRONDI AUTOMATIQUE (opt-in) ─── *@
+    @* ─── ARRONDI AUTOMATIQUE (opt-in, réservé VIP) ─── *@
     <div class="form-section">
         <h6>Arrondi automatique</h6>
-        <div class="setting-row">
-            <div>
-                <strong style="color: var(--text-primary);">Épargner la petite monnaie de chaque opération</strong>
-                <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
-                    Vos virements et retraits sont arrondis au multiple supérieur ; la différence part
-                    automatiquement dans la poche « @SavingsService.ObjectifPocheArrondi ».
-                    Ex. avec un pas de 5 DH : un virement de 47,30 DH épargne 2,70 DH.
-                </p>
-            </div>
-            <label class="switch">
-                <input type="checkbox" checked="@arrondiActif" @onchange="ToggleArrondi" />
-                <span class="switch-slider"></span>
-            </label>
-        </div>
-        @if (arrondiActif)
+        @if (Bank.Profil.Statut == UserStatus.VIP)
         {
             <div class="setting-row">
-                <div><strong style="color: var(--text-primary);">Arrondir au multiple de</strong></div>
-                <select class="form-select" style="width: auto;" @bind="arrondiPas" @bind:after="ChangerPasArrondi">
-                    <option value="100">1 DH</option>
-                    <option value="500">5 DH</option>
-                    <option value="1000">10 DH</option>
-                </select>
+                <div>
+                    <strong style="color: var(--text-primary);">Épargner la petite monnaie de chaque opération</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        Vos virements et retraits sont arrondis au multiple supérieur ; la différence part
+                        automatiquement dans la poche « @SavingsService.ObjectifPocheArrondi ».
+                        Ex. avec un pas de 5 DH : un virement de 47,30 DH épargne 2,70 DH.
+                    </p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" checked="@arrondiActif" @onchange="ToggleArrondi" />
+                    <span class="switch-slider"></span>
+                </label>
             </div>
+            @if (arrondiActif)
+            {
+                <div class="setting-row">
+                    <div><strong style="color: var(--text-primary);">Arrondir au multiple de</strong></div>
+                    <select class="form-select" style="width: auto;" @bind="arrondiPas" @bind:after="ChangerPasArrondi">
+                        <option value="100">1 DH</option>
+                        <option value="500">5 DH</option>
+                        <option value="1000">10 DH</option>
+                    </select>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="setting-row" style="opacity: 0.85;">
+                <div>
+                    <strong style="color: var(--text-primary);">Épargner la petite monnaie de chaque opération</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 4px 0 0;">
+                        Vos virements et retraits seraient arrondis au multiple supérieur, la différence
+                        partant automatiquement en épargne. Réservé aux membres VIP.
+                    </p>
+                </div>
+                <span class="badge badge-warning" style="white-space: nowrap;"><i class="bi bi-lock-fill"></i> VIP</span>
+            </div>
+            <a href="/profil" style="display: inline-block; margin-top: 10px; font-size: 0.72rem; color: var(--blue-500); font-weight: 600;">
+                Découvrir les avantages du statut VIP &rarr;
+            </a>
         }
     </div>
 
