@@ -118,6 +118,43 @@ public class AdminServiceTests : IDisposable
         Assert.Equal(10_000L, GetUser(1).Solde); // inchangé
     }
 
+    // ─────────────────────────── ResetPasswordAsync ───────────────────────────
+
+    [Fact]
+    public async Task ResetPasswordAsync_Admin_RemplaceLeHashParLeNouveauMotDePasse()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("AncienMdp1!");
+        _db.SaveChanges();
+
+        var ok = await _service.ResetPasswordAsync(1, "NouveauMdp1!");
+
+        Assert.True(ok);
+        var after = GetUser(1);
+        Assert.True(BCrypt.Net.BCrypt.Verify("NouveauMdp1!", after.MotDePasseHash));  // le nouveau marche
+        Assert.False(BCrypt.Net.BCrypt.Verify("AncienMdp1!", after.MotDePasseHash));  // l'ancien ne marche plus
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_NonAdmin_RefuseEtLaisseLeHashIntact()
+    {
+        var u = _db.UserProfiles.Find(1)!;
+        u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("AncienMdp1!");
+        _db.SaveChanges();
+        _user.Profil = new UserProfile { Id = 1, Email = "client@test.ma", IsAdmin = false };
+
+        var ok = await _service.ResetPasswordAsync(1, "NouveauMdp1!");
+
+        Assert.False(ok);
+        Assert.True(BCrypt.Net.BCrypt.Verify("AncienMdp1!", GetUser(1).MotDePasseHash)); // inchangé
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_UtilisateurIntrouvable_RetourneFalse()
+    {
+        Assert.False(await _service.ResetPasswordAsync(404, "NouveauMdp1!"));
+    }
+
     // ─────────────────────────── AdminDepot ───────────────────────────
 
     [Fact]

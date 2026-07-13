@@ -3,6 +3,7 @@
 @inject AuthenticationStateProvider AuthProvider
 @inject Microsoft.EntityFrameworkCore.IDbContextFactory<ADN_pay.Data.BankDbContext> DbFactory
 @inject UserContext UserCtx
+@inject IWebHostEnvironment HostEnv
 
 <div class="admin-shell">
     <aside class="sidebar">
@@ -31,7 +32,15 @@
     <div class="content">
         <header class="topbar">
             <div><span class="dot"></span> Session admin active</div>
-            <div class="who">Connecté : <strong>@adminName</strong></div>
+            <div style="display:flex; align-items:center; gap:14px;">
+                @* Bandeau base active : évite de réinitialiser un mot de passe sur la base
+                   DEV en croyant toucher la PROD (bases distinctes selon le lanceur). *@
+                <span title="@dbPath"
+                      style="@($"font-size:.68rem; font-weight:700; letter-spacing:.5px; padding:3px 10px; border-radius:6px; {(isProd ? "background:rgba(48,184,128,.15); color:#30B880; border:1px solid rgba(48,184,128,.4);" : "background:rgba(240,170,40,.15); color:#f0aa28; border:1px solid rgba(240,170,40,.5);")}")">
+                    @(isProd ? "PROD" : "DEV") · @dbLabel
+                </span>
+                <div class="who">Connecté : <strong>@adminName</strong></div>
+            </div>
         </header>
         @Body
     </div>
@@ -40,9 +49,20 @@
 
 @code {
     private string adminName = "admin";
+    private bool isProd;
+    private string dbPath = "";
+    private string dbLabel = "";
 
     protected override async Task OnInitializedAsync()
     {
+        isProd = HostEnv.IsProduction();
+        // Même résolution que Program.cs : ADN_DB_PATH sinon la base à côté du binaire.
+        dbPath = Environment.GetEnvironmentVariable("ADN_DB_PATH")
+            ?? System.IO.Path.Combine(AppContext.BaseDirectory, "AdnPayData.db");
+        // Deux derniers segments pour distinguer « ADN_pay\… » (dev) de « publish\… » (prod).
+        var parts = dbPath.Replace('/', '\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        dbLabel = parts.Length >= 2 ? string.Join("\\", parts[^2..]) : dbPath;
+
         var state = await AuthProvider.GetAuthenticationStateAsync();
         var user = state.User;
         if (user.Identity?.IsAuthenticated != true) return;
