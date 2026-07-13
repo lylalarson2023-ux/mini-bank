@@ -1,0 +1,83 @@
+@page "/verifier-email"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BankService Bank
+@inject NavigationManager Nav
+@inject NotificationService Notif
+
+<div class="cyber-panel" style="max-width: 480px; margin: auto;">
+    <h3>CONFIRMER MON ADRESSE E-MAIL</h3>
+
+    @if (Bank.Profil.EmailVerifie)
+    {
+        <div class="status-banner" style="background: var(--success-bg); border: 1px solid var(--success); color: var(--success); margin-top: 12px;">
+            <i class="bi bi-check-circle"></i> Votre adresse e-mail est déjà vérifiée.
+        </div>
+        <a href="/" class="btn btn-primary btn-block" style="margin-top: 16px;">RETOUR AU DASHBOARD</a>
+    }
+    else
+    {
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; line-height: 1.6;">
+            Un code à 6 chiffres a été envoyé à <strong>@Bank.Profil.Email</strong> lors de votre inscription.
+            S'il a expiré, cliquez sur « Renvoyer le code ».
+        </p>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="error-box" style="margin-bottom: 12px;">@error</div>
+        }
+        @if (!string.IsNullOrEmpty(info))
+        {
+            <div style="background: rgba(48,184,128,0.10); border: 1px solid rgba(48,184,128,0.4); color: var(--success); padding: 10px 12px; border-radius: 8px; font-size: 0.78rem; margin-bottom: 12px; text-align: center;">
+                <i class="bi bi-envelope-check"></i> @info
+            </div>
+        }
+
+        <div class="form-group">
+            <label>CODE REÇU PAR E-MAIL</label>
+            <input @bind="code" maxlength="6" inputmode="numeric" class="form-input" placeholder="000000"
+                   style="text-align: center; font-size: 1.4rem; letter-spacing: 8px; font-family: var(--font-mono);" />
+        </div>
+
+        <button class="btn btn-primary btn-block" @onclick="Confirmer" disabled="@loading">
+            @(loading ? "VÉRIFICATION..." : "CONFIRMER MON E-MAIL")
+        </button>
+
+        <div style="margin-top: 14px; display: flex; justify-content: space-between;">
+            <a href="#" @onclick="Renvoyer" @onclick:preventDefault="true" style="color: var(--text-muted); font-size: 0.75rem;">Renvoyer le code</a>
+            <a href="/" style="color: var(--text-muted); font-size: 0.75rem;">Plus tard</a>
+        </div>
+    }
+</div>
+
+@code {
+    private string code = "";
+    private string error = "";
+    private string info = "";
+    private bool loading;
+
+    private async Task Confirmer()
+    {
+        error = "";
+        if (string.IsNullOrWhiteSpace(code)) { error = "Saisissez le code reçu par e-mail."; return; }
+        loading = true;
+        try
+        {
+            var (ok, msg) = await Bank.VerifyEmailCodeAsync(Bank.Profil.Email, code);
+            if (ok)
+            {
+                Notif.Notify(msg, NotificationType.SUCCESS);
+                Nav.NavigateTo("/", forceLoad: true);
+            }
+            else error = msg;
+        }
+        catch { error = "Une erreur technique est survenue. Veuillez réessayer."; }
+        finally { loading = false; }
+    }
+
+    private async Task Renvoyer()
+    {
+        error = "";
+        info = await Bank.ResendEmailVerificationAsync(Bank.Profil.Email);
+    }
+}

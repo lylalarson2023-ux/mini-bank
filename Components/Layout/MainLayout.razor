@@ -115,6 +115,15 @@
             </div>
 
             <div class="content-area">
+                @if (!Bank.Profil.EmailVerifie && !Nav.Uri.Contains("/verifier-email"))
+                {
+                    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:space-between;
+                                background: rgba(240,170,40,0.12); border:1px solid rgba(240,170,40,0.5); color:#c98a10;
+                                padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:0.82rem;">
+                        <span><i class="bi bi-exclamation-triangle-fill"></i> Votre adresse e-mail n'est pas encore confirmée.</span>
+                        <a href="/verifier-email" class="btn btn-primary btn-sm" style="white-space:nowrap;">Confirmer maintenant</a>
+                    </div>
+                }
                 @Body
             </div>
 

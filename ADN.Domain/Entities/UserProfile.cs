@@ -127,6 +127,13 @@ namespace ADN_pay.Models
         public string? PasswordResetCodeHash { get; set; }
         public DateTime? PasswordResetCodeExpiry { get; set; }
 
+        // --- VÉRIFICATION DE L'ADRESSE E-MAIL (à l'inscription) ---
+        // Nouveaux comptes : false jusqu'à saisie du code envoyé par e-mail. Les comptes
+        // existants (avant l'ajout de la colonne) sont vérifiés par défaut côté DB (grandfather).
+        public bool EmailVerifie { get; set; } = false;
+        public string? EmailVerifCodeHash { get; set; }
+        public DateTime? EmailVerifCodeExpiry { get; set; }
+
         // --- ADRESSE ADN_pay RÉSERVÉE (@adnpay.ma) ---
         // Identifiant réservé à l'inscription (la vraie boîte mail sera branchée plus tard).
         public string AdnEmail { get; set; } = "";

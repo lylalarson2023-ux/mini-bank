@@ -23,6 +23,50 @@
         </div>
     </div>
 }
+else if (showEmailVerif)
+{
+    <div class="auth-wrapper" style="max-width: 520px;">
+        <div class="auth-card">
+            <div class="auth-header">
+                <img src="images/logo_adn_pay_auth.png" alt="ADN_pay" class="auth-logo" style="max-width: 140px; margin-bottom: 14px;" />
+                <h1 class="auth-title" style="font-size: 1.45rem;">Confirmez votre e-mail</h1>
+                <p class="auth-subtitle">VÉRIFICATION</p>
+                <div style="height: 3px; width: 56px; margin: 14px auto 0; background: linear-gradient(90deg, #0099CC, #30B880); border-radius: 3px;"></div>
+            </div>
+
+            <p style="color: var(--text-secondary); font-size: 0.78rem; text-align:center; margin-bottom: 18px;">
+                Un code à 6 chiffres a été envoyé à <strong>@newUser.Email</strong>. Saisissez-le pour confirmer votre adresse.
+            </p>
+
+            @if (!string.IsNullOrEmpty(verifError))
+            {
+                <div style="background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.8rem;">
+                    <i class="bi bi-exclamation-triangle-fill"></i> @verifError
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(verifInfo))
+            {
+                <div style="background: rgba(48,184,128,0.10); border: 1px solid rgba(48,184,128,0.4); color: var(--success); padding: 10px 12px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.78rem; text-align:center;">
+                    <i class="bi bi-envelope-check"></i> @verifInfo
+                </div>
+            }
+
+            <div class="form-group">
+                <input @bind="verifCode" maxlength="6" inputmode="numeric" class="form-input" placeholder="000000"
+                       style="text-align:center; font-size:1.4rem; letter-spacing:8px; font-family: var(--font-mono);" />
+            </div>
+
+            <button type="button" class="btn btn-adn btn-block" @onclick="ConfirmerEmail" disabled="@verifLoading" style="margin-top:8px;">
+                @(verifLoading ? "VÉRIFICATION..." : "CONFIRMER MON E-MAIL")
+            </button>
+
+            <div class="auth-footer" style="display:flex; gap:16px; justify-content:center;">
+                <a href="#" @onclick="RenvoyerCodeEmail" @onclick:preventDefault="true">Renvoyer le code</a>
+                <a href="#" @onclick="PasserVerif" @onclick:preventDefault="true">Plus tard</a>
+            </div>
+        </div>
+    </div>
+}
 else if (showAdnChoice)
 {
     <div class="auth-wrapper" style="max-width: 520px;">
@@ -176,6 +220,13 @@ else
     private bool isLoading = false;
     private bool showSuccess = false;
 
+    // --- Étape « confirmer l'e-mail » (juste après la création du compte) ---
+    private bool showEmailVerif = false;
+    private string verifCode = "";
+    private string verifError = "";
+    private string verifInfo = "";
+    private bool verifLoading = false;
+
     // --- Étape « choisir son adresse @adnpay.ma » (après création du compte) ---
     private bool showAdnChoice = false;
     private List<string> adnOptions = new();
@@ -265,10 +316,8 @@ else
 
             if (success)
             {
-                Notif.Notify("COMPTE CRÉÉ — choisissez votre adresse @adnpay.ma", NotificationType.SUCCESS);
-                adnOptions = await Bank.GenererAdnEmailsAsync(newUser.Prenom, newUser.Nom);
-                selectedAdn = adnOptions.FirstOrDefault() ?? "";
-                showAdnChoice = true;
+                Notif.Notify("COMPTE CRÉÉ — confirmez votre adresse e-mail", NotificationType.SUCCESS);
+                showEmailVerif = true;
                 StateHasChanged();
             }
             else
@@ -286,6 +335,42 @@ else
         {
             isLoading = false;
         }
+    }
+
+    private async Task ConfirmerEmail()
+    {
+        verifError = ""; verifInfo = "";
+        if (string.IsNullOrWhiteSpace(verifCode)) { verifError = "Saisissez le code reçu par e-mail."; return; }
+        verifLoading = true;
+        try
+        {
+            var (ok, msg) = await Bank.VerifyEmailCodeAsync(newUser.Email, verifCode);
+            if (ok)
+            {
+                Notif.Notify("ADRESSE E-MAIL CONFIRMÉE", NotificationType.SUCCESS);
+                await AllerAdnChoice();
+            }
+            else verifError = msg;
+        }
+        catch { verifError = "Erreur technique. Veuillez réessayer."; }
+        finally { verifLoading = false; }
+    }
+
+    private async Task RenvoyerCodeEmail()
+    {
+        verifError = "";
+        verifInfo = await Bank.ResendEmailVerificationAsync(newUser.Email);
+    }
+
+    private async Task PasserVerif() => await AllerAdnChoice();
+
+    private async Task AllerAdnChoice()
+    {
+        showEmailVerif = false;
+        adnOptions = await Bank.GenererAdnEmailsAsync(newUser.Prenom, newUser.Nom);
+        selectedAdn = adnOptions.FirstOrDefault() ?? "";
+        showAdnChoice = true;
+        StateHasChanged();
     }
 
     private async Task ConfirmerAdn()

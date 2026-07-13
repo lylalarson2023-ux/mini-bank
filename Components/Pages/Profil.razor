@@ -6,6 +6,7 @@
 @inject NotificationService Notif
 @inject UserContext UserCtx
 @inject NavigationManager Nav
+@inject KycVerificationService KycVerif
 
 <div class="cyber-panel" style="max-width: 900px; margin: auto;">
 
@@ -119,6 +120,25 @@
                     </div>
                 }
             </div>
+        </div>
+
+        <div class="form-section">
+            <h6><i class="bi bi-shield-check"></i> CONTRÔLES AUTOMATIQUES</h6>
+            @if (kycFlags.Count == 0)
+            {
+                <div style="color: var(--success); font-size: 0.8rem;">
+                    <i class="bi bi-check-circle-fill"></i> Aucune anomalie détectée (cohérence et doublons OK).
+                </div>
+            }
+            else
+            {
+                @foreach (var f in kycFlags)
+                {
+                    <div style="display:flex; align-items:center; gap:8px; font-size:0.8rem; margin-bottom:6px; color:@SevColor(f.Severite);">
+                        <i class="bi @SevIcon(f.Severite)"></i> <span>@f.Message</span>
+                    </div>
+                }
+            }
         </div>
 
         <div style="display: flex; gap: 12px; margin-top: 24px;">
@@ -412,6 +432,20 @@
     private bool isAdminReview;
     private bool isProcessing;
     private string? reviewError;
+    private List<KycFlag> kycFlags = new();
+
+    private static string SevColor(KycSeverite s) => s switch
+    {
+        KycSeverite.Alerte => "var(--danger)",
+        KycSeverite.Attention => "#c98a10",
+        _ => "var(--text-muted)"
+    };
+    private static string SevIcon(KycSeverite s) => s switch
+    {
+        KycSeverite.Alerte => "bi-exclamation-octagon-fill",
+        KycSeverite.Attention => "bi-exclamation-triangle-fill",
+        _ => "bi-info-circle"
+    };
 
     // --- AVANTAGES DES STATUTS ---
     private static readonly UserStatus[] TiersAffiches = { UserStatus.STANDARD, UserStatus.PREMIUM, UserStatus.VIP };
@@ -427,6 +461,10 @@
             {
                 reviewError = "Utilisateur introuvable";
                 isAdminReview = false;
+            }
+            else
+            {
+                kycFlags = await KycVerif.AnalyserAsync(targetUser.Id);
             }
         }
         else if (UserCtx.KycFormState != null)
@@ -518,6 +556,14 @@
         if (Bank.Profil.Solde < 5_000L)
         {
             Notif.Notify("SOLDE INSUFFISANT (50 DH REQUIS)", NotificationType.ERROR);
+            return;
+        }
+
+        // Renforcement KYC : e-mail confirmé requis avant de soumettre le dossier Premium.
+        if (!Bank.Profil.EmailVerifie)
+        {
+            Notif.Notify("CONFIRMEZ D'ABORD VOTRE ADRESSE E-MAIL", NotificationType.ERROR);
+            Nav.NavigateTo("/verifier-email");
             return;
         }
 

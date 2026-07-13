@@ -155,6 +155,7 @@ builder.Services.AddScoped<ADN_pay.Services.AccountService>();
 builder.Services.AddScoped<SavingsService>();
 builder.Services.AddScoped<CreditService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<KycVerificationService>();
 builder.Services.AddScoped<ADN_pay.Services.FileService>();
 builder.Services.AddScoped<BankService>();
 builder.Services.AddScoped<NotificationService>();
@@ -239,6 +240,12 @@ using (var scope = app.Services.CreateScope())
     // Réinitialisation « mot de passe oublié » (code à durée de vie courte, haché).
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PasswordResetCodeHash TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PasswordResetCodeExpiry datetime"); } catch { }
+    // Vérification e-mail à l'inscription. DEFAULT 1 : les comptes existants (créés avant
+    // la colonne) sont considérés vérifiés (grandfather) ; seuls les nouveaux comptes,
+    // insérés avec EmailVerifie=false par le code, devront confirmer.
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailVerifie INTEGER NOT NULL DEFAULT 1"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailVerifCodeHash TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailVerifCodeExpiry datetime"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
     // Design de carte choisi dans la galerie (slug du catalogue CarteDesigns, validé serveur).
@@ -345,7 +352,8 @@ using (var scope = app.Services.CreateScope())
             IsAdmin = true,
             Solde = 100_000_000L,
             Statut = UserStatus.VIP,
-            CguAcceptees = true
+            CguAcceptees = true,
+            EmailVerifie = true
         });
         db.SaveChanges();
         Log.Information("Compte admin créé : {Email}", adminEmail);

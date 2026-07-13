@@ -156,11 +156,13 @@ namespace ADN_pay.Services
             u.PasswordResetCodeExpiry = DateTime.UtcNow.AddMinutes(15);
             await ctx.SaveChangesAsync();
 
-            var html = $@"<p>Bonjour,</p>
-<p>Vous avez demandé à réinitialiser le mot de passe de votre compte <strong>ADN_pay</strong>.</p>
-<p>Votre code de réinitialisation est : <strong style=""font-size:1.4rem;letter-spacing:3px;"">{code}</strong></p>
-<p>Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail — votre mot de passe reste inchangé.</p>
-<p>— L'équipe ADN_pay</p>";
+            var html = EmailTemplate.Wrap(
+                "Réinitialisation de votre mot de passe",
+                EmailTemplate.Paragraphe("Bonjour,")
+                + EmailTemplate.Paragraphe("Vous avez demandé à réinitialiser le mot de passe de votre compte <strong>ADN_pay</strong>. Utilisez le code ci-dessous :")
+                + EmailTemplate.CodeBox(code)
+                + EmailTemplate.Note("Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail — votre mot de passe reste inchangé."),
+                preheader: $"Votre code de réinitialisation ADN_pay : {code} (valable 15 minutes).");
             try
             {
                 await _email.SendAsync(emailLower, "ADN_pay — Réinitialisation de votre mot de passe", html,
@@ -210,6 +212,67 @@ namespace ADN_pay.Services
             return (true, "Votre mot de passe a été réinitialisé. Vous pouvez maintenant vous connecter.");
         }
 
+        // --- VÉRIFICATION DE L'ADRESSE E-MAIL (code envoyé à l'inscription) ---
+
+        // Valide le code de confirmation et marque l'adresse comme vérifiée.
+        public async Task<(bool Success, string Message)> VerifyEmailCodeAsync(string email, string code)
+        {
+            var emailLower = (email ?? "").Trim().ToLowerInvariant();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FirstOrDefaultAsync(x => x.Email == emailLower);
+            if (u == null) return (false, "Compte introuvable.");
+            if (u.EmailVerifie) return (true, "Votre adresse e-mail est déjà vérifiée.");
+            if (string.IsNullOrEmpty(u.EmailVerifCodeHash) || u.EmailVerifCodeExpiry == null)
+                return (false, "Aucun code de vérification en cours. Demandez un nouveau code.");
+            if (u.EmailVerifCodeExpiry < DateTime.UtcNow)
+                return (false, "Le code a expiré. Demandez un nouveau code.");
+            if (string.IsNullOrWhiteSpace(code) || !BCrypt.Net.BCrypt.Verify(code.Trim(), u.EmailVerifCodeHash))
+                return (false, "Code incorrect.");
+
+            u.EmailVerifie = true;
+            u.EmailVerifCodeHash = null;
+            u.EmailVerifCodeExpiry = null;
+            await ctx.SaveChangesAsync();
+            // Reflète l'état sur la session en cours si c'est l'utilisateur connecté.
+            if (_user.EstConnecte && _user.Profil.Id == u.Id) _user.Profil.EmailVerifie = true;
+            _logger.LogInformation("Adresse e-mail vérifiée (compte #{UserId}).", u.Id);
+            return (true, "Votre adresse e-mail a été vérifiée. Merci !");
+        }
+
+        // Renvoie un nouveau code de confirmation. Message générique (anti-énumération) :
+        // ne révèle pas si l'adresse a un compte non vérifié.
+        public async Task<string> ResendEmailVerificationAsync(string email)
+        {
+            const string generic = "Si un compte non vérifié est associé à cette adresse, un nouveau code vient d'être envoyé.";
+            var emailLower = (email ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(emailLower) || !emailLower.Contains('@')) return generic;
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FirstOrDefaultAsync(x => x.Email == emailLower);
+            if (u == null || u.EmailVerifie || u.CompteCloture) return generic;
+
+            var code = Random.Shared.Next(100000, 1000000).ToString();
+            u.EmailVerifCodeHash = BCrypt.Net.BCrypt.HashPassword(code);
+            u.EmailVerifCodeExpiry = DateTime.UtcNow.AddMinutes(30);
+            await ctx.SaveChangesAsync();
+            try
+            {
+                var html = EmailTemplate.Wrap(
+                    "Confirmez votre adresse e-mail",
+                    EmailTemplate.Paragraphe("Voici votre nouveau code de confirmation ADN_pay :")
+                    + EmailTemplate.CodeBox(code)
+                    + EmailTemplate.Note("Ce code expire dans 30 minutes."),
+                    preheader: $"Votre code de confirmation ADN_pay : {code}");
+                await _email.SendAsync(emailLower, "ADN_pay — Confirmez votre adresse e-mail", html,
+                    $"Votre code de confirmation ADN_pay : {code} (valable 30 minutes).");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Renvoi du code de vérification échoué.");
+            }
+            return generic;
+        }
+
         public async Task<(bool Success, string Message)> CreerNouveauCompte(UserProfile u, string motDePasse)
         {
             if (string.IsNullOrWhiteSpace(motDePasse) || motDePasse.Length < 8)
@@ -232,6 +295,11 @@ namespace ADN_pay.Services
             }
             u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(motDePasse);
             u.MotDePasse = "";
+            // Vérification e-mail : le compte démarre NON vérifié, un code part à l'inscription.
+            u.EmailVerifie = false;
+            var codeVerif = Random.Shared.Next(100000, 1000000).ToString();
+            u.EmailVerifCodeHash = BCrypt.Net.BCrypt.HashPassword(codeVerif);
+            u.EmailVerifCodeExpiry = DateTime.UtcNow.AddMinutes(30);
             ctx.UserProfiles.Add(u);
             try
             {
@@ -242,15 +310,24 @@ namespace ADN_pay.Services
                         await _notifHist.AddNotificationAsync("Bienvenue sur ADN_pay — votre compte a été créé avec succès", "SUCCESS", "COMPTE");
                     _logger.LogInformation("Nouveau compte créé : {Email}", u.Email);
 
-                    // E-mail de bienvenue via template Brevo (non bloquant : un échec n'empêche pas la création).
+                    // E-mail de bienvenue + confirmation d'adresse (code) via le gabarit (non bloquant).
                     try
                     {
-                        var welcomeId = _config.GetValue<int?>("Brevo:Templates:WelcomeId") ?? 2;
-                        await _email.SendTemplateAsync(u.Email, welcomeId, new { firstName = u.Prenom });
+                        var prenom = EmailTemplate.Escape(u.Prenom);
+                        var html = EmailTemplate.Wrap(
+                            $"Bienvenue sur ADN_pay{(string.IsNullOrWhiteSpace(prenom) ? "" : ", " + prenom)} !",
+                            EmailTemplate.Paragraphe($"Bonjour{(string.IsNullOrWhiteSpace(prenom) ? "" : " " + prenom)},")
+                            + EmailTemplate.Paragraphe("Bienvenue sur <strong>ADN_pay</strong> ! Pour finaliser votre inscription, confirmez votre adresse e-mail avec le code ci-dessous :")
+                            + EmailTemplate.CodeBox(codeVerif)
+                            + EmailTemplate.Note("Ce code expire dans 30 minutes.")
+                            + EmailTemplate.Paragraphe("Une fois votre adresse confirmée, vous profiterez pleinement de votre compte."),
+                            preheader: $"Votre code de confirmation ADN_pay : {codeVerif}");
+                        await _email.SendAsync(u.Email, "ADN_pay — Confirmez votre adresse e-mail", html,
+                            $"Votre code de confirmation ADN_pay : {codeVerif} (valable 30 minutes).");
                     }
                     catch (Exception exMail)
                     {
-                        _logger.LogWarning(exMail, "Envoi e-mail de bienvenue échoué (non bloquant) pour {Email}", u.Email);
+                        _logger.LogWarning(exMail, "Envoi e-mail de confirmation d'inscription échoué (non bloquant).");
                     }
                 }
                 return (result, result ? "Compte créé avec succès" : "Erreur lors de la création du compte");

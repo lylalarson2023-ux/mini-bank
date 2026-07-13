@@ -346,11 +346,13 @@ namespace ADN_pay.Services
             _user.Profil.EmailChangeCodeHash = u.EmailChangeCodeHash;
             _user.Profil.EmailChangeCodeExpiry = u.EmailChangeCodeExpiry;
 
-            var html = $@"<p>Bonjour,</p>
-<p>Vous avez demandé à associer cette adresse à votre compte <strong>ADN_pay</strong>.</p>
-<p>Votre code de confirmation est : <strong style=""font-size:1.4rem;letter-spacing:3px;"">{code}</strong></p>
-<p>Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
-<p>— L'équipe ADN_pay</p>";
+            var html = EmailTemplate.Wrap(
+                "Confirmez votre nouvelle adresse e-mail",
+                EmailTemplate.Paragraphe("Bonjour,")
+                + EmailTemplate.Paragraphe("Vous avez demandé à associer cette adresse à votre compte <strong>ADN_pay</strong>. Saisissez le code ci-dessous pour confirmer :")
+                + EmailTemplate.CodeBox(code)
+                + EmailTemplate.Note("Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail."),
+                preheader: $"Votre code de confirmation ADN_pay : {code} (valable 15 minutes).");
             await _email.SendAsync(emailLower, "ADN_pay — Confirmez votre nouvelle adresse e-mail", html,
                 $"Votre code de confirmation ADN_pay : {code} (valable 15 minutes).");
 
@@ -393,8 +395,12 @@ namespace ADN_pay.Services
 
             // Avertit l'ancienne adresse (bonne pratique de sécurité)
             await _email.SendAsync(ancienEmail, "ADN_pay — Votre adresse e-mail a été modifiée",
-                $@"<p>L'adresse e-mail de votre compte ADN_pay a été remplacée par <strong>{u.Email}</strong>.</p>
-<p>Si vous n'êtes pas à l'origine de ce changement, contactez-nous immédiatement.</p>");
+                EmailTemplate.Wrap(
+                    "Votre adresse e-mail a été modifiée",
+                    EmailTemplate.Paragraphe($"L'adresse e-mail de votre compte ADN_pay a été remplacée par <strong>{u.Email}</strong>.")
+                    + EmailTemplate.Note("Si vous n'êtes pas à l'origine de ce changement, contactez-nous immédiatement."),
+                    preheader: "L'adresse e-mail de votre compte ADN_pay a été modifiée."),
+                $"L'adresse e-mail de votre compte ADN_pay a été remplacée par {u.Email}.");
 
             await _notifHist.AddNotificationAsync("Adresse e-mail mise à jour", "SUCCESS", "PROFIL");
             _logger.LogInformation("E-mail changé : {Old} → {New}", PiiMasker.MaskEmail(ancienEmail), PiiMasker.MaskEmail(u.Email));
@@ -563,6 +569,9 @@ namespace ADN_pay.Services
         public async Task<bool> SoumettreDossierKYC(UserProfile kyc)
         {
             if (_user.Profil.Solde < 5_000L) return false;
+            // Renforcement KYC : l'adresse e-mail doit être confirmée avant de soumettre
+            // un dossier Premium (défense — l'UI le vérifie aussi avec un message dédié).
+            if (!_user.Profil.EmailVerifie) return false;
             await using var ctx = await _factory.CreateDbContextAsync();
             await using var tx = await ctx.Database.BeginTransactionAsync();
             try

@@ -328,6 +328,7 @@ public class AccountServiceTests : IDisposable
     {
         var u0 = _db.UserProfiles.Find(1)!;
         u0.DocDomicileUrl = "docs/ancien-domicile.pdf"; // justificatif d'un dossier antérieur
+        u0.EmailVerifie = true; // KYC exige désormais une adresse e-mail confirmée
         _db.SaveChanges();
 
         var kyc = new UserProfile

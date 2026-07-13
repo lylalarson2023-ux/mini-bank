@@ -49,6 +49,9 @@ namespace ADN_pay.Services
         public Task<string> RequestPasswordResetAsync(string email) => _auth.RequestPasswordResetAsync(email);
         public Task<(bool Success, string Message)> ResetPasswordWithCodeAsync(string email, string code, string newPassword)
             => _auth.ResetPasswordWithCodeAsync(email, code, newPassword);
+        public Task<(bool Success, string Message)> VerifyEmailCodeAsync(string email, string code)
+            => _auth.VerifyEmailCodeAsync(email, code);
+        public Task<string> ResendEmailVerificationAsync(string email) => _auth.ResendEmailVerificationAsync(email);
 
         // --- COMPTE --- ADR-001 : montants en centimes (long)
         public Task<bool> ExecuterOperationAsync(long montantCentimes, string motif, string type = "VIREMENT")
