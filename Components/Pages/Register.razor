@@ -104,7 +104,7 @@ else
                 <div class="form-row">
                     <div class="form-group">
                         <label>MOT DE PASSE</label>
-                        <input @bind="newUser.MotDePasse" @bind:event="oninput" type="password" class="form-input" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="newUser.MotDePasse" Placeholder="••••••••" Autocomplete="new-password" />
                         @if (!string.IsNullOrEmpty(newUser.MotDePasse))
                         {
                             <div class="pwd-meter">
@@ -118,7 +118,7 @@ else
                     </div>
                     <div class="form-group">
                         <label>CONFIRMER</label>
-                        <input @bind="confirmPassword" @bind:event="oninput" type="password" class="form-input" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="confirmPassword" Placeholder="••••••••" Autocomplete="new-password" />
                         @if (!string.IsNullOrEmpty(confirmPassword))
                         {
                             <small style="font-size:0.62rem; margin-top:6px; display:block; color:@(confirmPassword == newUser.MotDePasse ? "var(--success)" : "var(--danger)");">

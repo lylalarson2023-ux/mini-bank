@@ -135,6 +135,81 @@ namespace ADN_pay.Services
             _user.EstConnecte = false;
         }
 
+        // --- MOT DE PASSE OUBLIÉ (réinitialisation par code, pré-authentification) ---
+
+        // Étape 1 : l'utilisateur donne son e-mail. Si un compte ACTIF existe, un code à
+        // 6 chiffres lui est envoyé. Le message renvoyé est TOUJOURS générique
+        // (anti-énumération : ne révèle pas si l'adresse a un compte).
+        public async Task<string> RequestPasswordResetAsync(string email)
+        {
+            const string generic = "Si un compte est associé à cette adresse, un code de réinitialisation vient d'être envoyé.";
+            var emailLower = (email ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(emailLower) || !emailLower.Contains('@')) return generic;
+
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FirstOrDefaultAsync(x => x.Email == emailLower);
+            // Compte inexistant, clôturé ou bloqué : on ne divulgue rien, pas de code envoyé.
+            if (u == null || u.CompteCloture || u.Bloque) return generic;
+
+            var code = Random.Shared.Next(100000, 1000000).ToString();
+            u.PasswordResetCodeHash = BCrypt.Net.BCrypt.HashPassword(code);
+            u.PasswordResetCodeExpiry = DateTime.UtcNow.AddMinutes(15);
+            await ctx.SaveChangesAsync();
+
+            var html = $@"<p>Bonjour,</p>
+<p>Vous avez demandé à réinitialiser le mot de passe de votre compte <strong>ADN_pay</strong>.</p>
+<p>Votre code de réinitialisation est : <strong style=""font-size:1.4rem;letter-spacing:3px;"">{code}</strong></p>
+<p>Ce code expire dans 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail — votre mot de passe reste inchangé.</p>
+<p>— L'équipe ADN_pay</p>";
+            try
+            {
+                await _email.SendAsync(emailLower, "ADN_pay — Réinitialisation de votre mot de passe", html,
+                    $"Votre code de réinitialisation ADN_pay : {code} (valable 15 minutes).");
+            }
+            catch (Exception ex)
+            {
+                // Un échec d'envoi ne doit pas révéler l'existence du compte : on log et on
+                // renvoie quand même le message générique.
+                _logger.LogWarning(ex, "Envoi du code de réinitialisation échoué.");
+            }
+            _logger.LogInformation("Code de réinitialisation généré pour un compte existant.");
+            return generic;
+        }
+
+        // Étape 2 : vérifie le code + applique le nouveau mot de passe. Révoque les
+        // sessions ouvertes (rotation du SecurityStamp) : après réinitialisation on
+        // repart propre, un éventuel accès frauduleux en cours est coupé.
+        public async Task<(bool Success, string Message)> ResetPasswordWithCodeAsync(string email, string code, string newPassword)
+        {
+            var (okPwd, errPwd) = PasswordPolicy.Validate(newPassword);
+            if (!okPwd) return (false, errPwd!);
+
+            var emailLower = (email ?? "").Trim().ToLowerInvariant();
+            await using var ctx = await _factory.CreateDbContextAsync();
+            var u = await ctx.UserProfiles.FirstOrDefaultAsync(x => x.Email == emailLower);
+            if (u == null || string.IsNullOrEmpty(u.PasswordResetCodeHash) || u.PasswordResetCodeExpiry == null)
+                return (false, "Aucune demande de réinitialisation en cours pour cette adresse.");
+            if (u.PasswordResetCodeExpiry < DateTime.UtcNow)
+            {
+                u.PasswordResetCodeHash = null;
+                u.PasswordResetCodeExpiry = null;
+                await ctx.SaveChangesAsync();
+                return (false, "Le code a expiré. Recommencez la demande.");
+            }
+            if (string.IsNullOrWhiteSpace(code) || !BCrypt.Net.BCrypt.Verify(code.Trim(), u.PasswordResetCodeHash))
+                return (false, "Code incorrect.");
+
+            u.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+            u.MotDePasse = "";
+            u.PasswordResetCodeHash = null;
+            u.PasswordResetCodeExpiry = null;
+            u.SecurityStamp = Guid.NewGuid().ToString("N"); // révoque les sessions ouvertes
+            await ctx.SaveChangesAsync();
+
+            _logger.LogInformation("Mot de passe réinitialisé via code (compte #{UserId}).", u.Id);
+            return (true, "Votre mot de passe a été réinitialisé. Vous pouvez maintenant vous connecter.");
+        }
+
         public async Task<(bool Success, string Message)> CreerNouveauCompte(UserProfile u, string motDePasse)
         {
             if (string.IsNullOrWhiteSpace(motDePasse) || motDePasse.Length < 8)

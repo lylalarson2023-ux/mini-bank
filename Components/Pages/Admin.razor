@@ -102,11 +102,11 @@
                 </p>
                 <div class="form-group">
                     <label>NOUVEAU MOT DE PASSE</label>
-                    <input type="password" @bind="resetPassword" class="form-input" placeholder="Min. 6 caractères" />
+                    <PasswordInput @bind-Value="resetPassword" Placeholder="Min. 8 car. (maj, min, chiffre, spécial)" Autocomplete="new-password" />
                 </div>
                 <div class="form-group">
                     <label>CONFIRMER LE MOT DE PASSE</label>
-                    <input type="password" @bind="resetConfirmPassword" class="form-input" placeholder="Confirmer" />
+                    <PasswordInput @bind-Value="resetConfirmPassword" Placeholder="Confirmer" Autocomplete="new-password" />
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 20px;">
                     <button class="btn btn-primary btn-block" @onclick="ConfirmResetPassword" disabled="@isProcessing">

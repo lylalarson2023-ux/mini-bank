@@ -1,5 +1,6 @@
 @page "/virement"
 @attribute [Authorize]
+@implements IDisposable
 @inject BankService Bank
 @inject NotificationService Notif
 @inject NavigationManager Nav
@@ -130,7 +131,7 @@
 
             <div class="form-group">
                 <label>DESTINATAIRE (EMAIL)</label>
-                <input type="email" @bind="destinataire" @bind:after="LookupRecipient" class="form-input" placeholder="email@adnpay.ma" />
+                <input type="email" @bind="destinataire" @bind:event="oninput" @bind:after="OnDestinataireChanged" class="form-input" placeholder="email@adnpay.ma" />
                 @if (recipientChecked && !string.IsNullOrEmpty(nomDestinataire))
                 {
                     <div style="font-size: 0.72rem; margin-top: 6px; color: var(--success); font-weight: 600;">
@@ -196,6 +197,21 @@
     private List<Beneficiaire> beneficiaires = new();
 
     private bool DejaFavori => beneficiaires.Any(b => string.Equals(b.Email, destinataire?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    // Retardateur : la recherche du destinataire (appel serveur) n'est lancée
+    // qu'après une courte pause de frappe, pas à chaque caractère saisi.
+    private readonly Debouncer _lookupDebouncer = new();
+
+    private async Task OnDestinataireChanged()
+    {
+        await _lookupDebouncer.DebounceAsync(400, async () =>
+        {
+            await LookupRecipient();
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public void Dispose() => _lookupDebouncer.Dispose();
 
     private async Task LookupRecipient()
     {

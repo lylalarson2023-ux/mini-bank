@@ -46,6 +46,9 @@ namespace ADN_pay.Services
         public Task<(bool Success, string Message)> CreerNouveauCompte(UserProfile u, string password) => _auth.CreerNouveauCompte(u, password);
         public Task<List<string>> GenererAdnEmailsAsync(string prenom, string nom) => _auth.GenererAdnEmailsAsync(prenom, nom);
         public Task<(bool Success, string Message)> ReserverAdnEmailAsync(string email, string adnEmail) => _auth.ReserverAdnEmailAsync(email, adnEmail);
+        public Task<string> RequestPasswordResetAsync(string email) => _auth.RequestPasswordResetAsync(email);
+        public Task<(bool Success, string Message)> ResetPasswordWithCodeAsync(string email, string code, string newPassword)
+            => _auth.ResetPasswordWithCodeAsync(email, code, newPassword);
 
         // --- COMPTE --- ADR-001 : montants en centimes (long)
         public Task<bool> ExecuterOperationAsync(long montantCentimes, string motif, string type = "VIREMENT")

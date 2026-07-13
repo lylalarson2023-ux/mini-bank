@@ -121,6 +121,12 @@ namespace ADN_pay.Models
         public string? EmailChangeCodeHash { get; set; }
         public DateTime? EmailChangeCodeExpiry { get; set; }
 
+        // --- RÉINITIALISATION MOT DE PASSE OUBLIÉ (code envoyé à l'adresse du compte) ---
+        // Code à 6 chiffres haché (BCrypt), à durée de vie courte. Ne révèle rien tant
+        // qu'il n'est pas consommé ; effacé après usage ou expiration.
+        public string? PasswordResetCodeHash { get; set; }
+        public DateTime? PasswordResetCodeExpiry { get; set; }
+
         // --- ADRESSE ADN_pay RÉSERVÉE (@adnpay.ma) ---
         // Identifiant réservé à l'inscription (la vraie boîte mail sera branchée plus tard).
         public string AdnEmail { get; set; } = "";

@@ -59,7 +59,7 @@
                 {
                     <div class="form-group full-width" style="margin-top: 4px;">
                         <label><i class="bi bi-shield-lock"></i> Mot de passe actuel (requis pour changer l'e-mail)</label>
-                        <input @bind="emailChangePassword" type="password" class="form-input" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="emailChangePassword" Placeholder="••••••••" />
                         <small style="color: var(--text-muted); font-size: 0.6rem; margin-top: 4px; display: block;">
                             L'e-mail sert d'identifiant de connexion : sa modification nécessite votre mot de passe.
                         </small>
@@ -123,11 +123,11 @@
                 <div class="form-grid">
                     <div class="form-group full-width">
                         <label>Mot de passe actuel</label>
-                        <input @bind="passwordModel.CurrentPassword" class="form-input" type="password" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="passwordModel.CurrentPassword" Placeholder="••••••••" />
                     </div>
                     <div class="form-group full-width">
                         <label>Nouveau mot de passe</label>
-                        <input @bind="passwordModel.NewPassword" @bind:event="oninput" class="form-input" type="password" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="passwordModel.NewPassword" Placeholder="••••••••" Autocomplete="new-password" />
                         @if (!string.IsNullOrEmpty(passwordModel.NewPassword))
                         {
                             <div class="pwd-meter">
@@ -141,7 +141,7 @@
                     </div>
                     <div class="form-group full-width">
                         <label>Confirmer le nouveau mot de passe</label>
-                        <input @bind="passwordModel.ConfirmPassword" @bind:event="oninput" class="form-input" type="password" placeholder="••••••••" />
+                        <PasswordInput @bind-Value="passwordModel.ConfirmPassword" Placeholder="••••••••" Autocomplete="new-password" />
                         @if (!string.IsNullOrEmpty(passwordModel.ConfirmPassword))
                         {
                             <small style="font-size:0.62rem; margin-top:6px; display:block; color:@(passwordModel.ConfirmPassword == passwordModel.NewPassword ? "var(--success)" : "var(--danger)");">

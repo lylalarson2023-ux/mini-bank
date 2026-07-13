@@ -188,6 +188,7 @@
         isCheckingSession = false;
 
         if (!Bank.EstConnecte && !Nav.Uri.Contains("/login") && !Nav.Uri.EndsWith("/register") && !Nav.Uri.Contains("access-denied")
+            && !Nav.Uri.Contains("/mot-de-passe-oublie")
             && !Nav.Uri.EndsWith("/cgu") && !Nav.Uri.EndsWith("/confidentialite") && !Nav.Uri.EndsWith("/mentions-legales"))
         {
             Nav.NavigateTo("/login");

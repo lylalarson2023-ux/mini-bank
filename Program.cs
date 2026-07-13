@@ -236,6 +236,9 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PendingEmail TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailChangeCodeHash TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN EmailChangeCodeExpiry datetime"); } catch { }
+    // Réinitialisation « mot de passe oublié » (code à durée de vie courte, haché).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PasswordResetCodeHash TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN PasswordResetCodeExpiry datetime"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN Bloque INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE UserProfiles ADD COLUMN AdnEmail TEXT NOT NULL DEFAULT ''"); } catch { }
     // Design de carte choisi dans la galerie (slug du catalogue CarteDesigns, validé serveur).
@@ -278,6 +281,8 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN Canal TEXT NOT NULL DEFAULT 'VIREMENT'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN MontantConverti INTEGER"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN DeviseConvertie TEXT"); } catch { }
+    // Frais de change transparents (marge ADN_pay figée à la création, reportée dans Transaction.Frais).
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE BankTransferRequests ADD COLUMN FraisCentimes INTEGER NOT NULL DEFAULT 0"); } catch { }
     // Demandes de retrait par Mobile Money (canal Alex, avance de cash) — symétrique
     // de BankTransferRequests, sens inversé (débit au moment de la validation admin).
     try { db.Database.ExecuteSqlRaw(@"
@@ -298,6 +303,7 @@ using (var scope = app.Services.CreateScope())
             FOREIGN KEY (UserId) REFERENCES UserProfiles(Id)
         )"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_MobileMoneyWithdrawalRequests_Reference ON MobileMoneyWithdrawalRequests(Reference)"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE MobileMoneyWithdrawalRequests ADD COLUMN FraisCentimes INTEGER NOT NULL DEFAULT 0"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN TauxAnnuel TEXT NOT NULL DEFAULT '0'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE CreditRequests ADD COLUMN MotifRejet TEXT"); } catch { }
 

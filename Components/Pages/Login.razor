@@ -40,14 +40,15 @@
 
             <div class="form-group">
                 <label>MOT DE PASSE</label>
-                <input @bind="mdp" type="password" placeholder="......" class="form-input" disabled="@isLoading" />
+                <PasswordInput @bind-Value="mdp" Placeholder="......" Disabled="isLoading" />
             </div>
 
             <button class="btn btn-adn btn-block @(isLoading ? "btn-loading" : "")" @onclick="HandleLogin" disabled="@isLoading">
                 @(isLoading ? "CONNEXION..." : "SE CONNECTER")
             </button>
 
-            <div class="auth-footer">
+            <div class="auth-footer" style="display: flex; gap: 16px; justify-content: center;">
+                <a href="/mot-de-passe-oublie">(mot de passe oublié)</a>
                 <a href="/register">(inscription)</a>
             </div>
         }
