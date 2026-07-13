@@ -55,6 +55,24 @@ public class ExternalDepositServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Crediter_AvecFrais_ConsigneLesFraisDansLaTransaction()
+    {
+        await _service.CrediterAsync(1, 25_000L, "virement", "ADN-TESTMM", "Dépôt Mobile Money", 1_560L);
+
+        var tx = Assert.Single(GetTransactions(1));
+        Assert.Equal(25_000L, tx.Montant);
+        Assert.Equal(1_560L, tx.Frais);
+    }
+
+    [Fact]
+    public async Task Crediter_SansFrais_FraisNuls()
+    {
+        await _service.CrediterAsync(1, 25_000L, "stripe", "cs_x", "Dépôt carte");
+
+        Assert.Equal(0L, Assert.Single(GetTransactions(1)).Frais);
+    }
+
+    [Fact]
     public async Task Crediter_MemeReference_NeCrediteQuUneSeuleFois()
     {
         var first = await _service.CrediterAsync(1, 25_000L, "stripe", "cs_test_123", "Dépôt par carte Stripe");

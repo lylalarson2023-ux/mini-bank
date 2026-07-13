@@ -97,6 +97,10 @@ namespace ADN_pay.Services
                 demande.MontantConverti = TransfertInternationalPricing.DepotFcfaAEnvoyer(
                     montantCentimes, tauxDhParFcfa.Value, margePct ?? 0m);
                 demande.DeviseConvertie = "FCFA";
+                // Frais de change (marge ADN_pay) figés à la création, reportés dans
+                // Transaction.Frais à la validation (transparence dans l'historique).
+                demande.FraisCentimes = TransfertInternationalPricing.DepotFraisCentimes(
+                    montantCentimes, margePct ?? 0m);
             }
             ctx.BankTransferRequests.Add(demande);
             await ctx.SaveChangesAsync();
@@ -156,9 +160,10 @@ namespace ADN_pay.Services
 
             var motif = demande.Canal == BankTransferRequest.CanalMobileMoney
                 ? $"Dépôt Mobile Money ({demande.Reference})"
+                    + (demande.MontantConverti is not null ? $" — {demande.MontantConverti} {demande.DeviseConvertie} envoyés" : "")
                 : $"Dépôt par virement bancaire ({demande.Reference})";
             var credite = await _deposits.CrediterAsync(
-                demande.UserId, demande.MontantCentimes, "virement", demande.Reference, motif);
+                demande.UserId, demande.MontantCentimes, "virement", demande.Reference, motif, demande.FraisCentimes);
             if (!credite) return false;
 
             demande.Statut = BankTransferRequest.Valide;

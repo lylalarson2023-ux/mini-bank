@@ -96,6 +96,10 @@ namespace ADN_pay.Services
                 demande.MontantAEnvoyer = TransfertInternationalPricing.RetraitFcfaARecevoir(
                     montantCentimes, tauxDhParFcfa.Value, margePct ?? 0m);
                 demande.DeviseEnvoi = "FCFA";
+                // Frais de change (marge ADN_pay) figés à la création, reportés dans
+                // Transaction.Frais à la validation (transparence dans l'historique).
+                demande.FraisCentimes = TransfertInternationalPricing.RetraitFraisCentimes(
+                    montantCentimes, margePct ?? 0m);
             }
             ctx.MobileMoneyWithdrawalRequests.Add(demande);
             await ctx.SaveChangesAsync();
@@ -168,8 +172,10 @@ namespace ADN_pay.Services
             {
                 UserId = demande.UserId,
                 Montant = demande.MontantCentimes,
+                Frais = demande.FraisCentimes,
                 Type = "RETRAIT",
-                Motif = $"Retrait Mobile Money ({demande.Reference})",
+                Motif = $"Retrait Mobile Money ({demande.Reference})"
+                    + (demande.MontantAEnvoyer is not null ? $" — {demande.MontantAEnvoyer} {demande.DeviseEnvoi} envoyés au bénéficiaire" : ""),
                 SoldeApres = u.Solde,
                 Libelle = "RETRAIT MOBILE MONEY",
                 Date = DateTime.UtcNow

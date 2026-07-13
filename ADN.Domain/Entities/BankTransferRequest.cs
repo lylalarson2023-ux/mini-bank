@@ -43,6 +43,11 @@ namespace ADN_pay.Models
         [MaxLength(8)]
         public string? DeviseConvertie { get; set; }
 
+        // Frais de change (centimes DH) figés à la création : la marge prélevée par
+        // ADN_pay sur ce dépôt Mobile Money. 0 pour un virement bancaire (sans change).
+        // Reporté dans Transaction.Frais à la validation (transparence dans l'historique).
+        public long FraisCentimes { get; set; }
+
         public string? MotifRejet { get; set; }
 
         public DateTime DateCreation { get; set; } = DateTime.UtcNow;

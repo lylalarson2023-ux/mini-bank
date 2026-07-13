@@ -31,7 +31,9 @@ namespace ADN_pay.Services
 
         // Crédite le compte une seule fois pour la référence donnée.
         // Retourne true si le compte est crédité OU l'a déjà été pour cette référence.
-        public async Task<bool> CrediterAsync(int userId, long montantCentimes, string source, string referenceExterne, string motif)
+        // fraisCentimes : marge de change consignée (informative) dans Transaction.Frais
+        // — 0 pour les dépôts sans change (Stripe, virement bancaire).
+        public async Task<bool> CrediterAsync(int userId, long montantCentimes, string source, string referenceExterne, string motif, long fraisCentimes = 0)
         {
             if (montantCentimes <= 0 || string.IsNullOrWhiteSpace(referenceExterne))
                 return false;
@@ -58,6 +60,7 @@ namespace ADN_pay.Services
             {
                 UserId = userId,
                 Montant = montantCentimes,
+                Frais = fraisCentimes,
                 Type = "DÉPÔT",
                 Motif = motif,
                 SoldeApres = user.Solde,

@@ -40,6 +40,11 @@ namespace ADN_pay.Models
         [MaxLength(8)]
         public string? DeviseEnvoi { get; set; }
 
+        // Frais de change (centimes DH) figés à la création : la marge prélevée par
+        // ADN_pay sur ce retrait Mobile Money. Reporté dans Transaction.Frais à la
+        // validation (transparence dans l'historique).
+        public long FraisCentimes { get; set; }
+
         // Destinataire de l'envoi Mobile Money (le client lui-même ou un proche).
         [Required, MaxLength(32)]
         public string NumeroBeneficiaire { get; set; } = "";

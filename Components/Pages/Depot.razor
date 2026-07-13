@@ -28,6 +28,13 @@
                 <span class="highlight" style="font-size:1.4rem; letter-spacing:2px;">@demande.Reference</span><br />
                 MONTANT À ENVOYER : <span class="highlight">@demande.MontantConverti @demande.DeviseConvertie</span>
                 <span style="font-size:.75rem;"> (= @((demande.MontantCentimes / 100m).ToString("N2")) DH crédités)</span>
+                @if (demande.FraisCentimes > 0)
+                {
+                    <div style="font-size:.72rem; color:var(--text-muted); margin-top:8px;">
+                        Frais de change inclus : ≈ @TransfertInternationalPricing.FraisFcfa(demande.MontantConverti ?? 0, transfertMarge) FCFA
+                        (≈ @((demande.FraisCentimes / 100m).ToString("N2")) DH)
+                    </div>
+                }
             </div>
             <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
                 <div><strong>Envoi Airtel Money :</strong></div>
@@ -64,7 +71,19 @@
 
         <div class="depot-step">
             <div class="depot-step-label">1. MONTANT À DÉPOSER (DH)</div>
-            <input type="number" @bind="montant" class="form-input depot-montant-input" placeholder="0.00" />
+            <input type="number" @bind="montant" @bind:event="oninput" class="form-input depot-montant-input" placeholder="0.00" />
+            @if (montant is > 0 && mobileMoneyConfigured)
+            {
+                <div style="margin-top:10px; padding:10px 12px; background:var(--bg-secondary); border-radius:8px; border-left:3px solid var(--primary); font-size:.8rem;">
+                    À envoyer : <strong>@apercuFcfa FCFA</strong>
+                    @if (apercuFraisCentimes > 0)
+                    {
+                        <div style="font-size:.72rem; color:var(--text-muted); margin-top:4px;">
+                            dont ≈ @apercuFraisFcfa FCFA de frais de change (≈ @((apercuFraisCentimes / 100m).ToString("N2")) DH)
+                        </div>
+                    }
+                </div>
+            }
         </div>
 
         <div class="depot-step">
@@ -138,6 +157,13 @@
     private List<BankTransferRequest> mesDemandes = new();
 
     private bool canConfirm => montant is > 0 && !isProcessing && mobileMoneyConfigured;
+
+    // Aperçu des frais de change AVANT confirmation (recalculé à la saisie).
+    private long montantCentimesSaisi => (long)((montant ?? 0) * 100);
+    private long apercuFcfa => montantCentimesSaisi > 0
+        ? TransfertInternationalPricing.DepotFcfaAEnvoyer(montantCentimesSaisi, transfertTaux, transfertMarge) : 0;
+    private long apercuFraisFcfa => TransfertInternationalPricing.FraisFcfa(apercuFcfa, transfertMarge);
+    private long apercuFraisCentimes => TransfertInternationalPricing.DepotFraisCentimes(montantCentimesSaisi, transfertMarge);
 
     protected override async Task OnInitializedAsync()
     {

@@ -32,6 +32,10 @@
                         -@((montantCentimes / 100m).ToString("N2")) <span style="font-size: 0.8rem;">DH</span>
                     </span>
                 </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">FRAIS</span>
+                    <span style="font-weight: 700; color: var(--success);">Sans frais</span>
+                </div>
                 <div style="border-top: 1px solid var(--border-color); margin-top: 8px; padding-top: 12px;
                             display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 0.75rem; color: var(--text-muted);">SOLDE APRÈS</span>
@@ -62,6 +66,13 @@
                 {
                     <span>MONTANT ENVOYÉ AU BÉNÉFICIAIRE : <span class="highlight">@demandeMobileMoney.MontantAEnvoyer @demandeMobileMoney.DeviseEnvoi</span></span>
                 }
+                @if (demandeMobileMoney.FraisCentimes > 0)
+                {
+                    <div style="font-size:.72rem; color:var(--text-muted); margin-top:8px;">
+                        Frais de change : ≈ @TransfertInternationalPricing.FraisFcfa(demandeMobileMoney.MontantAEnvoyer ?? 0, transfertMarge) FCFA
+                        (≈ @((demandeMobileMoney.FraisCentimes / 100m).ToString("N2")) DH), déjà déduits du montant envoyé.
+                    </div>
+                }
             </div>
             <div style="margin-top: 14px; font-size: .85rem; line-height: 1.7;">
                 <div><strong>Vous serez contacté par :</strong></div>
@@ -90,7 +101,7 @@
         <div style="margin-top: 24px;">
             <div class="form-group">
                 <label>MONTANT A RETIRER (DH)</label>
-                <input type="number" @bind="montantSaisie" class="form-input" placeholder="0.00" />
+                <input type="number" @bind="montantSaisie" @bind:event="oninput" class="form-input" placeholder="0.00" />
             </div>
 
             <div class="depot-step">
@@ -125,6 +136,18 @@
                     <label>NOM DU BÉNÉFICIAIRE</label>
                     <input type="text" @bind="nomBeneficiaire" class="form-input" placeholder="Vous-même ou un proche" />
                 </div>
+                @if (montantSaisie is > 0)
+                {
+                    <div style="margin-bottom:12px; padding:10px 12px; background:var(--bg-secondary); border-radius:8px; border-left:3px solid var(--primary); font-size:.8rem;">
+                        Le bénéficiaire recevra : <strong>@apercuFcfaRecu FCFA</strong>
+                        @if (apercuFraisCentimesRetrait > 0)
+                        {
+                            <div style="font-size:.72rem; color:var(--text-muted); margin-top:4px;">
+                                frais de change ≈ @apercuFraisFcfaRetrait FCFA (≈ @((apercuFraisCentimesRetrait / 100m).ToString("N2")) DH)
+                            </div>
+                        }
+                    </div>
+                }
             }
 
             @if (!string.IsNullOrEmpty(erreur))
@@ -214,6 +237,13 @@
 
     private bool canContinuer => montantSaisie is > 0 && !isProcessing
         && (canal != "mobilemoney" || !string.IsNullOrWhiteSpace(numeroBeneficiaire));
+
+    // Aperçu des frais de change Mobile Money AVANT création de la demande.
+    private long montantCentimesSaisiRetrait => (long)((montantSaisie ?? 0) * 100);
+    private long apercuFcfaRecu => montantCentimesSaisiRetrait > 0
+        ? TransfertInternationalPricing.RetraitFcfaARecevoir(montantCentimesSaisiRetrait, transfertTaux, transfertMarge) : 0;
+    private long apercuFraisFcfaRetrait => TransfertInternationalPricing.FraisFcfa(apercuFcfaRecu, transfertMarge);
+    private long apercuFraisCentimesRetrait => TransfertInternationalPricing.RetraitFraisCentimes(montantCentimesSaisiRetrait, transfertMarge);
 
     protected override async Task OnInitializedAsync()
     {

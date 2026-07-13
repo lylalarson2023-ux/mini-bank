@@ -114,6 +114,40 @@ public class BankTransferServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreerMobileMoney_StockeLesFraisDeChange()
+    {
+        // 140,40 DH crédités, marge 10% déduite → 15,60 DH de frais de change figés.
+        var (ok, _, demande) = await _service.CreerDemandeAsync(
+            14_040L, BankTransferRequest.CanalMobileMoney, tauxDhParFcfa: 0.0156m, margePct: 0.10m);
+
+        Assert.True(ok);
+        Assert.Equal(1_560L, demande!.FraisCentimes);
+    }
+
+    [Fact]
+    public async Task CreerVirement_SansChange_FraisNuls()
+    {
+        var (ok, _, demande) = await _service.CreerDemandeAsync(20_000L); // virement bancaire
+
+        Assert.True(ok);
+        Assert.Equal(0L, demande!.FraisCentimes);
+    }
+
+    [Fact]
+    public async Task Valider_DepotMobileMoney_ReporteLesFraisDansLaTransaction()
+    {
+        var (_, _, demande) = await _service.CreerDemandeAsync(
+            14_040L, BankTransferRequest.CanalMobileMoney, tauxDhParFcfa: 0.0156m, margePct: 0.10m);
+        DevientAdmin();
+
+        Assert.True(await _service.ValiderAsync(demande!.Id));
+
+        var tx = Assert.Single(_db.Transactions.Where(t => t.UserId == 1).ToList());
+        Assert.Equal(14_040L, tx.Montant);  // crédité en plein (le proche a payé le frais)
+        Assert.Equal(1_560L, tx.Frais);     // marge consignée pour la transparence
+    }
+
+    [Fact]
     public async Task CreerMobileMoney_AuDessusDuPlafondParDepot_Refuse()
     {
         var (ok, message, _) = await _service.CreerDemandeAsync(

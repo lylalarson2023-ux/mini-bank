@@ -31,5 +31,38 @@ namespace ADN_pay.Models
             var fcfa = (centimesDhDebites / 100m) / tauxEffectif;
             return (long)Math.Floor(fcfa);
         }
+
+        // ─────────────────────────── Frais de change (transparence) ───────────────────────────
+        // La marge de change prélevée par ADN_pay, exprimée en frais explicites.
+        // Consignée en DH dans Transaction.Frais ; montrée en FCFA au client (concret).
+
+        // Frais de change (centimes DH) d'un DÉPÔT : la marge est déduite du crédit,
+        // donc le proche paie l'équivalent de « montant + frais ». Pour un montant
+        // crédité M et une marge m : frais = M × m / (1 − m). Arrondi au centime
+        // supérieur (cohérent avec DepotFcfaAEnvoyer, qui protège la marge).
+        public static long DepotFraisCentimes(long centimesDhCredites, decimal margePct)
+        {
+            if (margePct <= 0m || centimesDhCredites <= 0) return 0L;
+            return (long)Math.Ceiling(centimesDhCredites * margePct / (1m - margePct));
+        }
+
+        // Frais de change (centimes DH) d'un RETRAIT : la marge est ajoutée au débit,
+        // donc le bénéficiaire reçoit l'équivalent de « montant − frais ». Pour un
+        // montant débité M et une marge m : frais = M × m / (1 + m). Arrondi au
+        // centime supérieur.
+        public static long RetraitFraisCentimes(long centimesDhDebites, decimal margePct)
+        {
+            if (margePct <= 0m || centimesDhDebites <= 0) return 0L;
+            return (long)Math.Ceiling(centimesDhDebites * margePct / (1m + margePct));
+        }
+
+        // Part de frais (en FCFA) incluse dans un montant converti, pour l'affichage
+        // client — la fraction « marge » du FCFA envoyé (dépôt) ou reçu (retrait).
+        // Dérivée du montant déjà figé sur la demande → cohérente avec l'écran.
+        public static long FraisFcfa(long montantConvertiFcfa, decimal margePct)
+        {
+            if (margePct <= 0m || montantConvertiFcfa <= 0) return 0L;
+            return (long)Math.Round(montantConvertiFcfa * margePct, MidpointRounding.AwayFromZero);
+        }
     }
 }

@@ -114,6 +114,31 @@ public class MobileMoneyWithdrawalServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Creer_StockeLesFraisDeChange()
+    {
+        // 177,62 DH débités, marge 7% ajoutée → 11,62 DH de frais de change figés.
+        var (ok, _, demande) = await _service.CreerDemandeAsync(
+            17_762L, "074000000", "Proche", tauxDhParFcfa: 0.0166m, margePct: 0.07m);
+
+        Assert.True(ok);
+        Assert.Equal(1_162L, demande!.FraisCentimes);
+    }
+
+    [Fact]
+    public async Task Valider_ReporteLesFraisDansLaTransaction()
+    {
+        var (_, _, demande) = await _service.CreerDemandeAsync(
+            17_762L, "074000000", "Proche", tauxDhParFcfa: 0.0166m, margePct: 0.07m);
+        DevientAdmin();
+
+        Assert.True(await _service.ValiderAsync(demande!.Id));
+
+        var tx = Assert.Single(_db.Transactions.Where(t => t.UserId == 1 && t.Type == "RETRAIT").ToList());
+        Assert.Equal(17_762L, tx.Montant);
+        Assert.Equal(1_162L, tx.Frais); // marge consignée (déjà déduite du FCFA envoyé)
+    }
+
+    [Fact]
     public async Task Creer_TropDeDemandesEnAttente_Refuse()
     {
         for (var i = 0; i < MobileMoneyWithdrawalService.MaxDemandesEnAttente; i++)

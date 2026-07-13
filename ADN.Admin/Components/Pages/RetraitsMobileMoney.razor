@@ -40,6 +40,10 @@
                                 {
                                     <text> · à envoyer : <strong>@d.MontantAEnvoyer @d.DeviseEnvoi</strong></text>
                                 }
+                                @if (d.FraisCentimes > 0)
+                                {
+                                    <text> · frais de change : <strong>@Money(d.FraisCentimes) MAD</strong></text>
+                                }
                             </div>
                         </div>
                         <div class="req-amount">-@Money(d.MontantCentimes) MAD</div>
