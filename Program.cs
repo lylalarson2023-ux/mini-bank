@@ -173,6 +173,25 @@ builder.Services.AddScoped<ExternalDepositService>();
 builder.Services.AddScoped<BankTransferService>();
 builder.Services.AddScoped<MobileMoneyWithdrawalService>();
 
+// --- AIRTEL MONEY ---
+var airtelBaseUrl = Environment.GetEnvironmentVariable("AIRTEL_BASE_URL");
+var airtelClientId = Environment.GetEnvironmentVariable("AIRTEL_CLIENT_ID");
+var airtelClientSecret = Environment.GetEnvironmentVariable("AIRTEL_CLIENT_SECRET");
+var airtelPublicKey = Environment.GetEnvironmentVariable("AIRTEL_PUBLIC_KEY_PEM");
+var airtelCallbackUrl = Environment.GetEnvironmentVariable("AIRTEL_CALLBACK_URL");
+var airtelCountry = Environment.GetEnvironmentVariable("AIRTEL_COUNTRY");
+var airtelCurrency = Environment.GetEnvironmentVariable("AIRTEL_CURRENCY");
+if (!string.IsNullOrEmpty(airtelBaseUrl)) builder.Configuration["AirtelMoney:BaseUrl"] = airtelBaseUrl;
+if (!string.IsNullOrEmpty(airtelClientId)) builder.Configuration["AirtelMoney:ClientId"] = airtelClientId;
+if (!string.IsNullOrEmpty(airtelClientSecret)) builder.Configuration["AirtelMoney:ClientSecret"] = airtelClientSecret;
+if (!string.IsNullOrEmpty(airtelPublicKey)) builder.Configuration["AirtelMoney:PublicKeyPem"] = airtelPublicKey;
+if (!string.IsNullOrEmpty(airtelCallbackUrl)) builder.Configuration["AirtelMoney:CallbackUrl"] = airtelCallbackUrl;
+if (!string.IsNullOrEmpty(airtelCountry)) builder.Configuration["AirtelMoney:Country"] = airtelCountry;
+if (!string.IsNullOrEmpty(airtelCurrency)) builder.Configuration["AirtelMoney:Currency"] = airtelCurrency;
+
+builder.Services.Configure<AirtelMoneyOptions>(builder.Configuration.GetSection("AirtelMoney"));
+builder.Services.AddHttpClient<IAirtelMoneyService, AirtelMoneyService>();
+
 // --- AUTHENTIFICATION AVEC COOKIE ---
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -427,6 +446,78 @@ app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
+});
+
+// --- AIRTEL MONEY SANDBOX TESTS ---
+app.MapPost("/api/airtel/cashin", async (IAirtelMoneyService airtel, AirtelCashInRequest request) =>
+{
+    try
+    {
+        if (!airtel.IsConfigured)
+            return Results.BadRequest(new { error = "Airtel Money n'est pas configuré. Vérifiez ClientId, ClientSecret et PublicKeyPem." });
+
+        if (string.IsNullOrWhiteSpace(request.Msisdn))
+            return Results.BadRequest(new { error = "Msisdn requis." });
+
+        if (string.IsNullOrWhiteSpace(request.Reference))
+            request.Reference = $"ADN-{Guid.NewGuid():N}";
+
+        if (string.IsNullOrWhiteSpace(request.TransactionId))
+            request.TransactionId = $"TX-{Guid.NewGuid():N}";
+
+        var result = await airtel.CashInAsync(request.Amount, request.Msisdn, request.Reference, request.Pin, request.TransactionId, request.Remark);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, title: "Erreur Airtel Cash-In");
+    }
+});
+
+app.MapPost("/api/airtel/disbursement", async (IAirtelMoneyService airtel, AirtelDisbursementRequest request) =>
+{
+    try
+    {
+        if (!airtel.IsConfigured)
+            return Results.BadRequest(new { error = "Airtel Money n'est pas configuré. Vérifiez ClientId, ClientSecret et PublicKeyPem." });
+
+        if (string.IsNullOrWhiteSpace(request.Msisdn))
+            return Results.BadRequest(new { error = "Msisdn requis." });
+
+        if (string.IsNullOrWhiteSpace(request.Reference))
+            request.Reference = $"ADN-{Guid.NewGuid():N}";
+
+        if (string.IsNullOrWhiteSpace(request.TransactionId))
+            request.TransactionId = $"TX-{Guid.NewGuid():N}";
+
+        var result = await airtel.DisburseAsync(request.Amount, request.Msisdn, request.PayeeName, request.Reference, request.Pin, request.TransactionId, request.Type);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, title: "Erreur Airtel Disbursement");
+    }
+});
+
+app.MapGet("/api/airtel/status/{referenceId}", async (IAirtelMoneyService airtel, string referenceId) =>
+{
+    try
+    {
+        var result = await airtel.GetTransactionStatusAsync(referenceId);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, title: "Erreur Airtel status");
+    }
+});
+
+app.MapPost("/api/airtel/callback", async (HttpContext ctx) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    // Validation de signature / callback à brancher selon la documentation Airtel.
+    return Results.Ok(new { received = true, payload = body });
 });
 
 // --- EXPORT CSV DES UTILISATEURS (admin uniquement) ---
